@@ -1,0 +1,53 @@
+# ignore all hidden
+.*
+# except
+!.gitattributes
+!.gitignore
+!.gitmodules
+!.github
+!.github/**
+!.yamlfmt.yaml
+!.yamllint.yml
+
+# Logs
+logs
+*.log*
+
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# AI tools
+!.serena
+!.claude
+!.taskmaster
+
+# Secret Management (Infisical)
+# Environment files with actual secrets
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Keep example/template files
+!.env.example
+!.env.template
+
+# Credential files
+*credentials*.json
+*secrets*.json
+*secret*.yaml
+*secret*.yml
+
+# Infisical cache/config (if generated locally)
+.infisical.json
+
+# API keys and tokens
+*.key
+*.pem
+!*_example.key
+!*_example.pem
