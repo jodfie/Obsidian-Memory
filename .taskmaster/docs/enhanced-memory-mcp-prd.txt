@@ -1,0 +1,328 @@
+<context>
+# Overview
+Enhance the existing cc-obsidian-mem MCP server by integrating basic-memory knowledge graph features (semantic parsing, memory:// URLs, bidirectional sync) using Supabase for cloud sync and multi-device support, with Supabase Auth as primary authentication and custom OAuth 2.0 as fallback, following MCP best practices from awesome-claude-code.
+
+The goal is to create a production-ready MCP server that combines the best features of both cc-obsidian-mem and basic-memory, with cloud synchronization capabilities and flexible authentication options.
+
+# Core Features
+
+## Knowledge Graph System
+- Parse Markdown files to extract Entities, Observations, and Relations
+- Maintain PostgreSQL database (via Supabase) for fast queries and indexing
+- Support memory:// URL scheme for entity references
+- Bidirectional sync between Markdown files and knowledge graph
+- Real-time synchronization across devices using Supabase subscriptions
+
+## Authentication System
+- Supabase Auth as primary authentication (handles OAuth providers automatically)
+- Custom OAuth 2.0 fallback for advanced use cases
+- Support for multiple providers (Google, GitHub, generic OAuth 2.0)
+- Token validation and refresh logic
+- Dynamic Client Registration for Claude.ai integration
+
+## Enhanced MCP Tools
+- build_context - Navigate knowledge graph via memory:// URLs
+- canvas - Generate knowledge visualizations
+- recent_activity - Find recently updated information
+- Enhanced mem_search - Search both files and knowledge graph
+- Enhanced mem_write - Auto-extract Observations and Relations from content
+- Enhanced mem_read - Support memory:// URLs
+
+## Cloud Sync & Multi-Device Support
+- Real-time sync via Supabase subscriptions
+- Row Level Security (RLS) for multi-user support
+- Conflict resolution for concurrent edits
+- Offline support with local caching
+
+# User Experience
+
+## Developer Personas
+- Primary: Developers using Claude Code who want persistent memory across sessions
+- Secondary: Teams needing shared knowledge bases
+- Tertiary: Users wanting cloud sync across multiple devices
+
+## Key User Flows
+1. Setup: Configure Supabase, initialize knowledge graph, set up authentication
+2. Daily Use: Write notes, search memory, navigate knowledge graph
+3. Multi-Device: Automatic sync when switching devices
+4. Team Collaboration: Shared knowledge base with proper access control
+</context>
+<PRD>
+# Technical Architecture
+
+## System Components
+
+### Knowledge Graph Engine
+- PostgreSQL database schema (via Supabase)
+  - entities table (id, title, type, permalink, file_path, project, timestamps)
+  - observations table (id, entity_id, category, content, tags, context, timestamps)
+  - relations table (id, from_entity_id, to_entity_id, relation_type, context, timestamps)
+- Markdown parser for semantic patterns
+- Entity/Observation/Relation extraction from frontmatter and content
+- Bidirectional sync engine (file changes → DB, DB queries → file updates)
+
+### Authentication Layer
+- Supabase Auth integration (primary)
+  - Handles OAuth providers (Google, GitHub, etc.)
+  - Email/password authentication
+  - Session management
+- Custom OAuth 2.0 provider (fallback)
+  - Authorization code flow with PKCE
+  - Token validation and refresh
+  - Dynamic Client Registration endpoint
+
+### MCP Server
+- Stdio transport for local use
+- HTTP/SSE transport for remote deployments
+- Tool registration and execution
+- Real-time sync via Supabase subscriptions
+
+### File Format Support
+- Obsidian format (existing) - Frontmatter, wikilinks, Dataview
+- Basic Memory format (new) - Semantic patterns with Observations and Relations
+- Bidirectional conversion between formats
+
+## Data Models
+
+### Entity
+```typescript
+interface Entity {
+  id: string;
+  title: string;
+  type: 'note' | 'session' | 'error' | 'decision' | 'pattern' | 'file' | 'learning';
+  permalink: string;
+  file_path: string;
+  project?: string;
+  created_at: Date;
+  updated_at: Date;
+}
+```
+
+### Observation
+```typescript
+interface Observation {
+  id: string;
+  entity_id: string;
+  category: string;
+  content: string;
+  tags: string[];
+  context?: string;
+  created_at: Date;
+}
+```
+
+### Relation
+```typescript
+interface Relation {
+  id: string;
+  from_entity_id: string;
+  to_entity_id: string;
+  relation_type: string;
+  context?: string;
+  created_at: Date;
+}
+```
+
+## APIs and Integrations
+- Supabase REST API for database operations
+- Supabase Realtime for live updates
+- Supabase Auth API for authentication
+- MCP Protocol for tool communication
+- Claude Code hooks for automatic capture
+
+## Infrastructure Requirements
+- Supabase project (free tier: 500MB database, 2GB bandwidth)
+- Node.js/Bun runtime for MCP server
+- Obsidian vault for file storage
+- HTTPS endpoint for remote deployments
+
+# Development Roadmap
+
+## Phase 1: Supabase Setup
+**Goal**: Establish foundation with Supabase database and authentication
+
+**Scope**:
+- Create Supabase project and configure
+- Design PostgreSQL schema (entities, observations, relations tables)
+- Set up database migrations system
+- Configure Row Level Security (RLS) policies
+- Initialize Supabase client in codebase
+- Create connection pooling and error handling
+- Set up development and production environments
+
+**Deliverables**:
+- Supabase project configured
+- Database schema deployed
+- Migration system working
+- RLS policies in place
+- Supabase client integrated
+
+## Phase 2: Knowledge Graph Foundation
+**Goal**: Build core knowledge graph parsing and storage
+
+**Scope**:
+- Implement Markdown parser for semantic patterns
+- Build entity extraction from frontmatter and content
+- Create observation parser (category, tags, context)
+- Implement relation parser (wikilinks → relations)
+- Build bidirectional sync engine
+- Create memory:// URL handler
+- Implement real-time sync via Supabase subscriptions
+- Add conflict resolution for concurrent edits
+
+**Deliverables**:
+- Markdown files parsed into knowledge graph
+- Entities, Observations, Relations stored in database
+- Bidirectional sync working
+- memory:// URLs resolving correctly
+- Real-time updates functional
+
+## Phase 3: Authentication Implementation
+**Goal**: Implement flexible authentication system
+
+**Scope**:
+- Integrate Supabase Auth as primary method
+- Implement custom OAuth 2.0 provider (fallback)
+- Add authorization code flow with PKCE
+- Create token validation and refresh logic
+- Add `/authorize` and `/token` endpoints
+- Implement Dynamic Client Registration endpoint
+- Update auth middleware to support multiple methods
+- Add OAuth metadata to RFC 9728 endpoint
+
+**Deliverables**:
+- Supabase Auth working
+- Custom OAuth 2.0 functional
+- Multiple providers supported
+- Claude.ai integration ready
+
+## Phase 4: New MCP Tools
+**Goal**: Add enhanced tools for knowledge graph navigation
+
+**Scope**:
+- Implement `build_context` tool with memory:// URL support
+- Create `recent_activity` tool with time-based filtering
+- Build `list_directory` tool with knowledge graph integration
+- Implement `canvas` tool for Obsidian canvas generation
+- Enhance `mem_search` to search both files and knowledge graph
+- Update `mem_write` to auto-extract Observations and Relations
+- Add memory:// URL support to `mem_read`
+
+**Deliverables**:
+- All new tools implemented
+- Existing tools enhanced
+- Tools tested and documented
+
+## Phase 5: Integration & Testing
+**Goal**: Integrate all components and ensure reliability
+
+**Scope**:
+- Integrate knowledge graph sync into hook lifecycle
+- Add database initialization to setup wizard
+- Create migration system for existing vaults
+- Write comprehensive tests (unit, integration, e2e)
+- Test OAuth 2.0 flows with multiple providers
+- Validate memory:// URL resolution
+- Test bidirectional sync accuracy
+- Performance testing for large vaults (1000+ notes)
+- Test real-time sync across devices
+
+**Deliverables**:
+- All components integrated
+- Comprehensive test suite
+- Performance validated
+- Migration tools ready
+
+## Phase 6: Documentation
+**Goal**: Complete documentation for users and developers
+
+**Scope**:
+- Create Supabase setup guide
+- Document knowledge graph concepts and usage
+- Write authentication setup guide
+- Create migration guide for existing users
+- Update deployment documentation
+- Add examples for memory:// URL usage
+- Create troubleshooting guide
+- Update README with new features
+
+**Deliverables**:
+- Complete user documentation
+- Developer documentation
+- Setup guides
+- Troubleshooting resources
+
+# Logical Dependency Chain
+
+## Foundation First
+1. **Supabase Setup** (Phase 1) - Must be done first, everything depends on database
+2. **Knowledge Graph Foundation** (Phase 2) - Core functionality, needed before tools
+3. **Authentication** (Phase 3) - Can be done in parallel with Phase 2, but needed for remote access
+
+## Building on Foundation
+4. **New MCP Tools** (Phase 4) - Requires knowledge graph (Phase 2) to be functional
+5. **Integration & Testing** (Phase 5) - Requires all previous phases complete
+6. **Documentation** (Phase 6) - Can be written in parallel, finalized after Phase 5
+
+## Critical Path
+Supabase Setup → Knowledge Graph → Tools → Integration → Documentation
+
+Authentication can be developed in parallel with Knowledge Graph, but both must complete before Integration phase.
+
+# Risks and Mitigations
+
+## Technical Challenges
+
+### Risk: Supabase free tier limitations
+- **Impact**: May hit database size or bandwidth limits
+- **Mitigation**: Monitor usage, implement data archiving, plan for upgrade path
+
+### Risk: Real-time sync conflicts
+- **Impact**: Concurrent edits may cause data loss
+- **Mitigation**: Implement conflict resolution strategy, use Supabase's built-in conflict handling
+
+### Risk: Performance with large vaults
+- **Impact**: Slow queries with 1000+ notes
+- **Mitigation**: Proper indexing, query optimization, pagination, caching
+
+### Risk: OAuth 2.0 complexity
+- **Impact**: Difficult to implement correctly, security concerns
+- **Mitigation**: Use Supabase Auth primarily, custom OAuth as fallback only, follow OAuth 2.1 best practices
+
+## MVP Considerations
+
+### MVP Scope
+- Phase 1: Supabase Setup (essential)
+- Phase 2: Knowledge Graph Foundation (core feature)
+- Phase 3: Supabase Auth only (simplified authentication)
+- Phase 4: Basic tools (mem_search, mem_write enhancements)
+- Phase 5: Basic integration (skip advanced testing)
+- Phase 6: Minimal documentation
+
+### Post-MVP Enhancements
+- Custom OAuth 2.0 fallback
+- Advanced tools (canvas, build_context)
+- Comprehensive testing suite
+- Full documentation
+
+## Resource Constraints
+- Free tier Supabase limits
+- Development time for complex features
+- Testing across multiple devices
+
+**Mitigation**: Start with MVP, iterate based on user feedback, prioritize most valuable features first.
+
+# Appendix
+
+## Research Findings
+- Supabase free tier provides 500MB database, 2GB bandwidth, sufficient for MVP
+- Supabase Auth supports 50+ OAuth providers out of the box
+- Real-time subscriptions work well for knowledge graph sync
+- MCP best practices from awesome-claude-code emphasize comprehensive API coverage
+
+## Technical Specifications
+- TypeScript with Bun runtime
+- PostgreSQL via Supabase
+- MCP Protocol 2025-03-26
+- OAuth 2.1 with PKCE
+- RFC 9728 for OAuth metadata
