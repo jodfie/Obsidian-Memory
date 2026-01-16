@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 
+from app.api.notes import router as notes_router
 from app.config import settings
 
 app = FastAPI(
@@ -10,6 +11,9 @@ app = FastAPI(
     version=settings.api_version,
     debug=settings.debug,
 )
+
+# Include routers
+app.include_router(notes_router)
 
 
 @app.get("/")

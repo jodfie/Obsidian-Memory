@@ -14,7 +14,7 @@
 - [x] **M** Vault manager service (read/write markdown files)
 - [x] **M** Markdown parser (frontmatter, observations, relations)
 - [x] **M** SQLite + FTS5 search index
-- [ ] **M** Basic CRUD API endpoints (/api/notes/*)
+- [x] **M** Basic CRUD API endpoints (/api/notes/*)
 - [ ] **L** MCP tools: mem_read, mem_write, mem_search
 
 ## Phase 2: Knowledge Graph
