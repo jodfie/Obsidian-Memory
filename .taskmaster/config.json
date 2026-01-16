@@ -2,19 +2,19 @@
   "models": {
     "main": {
       "provider": "claude-code",
-      "modelId": "sonnet[1m]",
+      "modelId": "sonnet",
       "maxTokens": 64000,
       "temperature": 0.2
     },
     "research": {
       "provider": "claude-code",
-      "modelId": "claude-opus-4-5",
+      "modelId": "opus",
       "maxTokens": 64000,
       "temperature": 0.1
     },
     "fallback": {
       "provider": "claude-code",
-      "modelId": "sonnet[1m]",
+      "modelId": "sonnet",
       "maxTokens": 64000,
       "temperature": 0.2
     }
@@ -37,6 +37,6 @@
   "claudeCode": {
     "customSystemPrompt": "",
     "appendSystemPrompt": "",
-    "permissionMode": ""
+    "permissionMode": "default"
   }
 }

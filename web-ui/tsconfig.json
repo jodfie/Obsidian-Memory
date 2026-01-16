@@ -2,17 +2,18 @@
   "compilerOptions": {
     // Target
     "target": "ES2022",
-    "lib": ["dom", "dom.iterable", "ES2022"],
-
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "ES2022"
+    ],
     // Module
     "module": "ESNext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-
     // JSX
     "jsx": "preserve",
-
     // Strict type checking
     "strict": true,
     "noImplicitAny": true,
@@ -23,7 +24,6 @@
     "noImplicitThis": true,
     "useUnknownInCatchVariables": true,
     "alwaysStrict": true,
-
     // Additional checks
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -31,29 +31,36 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true,
-
     // Interop
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-
     // Build
     "noEmit": true,
     "incremental": true,
     "skipLibCheck": true,
-
     // Path aliases
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     },
-
     // Next.js plugin
     "plugins": [
       {
         "name": "next"
       }
-    ]
+    ],
+    "allowJs": true
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "next-env.d.ts",
+    "jest.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
