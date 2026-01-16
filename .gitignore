@@ -51,3 +51,42 @@ logs
 *.pem
 !*_example.key
 !*_example.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node/Bun
+node_modules/
+.next/
+out/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+
+# Obsidian vaults (mounted, not committed)
+/vaults/
+
+# Session data
+/sessions/
