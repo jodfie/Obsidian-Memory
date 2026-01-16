@@ -12,7 +12,7 @@
 - [x] **S** MCP server scaffolding (package.json, tsconfig)
 - [x] **S** Web UI scaffolding (Next.js setup)
 - [x] **M** Vault manager service (read/write markdown files)
-- [ ] **M** Markdown parser (frontmatter, observations, relations)
+- [x] **M** Markdown parser (frontmatter, observations, relations)
 - [ ] **M** SQLite + FTS5 search index
 - [ ] **M** Basic CRUD API endpoints (/api/notes/*)
 - [ ] **L** MCP tools: mem_read, mem_write, mem_search
