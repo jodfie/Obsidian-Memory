@@ -10,7 +10,7 @@
 ### Priority: Critical
 - [x] **S** Backend project scaffolding (pyproject.toml, structure)
 - [x] **S** MCP server scaffolding (package.json, tsconfig)
-- [ ] **S** Web UI scaffolding (Next.js setup)
+- [x] **S** Web UI scaffolding (Next.js setup)
 - [ ] **M** Vault manager service (read/write markdown files)
 - [ ] **M** Markdown parser (frontmatter, observations, relations)
 - [ ] **M** SQLite + FTS5 search index
