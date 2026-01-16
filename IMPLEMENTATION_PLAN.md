@@ -8,7 +8,7 @@
 ## Phase 1: Core Foundation
 
 ### Priority: Critical
-- [ ] **S** Backend project scaffolding (pyproject.toml, structure)
+- [x] **S** Backend project scaffolding (pyproject.toml, structure)
 - [ ] **S** MCP server scaffolding (package.json, tsconfig)
 - [ ] **S** Web UI scaffolding (Next.js setup)
 - [ ] **M** Vault manager service (read/write markdown files)
