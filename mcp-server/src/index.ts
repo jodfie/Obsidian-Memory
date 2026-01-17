@@ -33,9 +33,42 @@ import {
 } from './tools/session.js';
 
 /**
+ * Simple logger for MCP server.
+ */
+const logger = {
+  info: (message: string, ...args: unknown[]) => {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'INFO',
+      message,
+      ...(args.length > 0 && { data: args }),
+    }));
+  },
+  error: (message: string, error?: Error | unknown) => {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'ERROR',
+      message,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    }));
+  },
+  warn: (message: string, ...args: unknown[]) => {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'WARN',
+      message,
+      ...(args.length > 0 && { data: args }),
+    }));
+  },
+};
+
+/**
  * Initialize and start the MCP server.
  */
 async function main(): Promise<void> {
+  logger.info('Starting Obsidian-Memory MCP Server');
+
   // Create server instance
   const server = new Server(
     {
@@ -187,6 +220,7 @@ async function main(): Promise<void> {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      logger.error(`Tool "${name}" failed`, error);
       throw new Error(`Tool "${name}" failed: ${message}`);
     }
   });
@@ -194,20 +228,20 @@ async function main(): Promise<void> {
   // Determine transport based on environment
   const transportType = process.env.MCP_TRANSPORT || 'stdio';
 
-  if (transportType === 'sse') {
-    // Use SSE transport for HTTP/remote access
-    const { createSSEServer } = await import('./transport/sse.js');
-    await createSSEServer(server, {
-      port: parseInt(process.env.MCP_SSE_PORT || '3000', 10),
-      path: process.env.MCP_SSE_PATH || '/sse',
-    });
-    console.error('Obsidian-Memory MCP Server started (SSE transport)');
-  } else {
-    // Default: use stdio transport for CLI
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    console.error('Obsidian-Memory MCP Server started (stdio transport)');
-  }
+          if (transportType === 'sse') {
+            // Use SSE transport for HTTP/remote access
+            const { createSSEServer } = await import('./transport/sse.js');
+            await createSSEServer(server, {
+              port: parseInt(process.env.MCP_SSE_PORT || '3000', 10),
+              path: process.env.MCP_SSE_PATH || '/sse',
+            });
+            logger.info('Obsidian-Memory MCP Server started (SSE transport)');
+          } else {
+            // Default: use stdio transport for CLI
+            const transport = new StdioServerTransport();
+            await server.connect(transport);
+            logger.info('Obsidian-Memory MCP Server started (stdio transport)');
+          }
 }
 
 // Run if executed directly
