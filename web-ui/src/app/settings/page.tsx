@@ -8,10 +8,16 @@ export default function SettingsPage() {
       ? localStorage.getItem('api_url') || 'http://localhost:8000'
       : 'http://localhost:8000'
   );
+  const [apiToken, setApiToken] = useState(
+    typeof window !== 'undefined'
+      ? localStorage.getItem('api_token') || ''
+      : ''
+  );
 
   function handleSave() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('api_url', apiUrl);
+      localStorage.setItem('api_token', apiToken);
       alert('Settings saved! Refresh the page for changes to take effect.');
     }
   }
@@ -46,6 +52,26 @@ export default function SettingsPage() {
               />
               <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                 Backend API URL for Obsidian-Memory
+              </p>
+            </div>
+
+            <div>
+              <label
+                htmlFor="api-token"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              >
+                API Token (Bearer)
+              </label>
+              <input
+                id="api-token"
+                type="password"
+                value={apiToken}
+                onChange={(e) => setApiToken(e.target.value)}
+                placeholder="Optional: Bearer token for API authentication"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                Bearer token for API authentication (if required by backend)
               </p>
             </div>
 
