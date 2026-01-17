@@ -2,6 +2,19 @@
  * HTTP client for communicating with the Obsidian-Memory backend API.
  */
 
+const API_BASE_URL = process.env.OBSIDIAN_MEMORY_API_URL || 'http://localhost:8000';
+const API_TOKEN = process.env.OBSIDIAN_MEMORY_API_TOKEN || null;
+
+function getHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (API_TOKEN) {
+    headers['Authorization'] = `Bearer ${API_TOKEN}`;
+  }
+  return headers;
+}
+
 export interface NoteResponse {
   id: number | null;
   vault_name: string;
@@ -55,16 +68,30 @@ export interface SearchRequest {
 
 export class ApiClient {
   private baseUrl: string;
+  private apiToken: string | null;
 
-  constructor(baseUrl: string = 'http://localhost:8000') {
+  constructor(baseUrl: string = 'http://localhost:8000', apiToken?: string | null) {
     this.baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
+    this.apiToken = apiToken || API_TOKEN;
+  }
+
+  private getHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (this.apiToken) {
+      headers['Authorization'] = `Bearer ${this.apiToken}`;
+    }
+    return headers;
   }
 
   /**
    * Get a note by ID.
    */
   async getNoteById(id: number): Promise<NoteResponse> {
-    const response = await fetch(`${this.baseUrl}/api/notes/${id}`);
+    const response = await fetch(`${this.baseUrl}/api/notes/${id}`, {
+      headers: this.getHeaders(),
+    });
     if (!response.ok) {
       if (response.status === 404) {
         throw new Error(`Note with ID ${id} not found`);
@@ -80,9 +107,7 @@ export class ApiClient {
   async createNote(request: NoteCreateRequest): Promise<NoteResponse> {
     const response = await fetch(`${this.baseUrl}/api/notes`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify(request),
     });
     if (!response.ok) {
@@ -98,9 +123,7 @@ export class ApiClient {
   async updateNote(id: number, request: NoteUpdateRequest): Promise<NoteResponse> {
     const response = await fetch(`${this.baseUrl}/api/notes/${id}`, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify(request),
     });
     if (!response.ok) {
@@ -119,9 +142,7 @@ export class ApiClient {
   async searchNotes(request: SearchRequest): Promise<NoteListResponse> {
     const response = await fetch(`${this.baseUrl}/api/notes/search`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify(request),
     });
     if (!response.ok) {
@@ -147,7 +168,9 @@ export class ApiClient {
     if (params.offset) queryParams.append('offset', params.offset.toString());
 
     const url = `${this.baseUrl}/api/notes${queryParams.toString() ? `?${queryParams}` : ''}`;
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: this.getHeaders(),
+    });
     if (!response.ok) {
       throw new Error(`Failed to list notes: ${response.statusText}`);
     }
@@ -158,7 +181,9 @@ export class ApiClient {
    * List all projects.
    */
   async listProjects(): Promise<{ projects: Array<{ name: string; note_count: number }> }> {
-    const response = await fetch(`${this.baseUrl}/api/projects`);
+    const response = await fetch(`${this.baseUrl}/api/projects`, {
+      headers: this.getHeaders(),
+    });
     if (!response.ok) {
       throw new Error(`Failed to list projects: ${response.statusText}`);
     }
@@ -190,7 +215,9 @@ export class ApiClient {
     if (offset) queryParams.append('offset', offset.toString());
 
     const url = `${this.baseUrl}/api/projects/${encodeURIComponent(projectName)}/notes${queryParams.toString() ? `?${queryParams}` : ''}`;
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: this.getHeaders(),
+    });
     if (!response.ok) {
       if (response.status === 404) {
         throw new Error(`Project "${projectName}" not found`);
@@ -210,9 +237,7 @@ export class ApiClient {
   }> {
     const response = await fetch(`${this.baseUrl}/api/projects`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify({ project_name: projectName }),
     });
     if (!response.ok) {
@@ -236,7 +261,7 @@ export class ApiClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ project: project || null }),
+      body: JSON.stringify({ project }),
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: response.statusText }));
@@ -266,8 +291,8 @@ export class ApiClient {
       body: JSON.stringify({
         session_id: sessionId,
         event_type: eventType,
-        content: content,
-        metadata: metadata || {},
+        content,
+        metadata,
       }),
     });
     if (!response.ok) {
@@ -291,6 +316,7 @@ export class ApiClient {
   }> {
     const response = await fetch(`${this.baseUrl}/api/sessions/${sessionId}/summary`, {
       method: 'POST',
+      headers: this.getHeaders(),
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: response.statusText }));
@@ -332,14 +358,12 @@ export class ApiClient {
   }> {
     const response = await fetch(`${this.baseUrl}/api/sessions/context`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: this.getHeaders(),
       body: JSON.stringify({
         session_id: sessionId,
         include_events: includeEvents,
         include_summary: includeSummary,
-        limit: limit,
+        limit,
       }),
     });
     if (!response.ok) {

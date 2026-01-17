@@ -69,6 +69,7 @@
 ### Priority: Medium
 - [x] **M** Git sync service (initialize, commit, pull, push, sync)
 - [x] **M** Conflict detection and resolution
+- [x] **L** Bearer token authentication (API middleware, MCP client, Web UI)
 - [ ] **L** Cloudflare Access integration
 - [ ] **L** Cross-device sync enhancements
 

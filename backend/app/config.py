@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     # Logging Configuration
     log_level: str = "INFO"
 
+    # Authentication Configuration
+    require_auth: bool = Field(
+        default=False, description="Require Bearer token authentication"
+    )
+    api_token: str | None = Field(
+        default=None, description="Bearer token for API authentication"
+    )
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Settings":
         """Create settings from a dictionary."""

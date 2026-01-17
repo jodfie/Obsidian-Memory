@@ -85,19 +85,34 @@ export interface GraphResponse {
 }
 
 /**
- * Fetch wrapper with error handling.
+ * Get API token from localStorage or environment.
+ */
+function getApiToken(): string | null {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('api_token') || null;
+  }
+  return null;
+}
+
+/**
+ * Fetch wrapper with error handling and authentication.
  */
 async function fetchAPI<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
+  const token = getApiToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string>),
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
   const response = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
