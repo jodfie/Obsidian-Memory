@@ -111,12 +111,20 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
             Dashboard
           </h1>
-          <Link
-            href="/graph"
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
-          >
-            View Graph
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              href="/graph"
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+            >
+              View Graph
+            </Link>
+            <Link
+              href="/settings"
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+            >
+              Settings
+            </Link>
+          </div>
         </div>
 
         <QuickSearch />
@@ -204,10 +212,16 @@ export default function Dashboard() {
 
           {/* Projects */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 Projects
               </h2>
+              <Link
+                href="/projects"
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                View all →
+              </Link>
             </div>
             <div className="p-6">
               {projects.length === 0 ? (
@@ -216,10 +230,10 @@ export default function Dashboard() {
                 </p>
               ) : (
                 <ul className="space-y-3">
-                  {projects.map((project) => (
+                  {projects.slice(0, 5).map((project) => (
                     <li key={project.name}>
                       <Link
-                        href={`/projects/${project.name}`}
+                        href={`/projects?project=${encodeURIComponent(project.name)}`}
                         className="flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700 p-3 rounded transition"
                       >
                         <span className="font-medium text-gray-900 dark:text-white">
@@ -238,10 +252,16 @@ export default function Dashboard() {
 
           {/* Recent Sessions */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow lg:col-span-2">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                 Recent Sessions
               </h2>
+              <Link
+                href="/sessions"
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                View all →
+              </Link>
             </div>
             <div className="p-6">
               {sessions.length === 0 ? (

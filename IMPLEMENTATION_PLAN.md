@@ -60,9 +60,9 @@
 - [x] **M** Notes browser with filtering and sorting
 - [x] **M** Markdown editor with live preview (split view)
 - [x] **M** Interactive knowledge graph visualization (basic implementation, full interactive visualization pending graph library)
-- [ ] **L** Project management interface
-- [ ] **L** Session history and timeline view
-- [ ] **L** Settings and configuration UI
+- [x] **L** Project management interface
+- [x] **L** Session history and timeline view
+- [x] **L** Settings and configuration UI
 
 ## Phase 7-8: See specs/ for details
 
