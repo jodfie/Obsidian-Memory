@@ -1,7 +1,9 @@
 """Git sync service for vault synchronization."""
 
 import asyncio
+import platform
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,14 +18,29 @@ from app.services.exceptions import (
 class SyncService:
     """Service for synchronizing vaults with Git repositories."""
 
-    def __init__(self, vault_path: Path) -> None:
+    def __init__(self, vault_path: Path, device_id: str | None = None) -> None:
         """Initialize sync service for a vault.
 
         Args:
             vault_path: Path to the vault directory
+            device_id: Optional device identifier for cross-device tracking
         """
         self.vault_path = vault_path
+        self.device_id = device_id or self._generate_device_id()
         self._git_available: bool | None = None
+
+    @staticmethod
+    def _generate_device_id() -> str:
+        """Generate a device identifier.
+
+        Returns:
+            Device identifier string
+        """
+        import socket
+
+        hostname = socket.gethostname()
+        system = platform.system()
+        return f"{system}-{hostname}"
 
     async def _check_git_available(self) -> bool:
         """Check if Git is available."""
@@ -119,7 +136,7 @@ class SyncService:
         """Get Git status of the vault.
 
         Returns:
-            Dictionary with status information
+            Dictionary with status information including device_id
         """
         if not await self.is_git_repo():
             return {
@@ -128,6 +145,7 @@ class SyncService:
                 'modified_files': [],
                 'untracked_files': [],
                 'conflicts': [],
+                'device_id': self.device_id,
             }
 
         # Get status
@@ -163,6 +181,7 @@ class SyncService:
             'modified_files': modified_files,
             'untracked_files': untracked_files,
             'conflicts': conflicts,
+            'device_id': self.device_id,
         }
 
     async def add_remote(self, url: str, name: str = 'origin') -> None:
@@ -273,7 +292,7 @@ class SyncService:
             branch: Branch name (default: 'main')
 
         Returns:
-            Dictionary with sync result information
+            Dictionary with sync result information including device_id and sync_time
 
         Raises:
             SyncConflictError: If conflicts are detected
@@ -283,6 +302,8 @@ class SyncService:
             'committed': False,
             'pushed': False,
             'conflicts': [],
+            'device_id': self.device_id,
+            'sync_time': datetime.now().isoformat(),
         }
 
         # Pull changes
@@ -290,8 +311,9 @@ class SyncService:
             pull_result = await self.pull(remote, branch)
             result['pulled'] = True
             result['conflicts'] = pull_result.get('conflicts', [])
+            result['updated_files'] = pull_result.get('updated_files', [])
         except SyncConflictError as e:
-            result['conflicts'] = str(e)
+            result['conflicts'] = [str(e)]
             raise
         except Exception:
             # No remote or other error - continue with local commit
@@ -300,7 +322,8 @@ class SyncService:
         # Commit local changes
         status = await self.get_status()
         if status['modified_files'] or status['untracked_files']:
-            await self.commit_changes('Auto-sync: Update notes')
+            commit_message = f'Auto-sync: Update notes from {self.device_id}'
+            await self.commit_changes(commit_message)
             result['committed'] = True
 
         # Push changes

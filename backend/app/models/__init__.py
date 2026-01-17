@@ -46,6 +46,11 @@ from app.models.session import (
     SessionContextRequest,
     SessionObserveRequest,
 )
+from app.models.sync import (
+    SyncQueueItem,
+    SyncResult,
+    SyncStatus,
+)
 from app.models.vault import (
     VaultConfig,
     VaultFile,
@@ -84,6 +89,9 @@ __all__ = [
     "SessionObserveRequest",
     "SessionSummary",
     "SortOrder",
+    "SyncQueueItem",
+    "SyncResult",
+    "SyncStatus",
     "VaultConfig",
     "VaultFile",
     "VaultManagerConfig",

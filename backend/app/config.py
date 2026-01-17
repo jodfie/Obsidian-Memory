@@ -63,6 +63,15 @@ class Settings(BaseSettings):
         default=None, description="Cloudflare Access team domain (e.g., example.cloudflareaccess.com)"
     )
 
+    # Sync Configuration
+    sync_state_file: Path = Field(
+        default=Path.home() / ".obsidian-memory" / "sync_state.json",
+        description="Path to sync state file"
+    )
+    device_id: str | None = Field(
+        default=None, description="Device identifier for cross-device sync tracking"
+    )
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Settings":
         """Create settings from a dictionary."""

@@ -71,7 +71,7 @@
 - [x] **M** Conflict detection and resolution
 - [x] **L** Bearer token authentication (API middleware, MCP client, Web UI)
 - [x] **L** Cloudflare Access integration (JWT middleware, basic implementation)
-- [ ] **L** Cross-device sync enhancements
+- [x] **L** Cross-device sync enhancements (device tracking, sync state management, last sync timestamps)
 
 ## Phase 8: See specs/ for details
 
