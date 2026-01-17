@@ -4,7 +4,11 @@ from app.models.graph import (
     Edge,
     EdgeType,
     Graph,
+    GraphPath,
     Node,
+    PathStep,
+    TraversalQuery,
+    TraversalResult,
 )
 from app.models.note import (
     Frontmatter,
