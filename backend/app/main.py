@@ -2,11 +2,18 @@
 
 from fastapi import FastAPI
 
+from app.api.notes import router as notes_router
+from app.config import settings
+
 app = FastAPI(
-    title="Obsidian-Memory",
+    title=settings.api_title,
     description="Unified memory management system for Claude Code",
-    version="0.1.0",
+    version=settings.api_version,
+    debug=settings.debug,
 )
+
+# Include routers
+app.include_router(notes_router)
 
 
 @app.get("/")
