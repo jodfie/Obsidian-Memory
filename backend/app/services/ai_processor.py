@@ -1,0 +1,586 @@
+"""AI processor service for entity extraction, relation inference, and summarization."""
+
+import asyncio
+import json
+import logging
+from typing import Any
+
+from anthropic import Anthropic, APIError, RateLimitError
+
+from app.config import settings
+from app.models.ai import (
+    DeduplicationSuggestion,
+    DeduplicationSuggestions,
+    DetectedPattern,
+    DetectedPatterns,
+    Entity,
+    EntityType,
+    ExtractedEntities,
+    InferredRelation,
+    InferredRelations,
+    SessionSummary,
+)
+from app.models.note import ParsedNote
+from app.models.search import IndexedNote
+from app.services.exceptions import AIProcessorError, AIProcessorUnavailableError
+
+logger = logging.getLogger(__name__)
+
+
+class AIProcessor:
+    """Service for AI-powered content processing using Claude API."""
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        max_retries: int | None = None,
+        timeout_seconds: int | None = None,
+    ) -> None:
+        """Initialize the AI processor.
+
+        Args:
+            api_key: Anthropic API key (defaults to settings.anthropic_api_key)
+            model: Claude model to use (defaults to settings.anthropic_model)
+            max_retries: Maximum retries for API calls (defaults to settings.ai_max_retries)
+            timeout_seconds: Timeout for API calls (defaults to settings.ai_timeout_seconds)
+        """
+        self.api_key = api_key or settings.anthropic_api_key
+        self.model = model or settings.anthropic_model
+        self.max_retries = max_retries or settings.ai_max_retries
+        self.timeout_seconds = timeout_seconds or settings.ai_timeout_seconds
+        self.enabled = settings.ai_processing_enabled
+
+        if not self.enabled:
+            logger.warning("AI processing is disabled in settings")
+            return
+
+        if not self.api_key:
+            logger.warning("Anthropic API key not configured")
+            self.enabled = False
+            return
+
+        self.client = Anthropic(api_key=self.api_key)
+
+    async def _call_claude(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int = 4096,
+    ) -> str:
+        """Make an async call to Claude API with retry logic.
+
+        Args:
+            system_prompt: System prompt for Claude
+            user_prompt: User prompt with content to process
+            max_tokens: Maximum tokens in response
+
+        Returns:
+            Response text from Claude
+
+        Raises:
+            AIProcessorUnavailableError: If AI processing is disabled
+            AIProcessorError: If API call fails after retries
+        """
+        if not self.enabled:
+            raise AIProcessorUnavailableError("AI processing is disabled")
+
+        if not self.api_key:
+            raise AIProcessorUnavailableError("Anthropic API key not configured")
+
+        # Run the synchronous API call in a thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: self.client.messages.create(
+                        model=self.model,
+                        max_tokens=max_tokens,
+                        system=system_prompt,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": user_prompt,
+                            }
+                        ],
+                    ),
+                )
+
+                if response.content and len(response.content) > 0:
+                    # Extract text from content blocks
+                    text_parts = []
+                    for block in response.content:
+                        if block.type == "text":
+                            text_parts.append(block.text)
+                    return "\n".join(text_parts)
+
+                raise AIProcessorError("Empty response from Claude API")
+
+            except RateLimitError as e:
+                if attempt < self.max_retries:
+                    wait_time = 2 ** attempt  # Exponential backoff
+                    logger.warning(
+                        f"Rate limit hit, retrying in {wait_time}s (attempt {attempt}/{self.max_retries})"
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise AIProcessorError(f"Rate limit exceeded after {self.max_retries} retries") from e
+
+            except APIError as e:
+                if attempt < self.max_retries:
+                    wait_time = 2 ** attempt
+                    logger.warning(
+                        f"API error, retrying in {wait_time}s (attempt {attempt}/{self.max_retries}): {e}"
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue
+                raise AIProcessorError(f"API call failed after {self.max_retries} retries: {e}") from e
+
+            except Exception as e:
+                raise AIProcessorError(f"Unexpected error calling Claude API: {e}") from e
+
+        raise AIProcessorError(f"Failed after {self.max_retries} retries")
+
+    def _parse_json_response(self, response_text: str) -> dict[str, Any]:
+        """Parse JSON from Claude response, handling markdown code blocks.
+
+        Args:
+            response_text: Raw response text from Claude
+
+        Returns:
+            Parsed JSON dictionary
+
+        Raises:
+            AIProcessorError: If JSON parsing fails
+        """
+        # Try to extract JSON from markdown code blocks
+        import re
+
+        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response_text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # Try to find JSON object directly
+            json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                json_str = response_text
+
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            raise AIProcessorError(f"Failed to parse JSON response: {e}") from e
+
+    async def extract_entities(
+        self,
+        content: str,
+        note_id: int | None = None,
+    ) -> ExtractedEntities:
+        """Extract entities (people, tools, concepts, errors) from note content.
+
+        Args:
+            content: Note content to analyze
+            note_id: Optional note ID for tracking
+
+        Returns:
+            ExtractedEntities with list of entities found
+        """
+        system_prompt = """You are an entity extraction system. Analyze the provided content and extract entities such as:
+- People (developers, users, authors)
+- Tools (software, libraries, frameworks, CLIs)
+- Concepts (patterns, techniques, ideas)
+- Errors (error messages, exceptions, failures)
+- Libraries and frameworks
+- Projects and files
+- Commands
+
+Return a JSON object with an "entities" array. Each entity should have:
+- entity_type: one of person, tool, concept, error, library, framework, pattern, technique, project, file, command
+- name: the entity name
+- description: brief description or context (optional)
+- confidence: confidence score 0-1 (optional, default 1.0)
+
+Example:
+{
+  "entities": [
+    {
+      "entity_type": "tool",
+      "name": "FastAPI",
+      "description": "Python web framework",
+      "confidence": 1.0
+    },
+    {
+      "entity_type": "error",
+      "name": "sqlite3.OperationalError",
+      "description": "Database operation failed",
+      "confidence": 0.9
+    }
+  ]
+}"""
+
+        user_prompt = f"Extract entities from the following content:\n\n{content}"
+
+        try:
+            response = await self._call_claude(system_prompt, user_prompt)
+            data = self._parse_json_response(response)
+
+            entities = []
+            for item in data.get("entities", []):
+                try:
+                    entity = Entity(**item)
+                    entities.append(entity)
+                except Exception as e:
+                    logger.warning(f"Failed to parse entity: {item}, error: {e}")
+
+            return ExtractedEntities(entities=entities, note_id=note_id)
+
+        except AIProcessorUnavailableError:
+            # Return empty result if AI is unavailable
+            return ExtractedEntities(entities=[], note_id=note_id)
+        except Exception as e:
+            logger.error(f"Error extracting entities: {e}")
+            return ExtractedEntities(entities=[], note_id=note_id)
+
+    async def infer_relations(
+        self,
+        note_pairs: list[tuple[ParsedNote, IndexedNote, ParsedNote, IndexedNote]],
+    ) -> InferredRelations:
+        """Automatically infer relations between pairs of notes.
+
+        Args:
+            note_pairs: List of tuples (parsed_note1, indexed_note1, parsed_note2, indexed_note2)
+
+        Returns:
+            InferredRelations with list of inferred relations
+        """
+        if not note_pairs:
+            return InferredRelations(relations=[], note_pairs_analyzed=0)
+
+        system_prompt = """You are a relation inference system. Analyze pairs of notes and determine if there are semantic relationships between them.
+
+Possible relation types:
+- depends_on: Note A depends on Note B
+- enables: Note A enables Note B
+- related_to: General relatedness
+- learned_from: Note A learned from Note B
+- supersedes: Note A supersedes Note B
+- caused_by: Note A was caused by Note B
+- solved_by: Note A's problem was solved by Note B
+- part_of: Note A is part of Note B
+- implements: Note A implements Note B
+- tests: Note A tests Note B
+- documents: Note A documents Note B
+
+Return a JSON object with a "relations" array. Each relation should have:
+- source_note_id: ID of source note (use 0-based index from pairs)
+- target_note_id: ID of target note (use 0-based index from pairs)
+- relation_type: one of the relation types above
+- confidence: confidence score 0-1
+- reasoning: brief explanation (optional)
+
+Example:
+{
+  "relations": [
+    {
+      "source_note_id": 0,
+      "target_note_id": 1,
+      "relation_type": "depends_on",
+      "confidence": 0.9,
+      "reasoning": "Note 0 explicitly mentions using concepts from Note 1"
+    }
+  ]
+}"""
+
+        # Format note pairs for analysis
+        pairs_text = []
+        for idx, (parsed1, indexed1, parsed2, indexed2) in enumerate(note_pairs):
+            pairs_text.append(
+                f"Pair {idx}:\n"
+                f"Note 1 (ID {idx*2}): {parsed1.frontmatter.title}\n"
+                f"Content: {parsed1.raw_content[:500]}...\n"
+                f"Note 2 (ID {idx*2+1}): {parsed2.frontmatter.title}\n"
+                f"Content: {parsed2.raw_content[:500]}...\n"
+            )
+
+        user_prompt = f"Analyze these note pairs and infer relations:\n\n{''.join(pairs_text)}"
+
+        try:
+            response = await self._call_claude(system_prompt, user_prompt)
+            data = self._parse_json_response(response)
+
+            relations = []
+            for item in data.get("relations", []):
+                try:
+                    # Map 0-based indices back to actual note IDs
+                    # Each pair has 2 notes, so max index is len(note_pairs) * 2 - 1
+                    source_idx = item.get("source_note_id", 0)
+                    target_idx = item.get("target_note_id", 0)
+                    max_index = len(note_pairs) * 2
+                    if source_idx < max_index and target_idx < max_index:
+                        # For now, use the index as a placeholder
+                        # In real implementation, would need actual note IDs from IndexedNote
+                        relation = InferredRelation(
+                            source_note_id=source_idx,
+                            target_note_id=target_idx,
+                            relation_type=item.get("relation_type", "related_to"),
+                            confidence=item.get("confidence", 1.0),
+                            reasoning=item.get("reasoning"),
+                        )
+                        relations.append(relation)
+                except Exception as e:
+                    logger.warning(f"Failed to parse relation: {item}, error: {e}")
+
+            return InferredRelations(
+                relations=relations, note_pairs_analyzed=len(note_pairs)
+            )
+
+        except AIProcessorUnavailableError:
+            return InferredRelations(relations=[], note_pairs_analyzed=len(note_pairs))
+        except Exception as e:
+            logger.error(f"Error inferring relations: {e}")
+            return InferredRelations(relations=[], note_pairs_analyzed=len(note_pairs))
+
+    async def summarize_session(
+        self,
+        session_content: str,
+        max_length: int = 1000,
+    ) -> SessionSummary:
+        """Summarize a session log into key learnings.
+
+        Args:
+            session_content: Full session log content
+            max_length: Maximum length of summary text
+
+        Returns:
+            SessionSummary with key learnings, decisions, errors, etc.
+        """
+        system_prompt = """You are a session summarization system. Analyze a session log and extract:
+- Key learnings (important insights, discoveries)
+- Decisions made (architectural, implementation choices)
+- Errors encountered (problems, failures)
+- Solutions found (how errors were resolved)
+- Next steps (suggested actions)
+
+Return a JSON object with:
+- key_learnings: array of strings
+- decisions: array of strings
+- errors_encountered: array of strings
+- solutions_found: array of strings
+- next_steps: array of strings
+- summary_text: overall summary (max {max_length} chars)
+- compression_ratio: ratio of summary length to original length
+
+Example:
+{{
+  "key_learnings": ["FastAPI requires async dependencies", "SQLite FTS5 has limitations"],
+  "decisions": ["Use httpx.AsyncClient for tests", "Store content separately from FTS"],
+  "errors_encountered": ["sqlite3.OperationalError: no such column"],
+  "solutions_found": ["Use DELETE+INSERT for FTS updates"],
+  "next_steps": ["Add content caching", "Implement retry logic"],
+  "summary_text": "Session focused on fixing SQLite FTS5 issues...",
+  "compression_ratio": 0.15
+}}""".format(
+            max_length=max_length
+        )
+
+        user_prompt = f"Summarize this session:\n\n{session_content}"
+
+        try:
+            response = await self._call_claude(system_prompt, user_prompt, max_tokens=2048)
+            data = self._parse_json_response(response)
+
+            original_length = len(session_content)
+            summary_text = data.get("summary_text", "")[:max_length]
+            compression_ratio = (
+                len(summary_text) / original_length if original_length > 0 else 0.0
+            )
+
+            return SessionSummary(
+                key_learnings=data.get("key_learnings", []),
+                decisions=data.get("decisions", []),
+                errors_encountered=data.get("errors_encountered", []),
+                solutions_found=data.get("solutions_found", []),
+                next_steps=data.get("next_steps", []),
+                summary_text=summary_text,
+                compression_ratio=compression_ratio,
+            )
+
+        except AIProcessorUnavailableError:
+            # Return minimal summary if AI unavailable
+            return SessionSummary(
+                key_learnings=[],
+                decisions=[],
+                errors_encountered=[],
+                solutions_found=[],
+                next_steps=[],
+                summary_text="AI processing unavailable",
+                compression_ratio=0.0,
+            )
+        except Exception as e:
+            logger.error(f"Error summarizing session: {e}")
+            return SessionSummary(
+                key_learnings=[],
+                decisions=[],
+                errors_encountered=[],
+                solutions_found=[],
+                next_steps=[],
+                summary_text=f"Error: {e}",
+                compression_ratio=0.0,
+            )
+
+    async def detect_patterns(
+        self,
+        notes: list[tuple[ParsedNote, IndexedNote]],
+    ) -> DetectedPatterns:
+        """Detect recurring patterns across multiple notes.
+
+        Args:
+            notes: List of tuples (parsed_note, indexed_note)
+
+        Returns:
+            DetectedPatterns with list of detected patterns
+        """
+        if not notes:
+            return DetectedPatterns(patterns=[], notes_analyzed=0)
+
+        system_prompt = """You are a pattern detection system. Analyze multiple notes and identify recurring patterns such as:
+- Common solutions to similar problems
+- Repeated techniques or approaches
+- Similar error patterns
+- Common architectural decisions
+- Recurring implementation patterns
+
+Return a JSON object with a "patterns" array. Each pattern should have:
+- pattern_name: descriptive name
+- description: what the pattern represents
+- note_ids: array of note indices (0-based) that exhibit this pattern
+- frequency: number of occurrences
+- confidence: confidence score 0-1
+- category: optional category (solution, technique, error, etc.)
+
+Example:
+{
+  "patterns": [
+    {
+      "pattern_name": "FTS5 Update Pattern",
+      "description": "Using DELETE+INSERT instead of UPDATE for FTS5 tables",
+      "note_ids": [0, 3, 5],
+      "frequency": 3,
+      "confidence": 0.95,
+      "category": "solution"
+    }
+  ]
+}"""
+
+        # Format notes for analysis
+        notes_text = []
+        for idx, (parsed, indexed) in enumerate(notes):
+            notes_text.append(
+                f"Note {idx}: {parsed.frontmatter.title}\n"
+                f"Type: {parsed.frontmatter.type}\n"
+                f"Content: {parsed.raw_content[:500]}...\n"
+            )
+
+        user_prompt = f"Detect patterns across these notes:\n\n{''.join(notes_text)}"
+
+        try:
+            response = await self._call_claude(system_prompt, user_prompt, max_tokens=2048)
+            data = self._parse_json_response(response)
+
+            patterns = []
+            for item in data.get("patterns", []):
+                try:
+                    pattern = DetectedPattern(
+                        pattern_name=item.get("pattern_name", "Unknown Pattern"),
+                        description=item.get("description", ""),
+                        note_ids=item.get("note_ids", []),
+                        frequency=item.get("frequency", len(item.get("note_ids", []))),
+                        confidence=item.get("confidence", 1.0),
+                        category=item.get("category"),
+                    )
+                    patterns.append(pattern)
+                except Exception as e:
+                    logger.warning(f"Failed to parse pattern: {item}, error: {e}")
+
+            return DetectedPatterns(patterns=patterns, notes_analyzed=len(notes))
+
+        except AIProcessorUnavailableError:
+            return DetectedPatterns(patterns=[], notes_analyzed=len(notes))
+        except Exception as e:
+            logger.error(f"Error detecting patterns: {e}")
+            return DetectedPatterns(patterns=[], notes_analyzed=len(notes))
+
+    async def suggest_deduplication(
+        self,
+        notes: list[tuple[ParsedNote, IndexedNote]],
+    ) -> DeduplicationSuggestions:
+        """Suggest duplicate notes that could be merged or linked.
+
+        Args:
+            notes: List of tuples (parsed_note, indexed_note)
+
+        Returns:
+            DeduplicationSuggestions with list of suggestions
+        """
+        if not notes:
+            return DeduplicationSuggestions(suggestions=[], notes_analyzed=0)
+
+        system_prompt = """You are a deduplication analysis system. Analyze notes and identify potential duplicates that could be merged or linked.
+
+Return a JSON object with a "suggestions" array. Each suggestion should have:
+- note_ids: array of note indices (0-based) that are duplicates
+- similarity_score: similarity score 0-1
+- reasoning: why these notes are considered duplicates
+- suggested_action: one of "merge", "link", or "keep_separate"
+
+Example:
+{
+  "suggestions": [
+    {
+      "note_ids": [0, 2],
+      "similarity_score": 0.92,
+      "reasoning": "Both notes describe the same solution to FTS5 update issues",
+      "suggested_action": "merge"
+    }
+  ]
+}"""
+
+        # Format notes for analysis
+        notes_text = []
+        for idx, (parsed, indexed) in enumerate(notes):
+            notes_text.append(
+                f"Note {idx}: {parsed.frontmatter.title}\n"
+                f"Content: {parsed.raw_content[:500]}...\n"
+            )
+
+        user_prompt = f"Analyze these notes for duplicates:\n\n{''.join(notes_text)}"
+
+        try:
+            response = await self._call_claude(system_prompt, user_prompt, max_tokens=2048)
+            data = self._parse_json_response(response)
+
+            suggestions = []
+            for item in data.get("suggestions", []):
+                try:
+                    suggestion = DeduplicationSuggestion(
+                        note_ids=item.get("note_ids", []),
+                        similarity_score=item.get("similarity_score", 0.0),
+                        reasoning=item.get("reasoning", ""),
+                        suggested_action=item.get("suggested_action", "keep_separate"),
+                    )
+                    suggestions.append(suggestion)
+                except Exception as e:
+                    logger.warning(f"Failed to parse suggestion: {item}, error: {e}")
+
+            return DeduplicationSuggestions(
+                suggestions=suggestions, notes_analyzed=len(notes)
+            )
+
+        except AIProcessorUnavailableError:
+            return DeduplicationSuggestions(suggestions=[], notes_analyzed=len(notes))
+        except Exception as e:
+            logger.error(f"Error suggesting deduplication: {e}")
+            return DeduplicationSuggestions(suggestions=[], notes_analyzed=len(notes))

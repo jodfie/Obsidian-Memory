@@ -20,6 +20,18 @@ from app.models.note import (
     RelationType,
     Wikilink,
 )
+from app.models.ai import (
+    DeduplicationSuggestion,
+    DeduplicationSuggestions,
+    DetectedPattern,
+    DetectedPatterns,
+    Entity,
+    EntityType,
+    ExtractedEntities,
+    InferredRelation,
+    InferredRelations,
+    SessionSummary,
+)
 from app.models.search import (
     IndexedNote,
     SearchQuery,
@@ -34,11 +46,20 @@ from app.models.vault import (
 )
 
 __all__ = [
+    "DeduplicationSuggestion",
+    "DeduplicationSuggestions",
+    "DetectedPattern",
+    "DetectedPatterns",
     "Edge",
     "EdgeType",
+    "Entity",
+    "EntityType",
+    "ExtractedEntities",
     "Frontmatter",
     "Graph",
     "IndexedNote",
+    "InferredRelation",
+    "InferredRelations",
     "Node",
     "NoteType",
     "Observation",
@@ -49,6 +70,7 @@ __all__ = [
     "SearchQuery",
     "SearchResult",
     "SearchResults",
+    "SessionSummary",
     "SortOrder",
     "VaultConfig",
     "VaultFile",

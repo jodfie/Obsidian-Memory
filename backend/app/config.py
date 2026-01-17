@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +28,21 @@ class Settings(BaseSettings):
 
     # Search Index Configuration
     index_db_path: Path = Path.home() / ".obsidian-memory" / "index.db"
+
+    # AI Processing Configuration
+    anthropic_api_key: str | None = Field(default=None, description="Anthropic API key")
+    anthropic_model: str = Field(
+        default="claude-3-5-sonnet-20241022", description="Claude model to use"
+    )
+    ai_processing_enabled: bool = Field(
+        default=True, description="Enable AI processing features"
+    )
+    ai_max_retries: int = Field(
+        default=3, ge=1, le=10, description="Maximum retries for AI API calls"
+    )
+    ai_timeout_seconds: int = Field(
+        default=60, ge=10, le=300, description="Timeout for AI API calls in seconds"
+    )
 
     # Logging Configuration
     log_level: str = "INFO"

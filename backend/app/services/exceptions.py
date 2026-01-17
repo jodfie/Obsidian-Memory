@@ -52,3 +52,15 @@ class InvalidRelationError(ParseError):
     """Relation doesn't match expected format."""
 
     pass
+
+
+class AIProcessorError(Exception):
+    """Base exception for AI processing errors."""
+
+    pass
+
+
+class AIProcessorUnavailableError(AIProcessorError):
+    """Raised when AI processing is disabled or unavailable."""
+
+    pass
