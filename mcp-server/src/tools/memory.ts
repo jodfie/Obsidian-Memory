@@ -4,6 +4,10 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ApiClient } from '../client.js';
+import {
+  buildContextTool,
+  handleBuildContext,
+} from './context.js';
 
 const API_BASE_URL = process.env.OBSIDIAN_MEMORY_API_URL || 'http://localhost:8000';
 const client = new ApiClient(API_BASE_URL);
@@ -12,6 +16,7 @@ const client = new ApiClient(API_BASE_URL);
  * Tool definitions for memory operations.
  */
 export const memoryTools: Tool[] = [
+  buildContextTool,
   {
     name: 'mem_read',
     description: 'Read a note from Obsidian-Memory by ID, permalink, or search query. Returns the full note content with metadata.',
