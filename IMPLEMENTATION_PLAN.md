@@ -30,11 +30,11 @@
 ## Phase 3: AI Processing
 
 ### Priority: High
-- [ ] **M** AI processor service (Claude API)
-- [ ] **L** Entity extraction from content
-- [ ] **L** Automatic relation inference
-- [ ] **M** Session summarization
-- [ ] **L** Pattern detection
+- [x] **M** AI processor service (Claude API)
+- [x] **L** Entity extraction from content
+- [x] **L** Automatic relation inference
+- [x] **M** Session summarization
+- [x] **L** Pattern detection
 
 ## Phase 4-8: See specs/ for details
 
