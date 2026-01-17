@@ -153,4 +153,72 @@ export class ApiClient {
     }
     return response.json();
   }
+
+  /**
+   * List all projects.
+   */
+  async listProjects(): Promise<{ projects: Array<{ name: string; note_count: number }> }> {
+    const response = await fetch(`${this.baseUrl}/api/projects`);
+    if (!response.ok) {
+      throw new Error(`Failed to list projects: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  /**
+   * List notes for a specific project.
+   */
+  async listProjectNotes(
+    projectName: string,
+    limit?: number,
+    offset?: number
+  ): Promise<{
+    project: string;
+    notes: Array<{
+      note_id: number;
+      title: string;
+      permalink: string | null;
+      note_type: string;
+      updated_at: string | null;
+    }>;
+    total_count: number;
+    limit: number;
+    offset: number;
+  }> {
+    const queryParams = new URLSearchParams();
+    if (limit) queryParams.append('limit', limit.toString());
+    if (offset) queryParams.append('offset', offset.toString());
+
+    const url = `${this.baseUrl}/api/projects/${encodeURIComponent(projectName)}/notes${queryParams.toString() ? `?${queryParams}` : ''}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error(`Project "${projectName}" not found`);
+      }
+      throw new Error(`Failed to list project notes: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  /**
+   * Create a new project.
+   */
+  async createProject(projectName: string): Promise<{
+    project: string;
+    status: string;
+    message: string;
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/projects`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ project_name: projectName }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(`Failed to create project: ${error.detail || response.statusText}`);
+    }
+    return response.json();
+  }
 }
