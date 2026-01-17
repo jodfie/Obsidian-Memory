@@ -149,6 +149,43 @@ export async function listSessions(params?: {
 }
 
 /**
+ * Create a new note.
+ */
+export async function createNote(request: {
+  title: string;
+  content: string;
+  relative_path: string;
+  vault_name?: string | null;
+  note_type?: string;
+  project?: string | null;
+  tags?: string[];
+}): Promise<Note> {
+  return fetchAPI<Note>('/api/notes', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
+ * Update an existing note.
+ */
+export async function updateNote(
+  id: number,
+  request: {
+    title?: string | null;
+    content?: string | null;
+    note_type?: string | null;
+    project?: string | null;
+    tags?: string[] | null;
+  }
+): Promise<Note> {
+  return fetchAPI<Note>(`/api/notes/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(request),
+  });
+}
+
+/**
  * Get health status.
  */
 export async function getHealth(): Promise<{ status: string }> {
