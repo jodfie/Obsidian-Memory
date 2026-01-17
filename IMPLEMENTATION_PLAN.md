@@ -25,7 +25,7 @@
 - [x] **M** Relation parsing from markdown
 - [x] **M** Graph traversal queries
 - [x] **L** build_context tool (memory:// URI patterns)
-- [ ] **M** MCP tools: graph_traverse, graph_similar
+- [x] **M** MCP tools: graph_traverse, graph_similar
 
 ## Phase 3: AI Processing
 
