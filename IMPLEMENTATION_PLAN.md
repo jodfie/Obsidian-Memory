@@ -22,7 +22,7 @@
 ### Priority: High
 - [x] **M** Graph engine (compute nodes/edges from markdown)
 - [x] **M** Wikilink extraction and resolution
-- [ ] **M** Relation parsing from markdown
+- [x] **M** Relation parsing from markdown
 - [ ] **M** Graph traversal queries
 - [ ] **L** build_context tool (memory:// URI patterns)
 - [ ] **M** MCP tools: graph_traverse, graph_similar
