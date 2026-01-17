@@ -20,7 +20,7 @@
 ## Phase 2: Knowledge Graph
 
 ### Priority: High
-- [ ] **M** Graph engine (compute nodes/edges from markdown)
+- [x] **M** Graph engine (compute nodes/edges from markdown)
 - [ ] **M** Wikilink extraction and resolution
 - [ ] **M** Relation parsing from markdown
 - [ ] **M** Graph traversal queries

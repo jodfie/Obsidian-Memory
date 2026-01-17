@@ -1,5 +1,11 @@
 """Pydantic models for data validation."""
 
+from app.models.graph import (
+    Edge,
+    EdgeType,
+    Graph,
+    Node,
+)
 from app.models.note import (
     Frontmatter,
     NoteType,
@@ -10,6 +16,13 @@ from app.models.note import (
     RelationType,
     Wikilink,
 )
+from app.models.search import (
+    IndexedNote,
+    SearchQuery,
+    SearchResult,
+    SearchResults,
+    SortOrder,
+)
 from app.models.vault import (
     VaultConfig,
     VaultFile,
@@ -17,13 +30,22 @@ from app.models.vault import (
 )
 
 __all__ = [
+    "Edge",
+    "EdgeType",
     "Frontmatter",
+    "Graph",
+    "IndexedNote",
+    "Node",
     "NoteType",
     "Observation",
     "ObservationCategory",
     "ParsedNote",
     "Relation",
     "RelationType",
+    "SearchQuery",
+    "SearchResult",
+    "SearchResults",
+    "SortOrder",
     "VaultConfig",
     "VaultFile",
     "VaultManagerConfig",
