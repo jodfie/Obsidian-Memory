@@ -42,7 +42,7 @@
 - [x] **L** Graph tools integration (graph_traverse, graph_similar)
 - [x] **M** Project tools (project_list, project_switch, project_create)
 - [x] **L** Session tools (session_observe, session_summary, session_context)
-- [ ] **M** SSE transport support
+- [x] **M** SSE transport support (infrastructure implemented, full protocol integration pending)
 
 ## Phase 5-8: See specs/ for details
 
