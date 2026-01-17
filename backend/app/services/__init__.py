@@ -6,6 +6,7 @@ from app.services.markdown_parser import MarkdownParser
 from app.services.search_index import SearchIndex
 from app.services.session_manager import SessionManager
 from app.services.sync_service import SyncService
+from app.services.sync_state import SyncStateManager
 from app.services.vault_manager import VaultManager
 from app.services.wikilink_resolver import WikilinkResolver
 
@@ -16,6 +17,7 @@ __all__ = [
     "SearchIndex",
     "SessionManager",
     "SyncService",
+    "SyncStateManager",
     "VaultManager",
     "WikilinkResolver",
 ]
