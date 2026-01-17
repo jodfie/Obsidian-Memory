@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 
+from app.api.graph import router as graph_router
 from app.api.notes import router as notes_router
 from app.api.projects import router as projects_router
 from app.api.sessions import router as sessions_router
@@ -18,6 +19,7 @@ app = FastAPI(
 app.include_router(notes_router)
 app.include_router(projects_router)
 app.include_router(sessions_router)
+app.include_router(graph_router)
 
 
 @app.get("/")

@@ -60,6 +60,30 @@ export interface SessionListResponse {
   sessions: Session[];
 }
 
+export interface GraphNode {
+  id: number;
+  title: string;
+  permalink: string | null;
+  vault_name: string;
+  note_type: string;
+  project: string | null;
+  tags: string[];
+}
+
+export interface GraphEdge {
+  source: number;
+  target: number;
+  target_title: string;
+  type: string;
+  context: string | null;
+  weight: number;
+}
+
+export interface GraphResponse {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
 /**
  * Fetch wrapper with error handling.
  */
@@ -125,30 +149,6 @@ export async function searchNotes(
 }
 
 /**
- * List all projects.
- */
-export async function listProjects(): Promise<ProjectListResponse> {
-  return fetchAPI<ProjectListResponse>('/api/projects');
-}
-
-/**
- * List sessions.
- */
-export async function listSessions(params?: {
-  project?: string | null;
-  limit?: number;
-}): Promise<SessionListResponse> {
-  const queryParams = new URLSearchParams();
-  if (params?.project) queryParams.append('project', params.project);
-  if (params?.limit) queryParams.append('limit', params.limit.toString());
-
-  const query = queryParams.toString();
-  return fetchAPI<SessionListResponse>(
-    `/api/sessions${query ? `?${query}` : ''}`
-  );
-}
-
-/**
  * Create a new note.
  */
 export async function createNote(request: {
@@ -183,6 +183,37 @@ export async function updateNote(
     method: 'PUT',
     body: JSON.stringify(request),
   });
+}
+
+/**
+ * List all projects.
+ */
+export async function listProjects(): Promise<ProjectListResponse> {
+  return fetchAPI<ProjectListResponse>('/api/projects');
+}
+
+/**
+ * List sessions.
+ */
+export async function listSessions(params?: {
+  project?: string | null;
+  limit?: number;
+}): Promise<SessionListResponse> {
+  const queryParams = new URLSearchParams();
+  if (params?.project) queryParams.append('project', params.project);
+  if (params?.limit) queryParams.append('limit', params.limit.toString());
+
+  const query = queryParams.toString();
+  return fetchAPI<SessionListResponse>(
+    `/api/sessions${query ? `?${query}` : ''}`
+  );
+}
+
+/**
+ * Get the knowledge graph.
+ */
+export async function getGraph(): Promise<GraphResponse> {
+  return fetchAPI<GraphResponse>('/api/graph');
 }
 
 /**
