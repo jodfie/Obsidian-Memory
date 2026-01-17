@@ -58,7 +58,7 @@
 ### Priority: High
 - [x] **M** Dashboard with recent activity, stats, quick search
 - [x] **M** Notes browser with filtering and sorting
-- [ ] **M** Markdown editor with live preview (split view)
+- [x] **M** Markdown editor with live preview (split view)
 - [ ] **M** Interactive knowledge graph visualization
 - [ ] **L** Project management interface
 - [ ] **L** Session history and timeline view
