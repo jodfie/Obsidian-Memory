@@ -14,6 +14,7 @@ from app.api.sync import router as sync_router
 from app.config import settings
 from app.middleware.auth import auth_middleware
 from app.middleware.cloudflare_access import cloudflare_access_middleware
+from app.middleware.compression import compression_middleware
 from app.middleware.error_handler import error_handler_middleware
 from app.middleware.logging import logging_middleware
 from app.utils.logging import get_logger, setup_logging
@@ -31,6 +32,9 @@ app = FastAPI(
 
 # Add error handler middleware first (outermost)
 app.add_middleware(BaseHTTPMiddleware, dispatch=error_handler_middleware)
+
+# Add compression middleware (before logging to compress responses)
+app.add_middleware(BaseHTTPMiddleware, dispatch=compression_middleware)
 
 # Add logging middleware
 app.add_middleware(BaseHTTPMiddleware, dispatch=logging_middleware)
