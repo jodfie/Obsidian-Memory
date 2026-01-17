@@ -39,6 +39,13 @@ from app.models.search import (
     SearchResults,
     SortOrder,
 )
+from app.models.session import (
+    Session,
+    SessionEvent,
+    SessionEventType,
+    SessionContextRequest,
+    SessionObserveRequest,
+)
 from app.models.vault import (
     VaultConfig,
     VaultFile,
@@ -70,6 +77,11 @@ __all__ = [
     "SearchQuery",
     "SearchResult",
     "SearchResults",
+    "Session",
+    "SessionContextRequest",
+    "SessionEvent",
+    "SessionEventType",
+    "SessionObserveRequest",
     "SessionSummary",
     "SortOrder",
     "VaultConfig",

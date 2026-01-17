@@ -26,6 +26,11 @@ import {
   handleProjectList,
   handleProjectSwitch,
 } from './tools/project.js';
+import {
+  handleSessionContext,
+  handleSessionObserve,
+  handleSessionSummary,
+} from './tools/session.js';
 
 /**
  * Initialize and start the MCP server.
@@ -143,6 +148,36 @@ async function main(): Promise<void> {
               {
                 type: 'text',
                 text: JSON.stringify(await handleProjectCreate(args as Parameters<typeof handleProjectCreate>[0]), null, 2),
+              },
+            ],
+          };
+
+        case 'session_observe':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleSessionObserve(args as Parameters<typeof handleSessionObserve>[0]), null, 2),
+              },
+            ],
+          };
+
+        case 'session_summary':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleSessionSummary(args as Parameters<typeof handleSessionSummary>[0]), null, 2),
+              },
+            ],
+          };
+
+        case 'session_context':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleSessionContext(args as Parameters<typeof handleSessionContext>[0]), null, 2),
               },
             ],
           };
