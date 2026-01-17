@@ -11,6 +11,31 @@ import {
   type Session,
 } from '../lib/api';
 
+// Quick search component
+function QuickSearch() {
+  const [query, setQuery] = useState('');
+  
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (query.trim()) {
+          window.location.href = `/notes?search=${encodeURIComponent(query)}`;
+        }
+      }}
+      className="mb-6"
+    >
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Quick search notes..."
+        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </form>
+  );
+}
+
 export default function Dashboard() {
   const [recentNotes, setRecentNotes] = useState<Note[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -82,9 +107,19 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-8">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8 text-gray-900 dark:text-white">
-          Dashboard
-        </h1>
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Dashboard
+          </h1>
+          <Link
+            href="/graph"
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+          >
+            View Graph
+          </Link>
+        </div>
+
+        <QuickSearch />
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

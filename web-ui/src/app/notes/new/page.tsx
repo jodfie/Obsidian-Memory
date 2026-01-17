@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import MarkdownEditor from '../../components/MarkdownEditor';
+import MarkdownEditor from '../../../components/MarkdownEditor';
 import { type Note } from '../../../lib/api';
 
 export default function NewNotePage() {
