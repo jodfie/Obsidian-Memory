@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     config_file: Path = Path.home() / ".obsidian-memory" / "config.json"
     default_vault: str | None = None
 
+    # Search Index Configuration
+    index_db_path: Path = Path.home() / ".obsidian-memory" / "index.db"
+
     # Logging Configuration
     log_level: str = "INFO"
 
