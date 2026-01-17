@@ -221,4 +221,131 @@ export class ApiClient {
     }
     return response.json();
   }
+
+  /**
+   * Create a new session.
+   */
+  async createSession(project?: string | null): Promise<{
+    session_id: string;
+    project: string | null;
+    started_at: string;
+    status: string;
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ project: project || null }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(`Failed to create session: ${error.detail || response.statusText}`);
+    }
+    return response.json();
+  }
+
+  /**
+   * Observe/add an event to a session.
+   */
+  async observeSessionEvent(
+    sessionId: string,
+    eventType: string,
+    content: string,
+    metadata?: Record<string, unknown>
+  ): Promise<{
+    session_id: string;
+    event_count: number;
+    status: string;
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/sessions/observe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        event_type: eventType,
+        content: content,
+        metadata: metadata || {},
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(`Failed to observe event: ${error.detail || response.statusText}`);
+    }
+    return response.json();
+  }
+
+  /**
+   * Summarize a session.
+   */
+  async summarizeSession(sessionId: string): Promise<{
+    key_learnings: string[];
+    decisions: string[];
+    errors_encountered: string[];
+    solutions_found: string[];
+    next_steps: string[];
+    summary_text: string;
+    compression_ratio: number;
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/sessions/${sessionId}/summary`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(`Failed to summarize session: ${error.detail || response.statusText}`);
+    }
+    return response.json();
+  }
+
+  /**
+   * Get session context.
+   */
+  async getSessionContext(
+    sessionId: string,
+    includeEvents: boolean = true,
+    includeSummary: boolean = true,
+    limit: number = 50
+  ): Promise<{
+    session_id: string;
+    project: string | null;
+    started_at: string;
+    ended_at: string | null;
+    status: string;
+    event_count: number;
+    events?: Array<{
+      event_type: string;
+      content: string;
+      timestamp: string;
+      metadata: Record<string, unknown>;
+    }>;
+    summary?: {
+      key_learnings: string[];
+      decisions: string[];
+      errors_encountered: string[];
+      solutions_found: string[];
+      next_steps: string[];
+      summary_text: string;
+      compression_ratio: number;
+    };
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/sessions/context`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+        include_events: includeEvents,
+        include_summary: includeSummary,
+        limit: limit,
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(`Failed to get session context: ${error.detail || response.statusText}`);
+    }
+    return response.json();
+  }
 }
