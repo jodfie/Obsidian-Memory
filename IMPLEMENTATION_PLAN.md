@@ -64,7 +64,15 @@
 - [x] **L** Session history and timeline view
 - [x] **L** Settings and configuration UI
 
-## Phase 7-8: See specs/ for details
+## Phase 7: Sync & Auth
+
+### Priority: Medium
+- [x] **M** Git sync service (initialize, commit, pull, push, sync)
+- [x] **M** Conflict detection and resolution
+- [ ] **L** Cloudflare Access integration
+- [ ] **L** Cross-device sync enhancements
+
+## Phase 8: See specs/ for details
 
 ---
 
