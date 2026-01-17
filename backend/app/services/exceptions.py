@@ -64,3 +64,21 @@ class AIProcessorUnavailableError(AIProcessorError):
     """Raised when AI processing is disabled or unavailable."""
 
     pass
+
+
+class SyncError(VaultError):
+    """Base exception for sync operations."""
+
+    pass
+
+
+class GitNotAvailableError(SyncError):
+    """Raised when Git is not available."""
+
+    pass
+
+
+class SyncConflictError(SyncError):
+    """Raised when sync conflicts are detected."""
+
+    pass
