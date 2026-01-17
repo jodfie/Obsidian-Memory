@@ -1,6 +1,18 @@
 """Graph engine for computing knowledge graph from markdown notes."""
 
-from app.models.graph import Edge, EdgeType, Graph, Node
+from collections import deque
+from typing import Callable
+
+from app.models.graph import (
+    Edge,
+    EdgeType,
+    Graph,
+    GraphPath,
+    Node,
+    PathStep,
+    TraversalQuery,
+    TraversalResult,
+)
 from app.models.note import ParsedNote, Relation, RelationType, Wikilink
 from app.models.search import IndexedNote
 
@@ -141,3 +153,366 @@ class GraphEngine:
     def clear(self) -> None:
         """Clear the entire graph."""
         self.graph = Graph()
+
+    # Graph Traversal Methods
+
+    def _get_edges_for_traversal(
+        self, node_id: int, direction: str, edge_types: list[EdgeType] | None
+    ) -> list[Edge]:
+        """Get edges for traversal based on direction and type filters."""
+        if direction == "outgoing":
+            edges = self.get_outgoing_edges(node_id)
+        elif direction == "incoming":
+            edges = self.get_incoming_edges(node_id)
+        else:  # both
+            edges = self.get_outgoing_edges(node_id) + self.get_incoming_edges(
+                node_id
+            )
+
+        # Filter by edge types
+        if edge_types:
+            edges = [e for e in edges if e.edge_type in edge_types]
+
+        # Only include resolved edges
+        return [e for e in edges if e.target_id is not None]
+
+    def traverse_bfs(
+        self, query: TraversalQuery
+    ) -> TraversalResult:
+        """
+        Breadth-first search traversal of the graph.
+
+        Args:
+            query: Traversal query parameters
+
+        Returns:
+            TraversalResult with visited nodes
+        """
+        visited: list[int] = []
+        queue: deque[tuple[int, int]] = deque(
+            [(query.start_node_id, 0)]
+        )  # (node_id, depth)
+        seen: set[int] = {query.start_node_id}
+        exclude = set(query.exclude_nodes)
+
+        while queue:
+            node_id, depth = queue.popleft()
+
+            if depth > query.max_depth:
+                continue
+
+            if node_id not in exclude:
+                visited.append(node_id)
+
+            # If we found the target, we can stop (optional)
+            if query.target_node_id and node_id == query.target_node_id:
+                break
+
+            # Get neighbors
+            edges = self._get_edges_for_traversal(
+                node_id, query.direction, query.edge_types
+            )
+
+            for edge in edges:
+                # Determine next node based on edge direction
+                if query.direction == "outgoing":
+                    # Follow edge forward: source -> target
+                    if edge.source_id == node_id and edge.target_id is not None:
+                        next_id = edge.target_id
+                    else:
+                        continue
+                elif query.direction == "incoming":
+                    # Follow edge backward: target -> source
+                    if edge.target_id == node_id:
+                        next_id = edge.source_id
+                    else:
+                        continue
+                else:  # both
+                    # Can go either direction
+                    if edge.source_id == node_id and edge.target_id is not None:
+                        next_id = edge.target_id
+                    elif edge.target_id == node_id:
+                        next_id = edge.source_id
+                    else:
+                        continue
+
+                if next_id not in seen and next_id not in exclude:
+                    seen.add(next_id)
+                    queue.append((next_id, depth + 1))
+
+        return TraversalResult(
+            visited_nodes=visited,
+            paths=[],
+            depth_reached=query.max_depth,
+        )
+
+    def traverse_dfs(
+        self, query: TraversalQuery
+    ) -> TraversalResult:
+        """
+        Depth-first search traversal of the graph.
+
+        Args:
+            query: Traversal query parameters
+
+        Returns:
+            TraversalResult with visited nodes
+        """
+        visited: list[int] = []
+        stack: list[tuple[int, int]] = [
+            (query.start_node_id, 0)
+        ]  # (node_id, depth)
+        seen: set[int] = {query.start_node_id}
+        exclude = set(query.exclude_nodes)
+
+        while stack:
+            node_id, depth = stack.pop()
+
+            if depth > query.max_depth:
+                continue
+
+            if node_id not in exclude:
+                visited.append(node_id)
+
+            # If we found the target, we can stop (optional)
+            if query.target_node_id and node_id == query.target_node_id:
+                break
+
+            # Get neighbors (reverse order for DFS stack behavior)
+            edges = self._get_edges_for_traversal(
+                node_id, query.direction, query.edge_types
+            )
+
+            for edge in reversed(edges):
+                # Determine next node based on edge direction
+                if query.direction == "outgoing":
+                    # Follow edge forward: source -> target
+                    if edge.source_id == node_id and edge.target_id is not None:
+                        next_id = edge.target_id
+                    else:
+                        continue
+                elif query.direction == "incoming":
+                    # Follow edge backward: target -> source
+                    if edge.target_id == node_id:
+                        next_id = edge.source_id
+                    else:
+                        continue
+                else:  # both
+                    # Can go either direction
+                    if edge.source_id == node_id and edge.target_id is not None:
+                        next_id = edge.target_id
+                    elif edge.target_id == node_id:
+                        next_id = edge.source_id
+                    else:
+                        continue
+
+                if next_id not in seen and next_id not in exclude:
+                    seen.add(next_id)
+                    stack.append((next_id, depth + 1))
+
+        return TraversalResult(
+            visited_nodes=visited,
+            paths=[],
+            depth_reached=query.max_depth,
+        )
+
+    def find_shortest_path(
+        self,
+        start_id: int,
+        target_id: int,
+        max_depth: int = 10,
+        edge_types: list[EdgeType] | None = None,
+        direction: str = "outgoing",
+    ) -> GraphPath | None:
+        """
+        Find shortest path between two nodes using BFS.
+
+        Args:
+            start_id: Starting node ID
+            target_id: Target node ID
+            max_depth: Maximum path length
+            edge_types: Filter by edge types
+            direction: Traversal direction
+
+        Returns:
+            GraphPath if found, None otherwise
+        """
+        if start_id == target_id:
+            return GraphPath(steps=[], total_weight=0.0, length=0)
+
+        # BFS with path tracking
+        queue: deque[tuple[int, list[PathStep], float]] = deque(
+            [(start_id, [], 0.0)]
+        )
+        seen: set[int] = {start_id}
+
+        while queue:
+            node_id, path, total_weight = queue.popleft()
+
+            if len(path) >= max_depth:
+                continue
+
+            edges = self._get_edges_for_traversal(node_id, direction, edge_types)
+
+            for edge in edges:
+                # Determine next node based on edge direction
+                if direction == "outgoing":
+                    if edge.source_id == node_id and edge.target_id is not None:
+                        next_id = edge.target_id
+                    else:
+                        continue
+                elif direction == "incoming":
+                    if edge.target_id == node_id:
+                        next_id = edge.source_id
+                    else:
+                        continue
+                else:  # both
+                    if edge.source_id == node_id and edge.target_id is not None:
+                        next_id = edge.target_id
+                    elif edge.target_id == node_id:
+                        next_id = edge.source_id
+                    else:
+                        continue
+
+                if next_id in seen:
+                    continue
+
+                seen.add(next_id)
+
+                # Create new path step
+                step = PathStep(
+                    from_node_id=node_id,
+                    to_node_id=next_id,
+                    edge=edge,
+                    depth=len(path),
+                )
+
+                new_path = path + [step]
+                new_weight = total_weight + edge.weight
+
+                if next_id == target_id:
+                    return GraphPath(
+                        steps=new_path, total_weight=new_weight, length=len(new_path)
+                    )
+
+                queue.append((next_id, new_path, new_weight))
+
+        return None
+
+    def find_all_paths(
+        self,
+        start_id: int,
+        target_id: int,
+        max_depth: int = 10,
+        max_paths: int = 100,
+        edge_types: list[EdgeType] | None = None,
+        direction: str = "outgoing",
+    ) -> list[GraphPath]:
+        """
+        Find all paths between two nodes (up to max_paths).
+
+        Args:
+            start_id: Starting node ID
+            target_id: Target node ID
+            max_depth: Maximum path length
+            max_paths: Maximum number of paths to return
+            edge_types: Filter by edge types
+            direction: Traversal direction
+
+        Returns:
+            List of paths found
+        """
+        if start_id == target_id:
+            return [GraphPath(steps=[], total_weight=0.0, length=0)]
+
+        paths: list[GraphPath] = []
+        stack: list[tuple[int, list[PathStep], float, set[int]]] = [
+            (start_id, [], 0.0, {start_id})
+        ]
+
+        while stack and len(paths) < max_paths:
+            node_id, path, total_weight, visited = stack.pop()
+
+            if len(path) >= max_depth:
+                continue
+
+            edges = self._get_edges_for_traversal(node_id, direction, edge_types)
+
+            for edge in edges:
+                # Determine next node based on edge direction
+                if direction == "outgoing":
+                    if edge.source_id == node_id and edge.target_id is not None:
+                        next_id = edge.target_id
+                    else:
+                        continue
+                elif direction == "incoming":
+                    if edge.target_id == node_id:
+                        next_id = edge.source_id
+                    else:
+                        continue
+                else:  # both
+                    if edge.source_id == node_id and edge.target_id is not None:
+                        next_id = edge.target_id
+                    elif edge.target_id == node_id:
+                        next_id = edge.source_id
+                    else:
+                        continue
+
+                if next_id in visited:
+                    continue
+
+                # Create new path step
+                step = PathStep(
+                    from_node_id=node_id,
+                    to_node_id=next_id,
+                    edge=edge,
+                    depth=len(path),
+                )
+
+                new_path = path + [step]
+                new_weight = total_weight + edge.weight
+                new_visited = visited | {next_id}
+
+                if next_id == target_id:
+                    paths.append(
+                        GraphPath(
+                            steps=new_path,
+                            total_weight=new_weight,
+                            length=len(new_path),
+                        )
+                    )
+                else:
+                    stack.append((next_id, new_path, new_weight, new_visited))
+
+        # Sort by weight (shortest first)
+        paths.sort(key=lambda p: p.total_weight)
+        return paths[:max_paths]
+
+    def get_reachable_nodes(
+        self,
+        start_id: int,
+        max_depth: int = 10,
+        edge_types: list[EdgeType] | None = None,
+        direction: str = "outgoing",
+    ) -> list[int]:
+        """
+        Get all nodes reachable from a starting node.
+
+        Args:
+            start_id: Starting node ID
+            max_depth: Maximum traversal depth
+            edge_types: Filter by edge types
+            direction: Traversal direction
+
+        Returns:
+            List of reachable node IDs
+        """
+        query = TraversalQuery(
+            start_node_id=start_id,
+            max_depth=max_depth,
+            edge_types=edge_types,
+            direction=direction,
+        )
+        result = self.traverse_bfs(query)
+        # Remove start node from results
+        return [nid for nid in result.visited_nodes if nid != start_id]

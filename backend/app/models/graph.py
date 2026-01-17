@@ -68,3 +68,49 @@ class Graph(BaseModel):
     permalink_to_id: dict[str, int] = Field(
         default_factory=dict, description="Permalink to ID mapping"
     )
+
+
+class PathStep(BaseModel):
+    """A single step in a graph path."""
+
+    from_node_id: int = Field(..., description="Source node ID")
+    to_node_id: int = Field(..., description="Target node ID")
+    edge: Edge = Field(..., description="Edge traversed")
+    depth: int = Field(..., description="Depth from start")
+
+
+class GraphPath(BaseModel):
+    """A path through the knowledge graph."""
+
+    steps: list[PathStep] = Field(..., description="Path steps")
+    total_weight: float = Field(..., description="Sum of edge weights")
+    length: int = Field(..., description="Number of edges")
+
+
+class TraversalResult(BaseModel):
+    """Result of a graph traversal query."""
+
+    visited_nodes: list[int] = Field(..., description="Node IDs visited in order")
+    paths: list[GraphPath] = Field(
+        default_factory=list, description="Paths found (if path-finding query)"
+    )
+    depth_reached: int = Field(..., description="Maximum depth reached")
+
+
+class TraversalQuery(BaseModel):
+    """Query parameters for graph traversal."""
+
+    start_node_id: int = Field(..., description="Starting node ID")
+    target_node_id: int | None = Field(
+        default=None, description="Target node ID (for path-finding)"
+    )
+    max_depth: int = Field(default=10, ge=1, le=100, description="Maximum traversal depth")
+    edge_types: list[EdgeType] | None = Field(
+        default=None, description="Filter by edge types (None = all types)"
+    )
+    direction: str = Field(
+        default="outgoing", description="Direction: 'outgoing', 'incoming', or 'both'"
+    )
+    exclude_nodes: list[int] = Field(
+        default_factory=list, description="Node IDs to exclude from traversal"
+    )
