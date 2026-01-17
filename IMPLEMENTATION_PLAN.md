@@ -53,7 +53,18 @@
 - [x] **L** PreCompact hook (trigger AI summarization)
 - [x] **M** SessionEnd hook (finalize session, extract patterns)
 
-## Phase 6-8: See specs/ for details
+## Phase 6: Web UI
+
+### Priority: High
+- [x] **M** Dashboard with recent activity, stats, quick search
+- [x] **M** Notes browser with filtering and sorting
+- [ ] **M** Markdown editor with live preview (split view)
+- [ ] **M** Interactive knowledge graph visualization
+- [ ] **L** Project management interface
+- [ ] **L** Session history and timeline view
+- [ ] **L** Settings and configuration UI
+
+## Phase 7-8: See specs/ for details
 
 ---
 
