@@ -1,0 +1,51 @@
+version: '3.8'
+
+# Production overrides for Obsidian-Memory
+
+services:
+  memory:
+    container_name: memory
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - DEBUG=false
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.memory.rule=Host(`memory.redleif.dev`)"
+      - "traefik.http.routers.memory.entrypoints=websecure"
+      - "traefik.http.routers.memory.tls.certresolver=cloudflare"
+      - "traefik.http.routers.memory.tls=true"
+      - "traefik.http.services.memory.loadbalancer.server.port=8765"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.memory.middlewares=memory-headers"
+      - "traefik.http.middlewares.memory-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+    networks:
+      - proxy
+    restart: unless-stopped
+
+networks:
+  proxy:
+    external: true

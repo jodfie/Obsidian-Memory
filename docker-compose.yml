@@ -1,68 +1,42 @@
 version: '3.8'
 
+# Base docker-compose configuration for Obsidian-Memory
+# Override with docker-compose.dev.yml or docker-compose.prod.yml
+
 services:
-  backend:
+  memory:
     build:
       context: .
-      dockerfile: backend/Dockerfile
-    container_name: obsidian-memory-backend
-    ports:
-      - "8000:8000"
+      dockerfile: Dockerfile
+    container_name: memory
     environment:
       - API_TITLE=Obsidian-Memory
       - API_VERSION=0.1.0
-      - DEBUG=false
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - BASIC_MEMORY_HOME=${BASIC_MEMORY_HOME:-/data}
+      - BASIC_MEMORY_SYNC_CHANGES=${BASIC_MEMORY_SYNC_CHANGES:-true}
+      - BASIC_MEMORY_SYNC_DELAY=${BASIC_MEMORY_SYNC_DELAY:-1000}
+      - GIT_AUTO_COMMIT=${GIT_AUTO_COMMIT:-false}
+      - GIT_REMOTE=${GIT_REMOTE:-origin}
+      - VAULT_PATH=${VAULT_PATH:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - REQUIRE_AUTH=${REQUIRE_AUTH:-false}
+      - API_TOKEN=${API_TOKEN:-}
+      - CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-false}
+      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-}
     volumes:
-      - obsidian-memory-data:/home/appuser/.obsidian-memory
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    restart: unless-stopped
+      - memory-data:/data
+      - memory-vaults:/vaults
     networks:
-      - obsidian-memory-network
-
-  mcp-server:
-    build:
-      context: .
-      dockerfile: mcp-server/Dockerfile
-    container_name: obsidian-memory-mcp
-    environment:
-      - MCP_TRANSPORT=stdio
-      - OBSIDIAN_MEMORY_API_URL=http://backend:8000
-    depends_on:
-      backend:
-        condition: service_healthy
-    volumes:
-      - obsidian-memory-data:/home/bunuser/.obsidian-memory
+      - proxy
     restart: unless-stopped
-    networks:
-      - obsidian-memory-network
-
-  web-ui:
-    build:
-      context: .
-      dockerfile: web-ui/Dockerfile
-    container_name: obsidian-memory-web
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - NODE_ENV=production
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - obsidian-memory-network
 
 volumes:
-  obsidian-memory-data:
+  memory-data:
+    driver: local
+  memory-vaults:
     driver: local
 
 networks:
-  obsidian-memory-network:
-    driver: bridge
+  proxy:
+    external: true

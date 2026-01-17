@@ -286,9 +286,36 @@ obsidian-memory/
 
 ## Deployment
 
-### Docker Deployment
+### Quick Start
 
-See [docs/deployment.md](docs/deployment.md) for Docker deployment instructions.
+**Development:**
+```bash
+cp .env.dev.example .env.dev
+# Edit .env.dev
+make dev
+# Access at https://memory-dev.redleif.dev
+```
+
+**Production:**
+```bash
+cp .env.prod.example .env.prod
+# Edit .env.prod with production values
+make prod
+# Access at https://memory.redleif.dev
+```
+
+### Detailed Deployment Guide
+
+See [DEPLOY.md](DEPLOY.md) for complete deployment instructions including:
+- Environment configuration
+- Traefik setup
+- CI/CD workflows
+- Troubleshooting
+- Security checklist
+
+### Docker Deployment (Legacy)
+
+See [docs/deployment.md](docs/deployment.md) for legacy Docker deployment instructions.
 
 ### Production Considerations
 

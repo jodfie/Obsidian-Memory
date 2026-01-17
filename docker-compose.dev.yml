@@ -1,0 +1,43 @@
+version: '3.8'
+
+# Development overrides for Obsidian-Memory
+
+services:
+  memory:
+    container_name: memory-dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - DEBUG=true
+      - HOT_RELOAD=true
+      - WAIT_FOR_HEALTH=true
+    ports:
+      - "8766:8765"  # Different port for dev
+    volumes:
+      - memory-data:/data
+      - memory-vaults:/vaults
+      - ./backend:/app/backend:cached  # Hot reload mount
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.memory-dev.rule=Host(`memory-dev.redleif.dev`)"
+      - "traefik.http.routers.memory-dev.entrypoints=websecure"
+      - "traefik.http.routers.memory-dev.tls.certresolver=cloudflare"
+      - "traefik.http.routers.memory-dev.tls=true"
+      - "traefik.http.services.memory-dev.loadbalancer.server.port=8765"
+      - "traefik.docker.network=proxy"
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  proxy:
+    external: true

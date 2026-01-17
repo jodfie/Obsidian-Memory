@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import time
+from datetime import datetime
 from typing import Callable
 
 from fastapi import FastAPI, Request, Response
@@ -62,9 +63,38 @@ async def root() -> dict[str, str]:
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    """Health check endpoint."""
-    return {"status": "healthy"}
+async def health() -> dict[str, any]:
+    """Health check endpoint with detailed status.
+
+    Returns:
+        Health status with version and vault connection info
+    """
+    from app.api.dependencies import get_vault_manager
+    from app.config import settings
+    
+    # Check vault connection
+    vault_connected = False
+    try:
+        from app.services.vault_manager import VaultManager
+        from app.models.vault import VaultManagerConfig
+        
+        config_file = settings.config_file
+        if config_file.exists():
+            import json
+            with open(config_file, encoding="utf-8") as f:
+                data = json.load(f)
+            config = VaultManagerConfig(**data)
+            vault_manager = VaultManager(config)
+            vault_connected = len(vault_manager.vaults) > 0
+    except Exception:
+        vault_connected = False
+    
+    return {
+        "status": "healthy",
+        "version": settings.api_version,
+        "vault_connected": vault_connected,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 @app.get("/metrics")
