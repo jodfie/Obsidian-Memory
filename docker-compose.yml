@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: obsidian-memory-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - API_TITLE=Obsidian-Memory
+      - API_VERSION=0.1.0
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+    volumes:
+      - obsidian-memory-data:/home/appuser/.obsidian-memory
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - obsidian-memory-network
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: mcp-server/Dockerfile
+    container_name: obsidian-memory-mcp
+    environment:
+      - MCP_TRANSPORT=stdio
+      - OBSIDIAN_MEMORY_API_URL=http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - obsidian-memory-data:/home/bunuser/.obsidian-memory
+    restart: unless-stopped
+    networks:
+      - obsidian-memory-network
+
+  web-ui:
+    build:
+      context: .
+      dockerfile: web-ui/Dockerfile
+    container_name: obsidian-memory-web
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - obsidian-memory-network
+
+volumes:
+  obsidian-memory-data:
+    driver: local
+
+networks:
+  obsidian-memory-network:
+    driver: bridge

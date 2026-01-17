@@ -73,7 +73,13 @@
 - [x] **L** Cloudflare Access integration (JWT middleware, basic implementation)
 - [x] **L** Cross-device sync enhancements (device tracking, sync state management, last sync timestamps)
 
-## Phase 8: See specs/ for details
+## Phase 8: Production
+
+### Priority: Low
+- [x] **L** Docker optimization (multi-stage builds, docker-compose)
+- [ ] **M** Monitoring and logging
+- [ ] **L** Documentation
+- [ ] **L** Performance tuning
 
 ---
 
