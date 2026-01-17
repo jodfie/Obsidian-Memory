@@ -15,7 +15,7 @@
 - [x] **M** Markdown parser (frontmatter, observations, relations)
 - [x] **M** SQLite + FTS5 search index
 - [x] **M** Basic CRUD API endpoints (/api/notes/*)
-- [ ] **L** MCP tools: mem_read, mem_write, mem_search
+- [x] **L** MCP tools: mem_read, mem_write, mem_search
 
 ## Phase 2: Knowledge Graph
 
