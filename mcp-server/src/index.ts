@@ -10,6 +10,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { handleBuildContext } from './tools/context.js';
 import {
   handleMemRead,
   handleMemSearch,
@@ -73,6 +74,16 @@ async function main(): Promise<void> {
               {
                 type: 'text',
                 text: JSON.stringify(await handleMemSearch(args as Parameters<typeof handleMemSearch>[0]), null, 2),
+              },
+            ],
+          };
+
+        case 'build_context':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleBuildContext(args as Parameters<typeof handleBuildContext>[0]), null, 2),
               },
             ],
           };
