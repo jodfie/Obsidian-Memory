@@ -44,7 +44,16 @@
 - [x] **L** Session tools (session_observe, session_summary, session_context)
 - [x] **M** SSE transport support (infrastructure implemented, full protocol integration pending)
 
-## Phase 5-8: See specs/ for details
+## Phase 5: Claude Code Hooks
+
+### Priority: High
+- [x] **M** SessionStart hook (load project context, inject recent memories)
+- [x] **L** UserPromptSubmit hook (log user intent)
+- [x] **M** PostToolUse hook (capture file edits, commands, errors, research)
+- [x] **L** PreCompact hook (trigger AI summarization)
+- [x] **M** SessionEnd hook (finalize session, extract patterns)
+
+## Phase 6-8: See specs/ for details
 
 ---
 
