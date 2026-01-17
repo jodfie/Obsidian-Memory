@@ -191,11 +191,23 @@ async function main(): Promise<void> {
     }
   });
 
-  // Connect via stdio transport
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  // Determine transport based on environment
+  const transportType = process.env.MCP_TRANSPORT || 'stdio';
 
-  console.error('Obsidian-Memory MCP Server started');
+  if (transportType === 'sse') {
+    // Use SSE transport for HTTP/remote access
+    const { createSSEServer } = await import('./transport/sse.js');
+    await createSSEServer(server, {
+      port: parseInt(process.env.MCP_SSE_PORT || '3000', 10),
+      path: process.env.MCP_SSE_PATH || '/sse',
+    });
+    console.error('Obsidian-Memory MCP Server started (SSE transport)');
+  } else {
+    // Default: use stdio transport for CLI
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error('Obsidian-Memory MCP Server started (stdio transport)');
+  }
 }
 
 // Run if executed directly
