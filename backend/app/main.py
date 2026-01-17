@@ -10,6 +10,7 @@ from app.api.sessions import router as sessions_router
 from app.api.sync import router as sync_router
 from app.config import settings
 from app.middleware.auth import auth_middleware
+from app.middleware.cloudflare_access import cloudflare_access_middleware
 
 app = FastAPI(
     title=settings.api_title,
@@ -18,7 +19,11 @@ app = FastAPI(
     debug=settings.debug,
 )
 
-# Add authentication middleware if enabled
+# Add Cloudflare Access middleware if enabled (runs before Bearer token auth)
+if settings.cloudflare_access_enabled:
+    app.add_middleware(BaseHTTPMiddleware, dispatch=cloudflare_access_middleware)
+
+# Add Bearer token authentication middleware if enabled
 if settings.require_auth:
     app.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
 

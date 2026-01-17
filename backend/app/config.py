@@ -55,6 +55,14 @@ class Settings(BaseSettings):
         default=None, description="Bearer token for API authentication"
     )
 
+    # Cloudflare Access Configuration
+    cloudflare_access_enabled: bool = Field(
+        default=False, description="Enable Cloudflare Access authentication"
+    )
+    cloudflare_access_team_domain: str | None = Field(
+        default=None, description="Cloudflare Access team domain (e.g., example.cloudflareaccess.com)"
+    )
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Settings":
         """Create settings from a dictionary."""
