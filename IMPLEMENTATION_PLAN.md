@@ -36,7 +36,15 @@
 - [x] **M** Session summarization
 - [x] **L** Pattern detection
 
-## Phase 4-8: See specs/ for details
+## Phase 4: MCP Server
+
+### Priority: High
+- [x] **L** Graph tools integration (graph_traverse, graph_similar)
+- [x] **M** Project tools (project_list, project_switch, project_create)
+- [ ] **L** Session tools (session_observe, session_summary, session_context)
+- [ ] **M** SSE transport support
+
+## Phase 5-8: See specs/ for details
 
 ---
 

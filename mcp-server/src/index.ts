@@ -12,11 +12,20 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { handleBuildContext } from './tools/context.js';
 import {
+  handleGraphSimilar,
+  handleGraphTraverse,
+} from './tools/graph.js';
+import {
   handleMemRead,
   handleMemSearch,
   handleMemWrite,
   memoryTools,
 } from './tools/memory.js';
+import {
+  handleProjectCreate,
+  handleProjectList,
+  handleProjectSwitch,
+} from './tools/project.js';
 
 /**
  * Initialize and start the MCP server.
@@ -84,6 +93,56 @@ async function main(): Promise<void> {
               {
                 type: 'text',
                 text: JSON.stringify(await handleBuildContext(args as Parameters<typeof handleBuildContext>[0]), null, 2),
+              },
+            ],
+          };
+
+        case 'graph_traverse':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleGraphTraverse(args as Parameters<typeof handleGraphTraverse>[0]), null, 2),
+              },
+            ],
+          };
+
+        case 'graph_similar':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleGraphSimilar(args as Parameters<typeof handleGraphSimilar>[0]), null, 2),
+              },
+            ],
+          };
+
+        case 'project_list':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleProjectList(), null, 2),
+              },
+            ],
+          };
+
+        case 'project_switch':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleProjectSwitch(args as Parameters<typeof handleProjectSwitch>[0]), null, 2),
+              },
+            ],
+          };
+
+        case 'project_create':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleProjectCreate(args as Parameters<typeof handleProjectCreate>[0]), null, 2),
               },
             ],
           };

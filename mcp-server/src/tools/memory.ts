@@ -13,6 +13,12 @@ import {
   handleGraphSimilar,
   handleGraphTraverse,
 } from './graph.js';
+import {
+  handleProjectCreate,
+  handleProjectList,
+  handleProjectSwitch,
+  projectTools,
+} from './project.js';
 
 const API_BASE_URL = process.env.OBSIDIAN_MEMORY_API_URL || 'http://localhost:8000';
 const client = new ApiClient(API_BASE_URL);
@@ -23,6 +29,7 @@ const client = new ApiClient(API_BASE_URL);
 export const memoryTools: Tool[] = [
   buildContextTool,
   ...graphTools,
+  ...projectTools,
   {
     name: 'mem_read',
     description: 'Read a note from Obsidian-Memory by ID, permalink, or search query. Returns the full note content with metadata.',
