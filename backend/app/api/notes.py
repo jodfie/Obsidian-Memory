@@ -23,6 +23,7 @@ from app.services.exceptions import VaultNotFoundError
 from app.services.markdown_parser import MarkdownParser
 from app.services.search_index import SearchIndex, compute_file_hash
 from app.services.vault_manager import VaultManager
+from app.utils.cache import get_cache
 
 router = APIRouter(prefix="/api/notes", tags=["notes"])
 
@@ -45,6 +46,9 @@ async def list_notes(
     search_index: SearchIndex = Depends(get_search_index),
 ) -> NoteListResponse:
     """List notes with optional filtering."""
+    # Enforce maximum limit to prevent performance issues
+    limit = min(limit, 500)
+    
     await _ensure_search_index_initialized(search_index)
 
     # Build search query

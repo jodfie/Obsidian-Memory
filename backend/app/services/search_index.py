@@ -49,6 +49,10 @@ class SearchIndex:
         # Enable WAL mode for concurrent access
         await self.db.execute("PRAGMA journal_mode=WAL")
         await self.db.execute("PRAGMA synchronous=NORMAL")
+        # Performance optimizations
+        await self.db.execute("PRAGMA cache_size=-64000")  # 64MB cache
+        await self.db.execute("PRAGMA temp_store=MEMORY")
+        await self.db.execute("PRAGMA mmap_size=268435456")  # 256MB mmap
 
         # Create schema
         await self._create_schema()

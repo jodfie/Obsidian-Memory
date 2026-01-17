@@ -10,8 +10,10 @@ from app.services.graph_engine import GraphEngine
 from app.services.markdown_parser import MarkdownParser
 from app.services.search_index import SearchIndex
 from app.services.vault_manager import VaultManager
+from app.utils.cache import get_cache
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
+cache = get_cache()
 
 
 @router.get("")
@@ -25,15 +27,21 @@ async def get_graph(
     Returns:
         Graph structure with nodes and edges
     """
+    # Check cache first
+    cache_key = "graph:full"
+    cached_graph = cache.get(cache_key)
+    if cached_graph:
+        return cached_graph
+    
     await search_index.initialize()
     
     # Build graph from indexed notes
     engine = GraphEngine()
     
-    # Get all notes from index
+    # Get all notes from index (limit to prevent memory issues)
     from app.models.search import SearchQuery, SortOrder
     
-    query = SearchQuery(query="", limit=500, sort=SortOrder.UPDATED_DESC)
+    query = SearchQuery(query="", limit=1000, sort=SortOrder.UPDATED_DESC)
     results = await search_index.search(query)
     
     for result in results.results:
@@ -96,10 +104,15 @@ async def get_graph(
         if edge.target_id is not None  # Only include resolved edges
     ]
     
-    return {
+    graph_data = {
         "nodes": nodes,
         "edges": edges,
     }
+    
+    # Cache for 5 minutes
+    cache.set(cache_key, graph_data, ttl=300)
+    
+    return graph_data
 
 
 @router.get("/nodes")
@@ -115,6 +128,9 @@ async def list_nodes(
     Returns:
         List of nodes
     """
+    # Enforce maximum limit
+    limit = min(limit, 500)
+    
     await search_index.initialize()
     
     # Get recent notes as nodes
