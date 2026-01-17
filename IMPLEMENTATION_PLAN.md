@@ -70,7 +70,7 @@
 - [x] **M** Git sync service (initialize, commit, pull, push, sync)
 - [x] **M** Conflict detection and resolution
 - [x] **L** Bearer token authentication (API middleware, MCP client, Web UI)
-- [ ] **L** Cloudflare Access integration
+- [x] **L** Cloudflare Access integration (JWT middleware, basic implementation)
 - [ ] **L** Cross-device sync enhancements
 
 ## Phase 8: See specs/ for details
