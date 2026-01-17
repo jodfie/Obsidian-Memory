@@ -10,6 +10,12 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import {
+  handleMemRead,
+  handleMemSearch,
+  handleMemWrite,
+  memoryTools,
+} from './tools/memory.js';
 
 /**
  * Initialize and start the MCP server.
@@ -31,15 +37,7 @@ async function main(): Promise<void> {
   // List available tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: [
-        // Tools will be added per specifications:
-        // - mem_read
-        // - mem_write
-        // - mem_search
-        // - graph_traverse
-        // - graph_similar
-        // - build_context
-      ],
+      tools: memoryTools,
     };
   });
 
@@ -47,8 +45,45 @@ async function main(): Promise<void> {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
-    // Tool implementations will be added per specifications
-    throw new Error(`Tool "${name}" not yet implemented`);
+    try {
+      switch (name) {
+        case 'mem_read':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleMemRead(args as Parameters<typeof handleMemRead>[0]), null, 2),
+              },
+            ],
+          };
+
+        case 'mem_write':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleMemWrite(args as Parameters<typeof handleMemWrite>[0]), null, 2),
+              },
+            ],
+          };
+
+        case 'mem_search':
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(await handleMemSearch(args as Parameters<typeof handleMemSearch>[0]), null, 2),
+              },
+            ],
+          };
+
+        default:
+          throw new Error(`Unknown tool: ${name}`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Tool "${name}" failed: ${message}`);
+    }
   });
 
   // Connect via stdio transport
