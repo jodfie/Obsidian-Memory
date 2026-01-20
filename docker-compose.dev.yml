@@ -15,6 +15,8 @@ services:
       - DEBUG=true
       - HOT_RELOAD=true
       - WAIT_FOR_HEALTH=true
+      - CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-true}
+      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
     ports:
       - "8766:8765"  # Different port for dev
     volumes:
@@ -29,6 +31,12 @@ services:
       - "traefik.http.routers.memory-dev.tls=true"
       - "traefik.http.services.memory-dev.loadbalancer.server.port=8765"
       - "traefik.docker.network=proxy"
+      # Cloudflare Access headers - Traefik forwards these automatically
+      # CF-Access-JWT and CF-Access-JWT-Assertion are forwarded by default
+      - "traefik.http.routers.memory-dev.middlewares=memory-dev-headers"
+      - "traefik.http.middlewares.memory-dev-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+      # MCP endpoint routing - routes /mcp/* to FastAPI backend which proxies to MCP server
+      # No need for separate router, /mcp is handled by FastAPI
     networks:
       - proxy
     healthcheck:
@@ -37,6 +45,26 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+  mcp-server:
+    container_name: memory-mcp-dev
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    environment:
+      - MCP_TRANSPORT=sse
+      - MCP_SSE_PORT=3000
+      - MCP_SSE_PATH=/sse
+      - OBSIDIAN_MEMORY_API_URL=http://memory:8765
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Note: MCP server is accessed via FastAPI proxy at /mcp, not directly via Traefik
 
 networks:
   proxy:

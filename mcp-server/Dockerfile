@@ -1,42 +1,42 @@
-# Multi-stage Dockerfile for MCP server (Bun)
-FROM oven/bun:1 as builder
-
-WORKDIR /build
-
-# Copy dependency files
-COPY mcp-server/package.json mcp-server/package-lock.json* ./
-
-# Install dependencies
-RUN bun install --frozen-lockfile --production=false
-
-# Copy source code
-COPY mcp-server/ ./
-
-# Build application
-RUN bun run build || echo "Build step skipped (no build script)"
-
-# Production stage
-FROM oven/bun:1-slim
+# MCP Server Dockerfile for Obsidian-Memory
+FROM oven/bun:1 AS base
 
 WORKDIR /app
 
-# Copy from builder
-COPY --from=builder /build/node_modules ./node_modules
-COPY --from=builder /build/dist ./dist
-COPY --from=builder /build/src ./src
-COPY --from=builder /build/package.json ./
-COPY --from=builder /build/tsconfig.json ./
+# Install dependencies
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile
 
-# Create non-root user
-RUN addgroup -g 1000 bunuser && \
-    adduser -D -u 1000 -G bunuser bunuser && \
-    chown -R bunuser:bunuser /app
+# Copy source code
+COPY . .
 
-USER bunuser
+# Build
+RUN bun run build
+
+# Production stage
+FROM oven/bun:1-slim AS prod
+
+WORKDIR /app
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Copy built files and dependencies
+COPY --from=base /app/dist ./dist
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/package.json ./
+
+# Expose MCP SSE port
+EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD bun --version || exit 1
+    CMD curl -f http://localhost:3000/health || exit 1
 
-# Run application
-CMD ["bun", "run", "src/index.ts"]
+# Run MCP server with SSE transport
+ENV MCP_TRANSPORT=sse
+ENV MCP_SSE_PORT=3000
+ENV MCP_SSE_PATH=/sse
+ENV OBSIDIAN_MEMORY_API_URL=http://memory:8765
+
+CMD ["bun", "run", "dist/index.js"]

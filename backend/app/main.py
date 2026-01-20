@@ -2,12 +2,13 @@
 
 import time
 from datetime import datetime
-from typing import Callable
+from typing import Any, Callable
 
 from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.graph import router as graph_router
+from app.api.mcp import router as mcp_router
 from app.api.notes import router as notes_router
 from app.api.projects import router as projects_router
 from app.api.sessions import router as sessions_router
@@ -54,6 +55,7 @@ app.include_router(projects_router)
 app.include_router(sessions_router)
 app.include_router(graph_router)
 app.include_router(sync_router)
+app.include_router(mcp_router)  # MCP server proxy
 
 
 @app.get("/")
@@ -63,7 +65,7 @@ async def root() -> dict[str, str]:
 
 
 @app.get("/health")
-async def health() -> dict[str, any]:
+async def health() -> dict[str, Any]:
     """Health check endpoint with detailed status.
 
     Returns:
@@ -98,7 +100,7 @@ async def health() -> dict[str, any]:
 
 
 @app.get("/metrics")
-async def metrics() -> dict[str, any]:
+async def metrics() -> dict[str, Any]:
     """Metrics endpoint for monitoring.
 
     Returns:

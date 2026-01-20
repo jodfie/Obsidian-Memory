@@ -31,6 +31,20 @@ services:
       - proxy
     restart: unless-stopped
 
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: memory-mcp-dev
+    environment:
+      - MCP_TRANSPORT=sse
+      - MCP_SSE_PORT=3000
+      - MCP_SSE_PATH=/sse
+      - OBSIDIAN_MEMORY_API_URL=http://memory:8765
+    networks:
+      - proxy
+    restart: unless-stopped
+
 volumes:
   memory-data:
     driver: local

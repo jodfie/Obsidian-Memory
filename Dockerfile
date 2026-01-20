@@ -45,8 +45,10 @@ COPY backend/pyproject.toml ./
 # Copy entrypoint script
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
-# Install application
+# Install application and set working directory for Python imports
+WORKDIR /app/backend
 RUN pip install --no-cache-dir -e ".[dev]"
+WORKDIR /app
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \
@@ -64,7 +66,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Development entrypoint (hot reload)
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8765", "--reload"]
+CMD ["sh", "-c", "cd /app/backend && uvicorn app.main:app --host 0.0.0.0 --port 8765 --reload"]
 
 # ============================================================================
 # Production stage
@@ -91,14 +93,20 @@ COPY backend/pyproject.toml ./
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
 # Install application in production mode (without dev dependencies)
+WORKDIR /app/backend
 RUN pip install --no-cache-dir -e "." --no-deps && \
     pip install --no-cache-dir fastapi uvicorn[standard] pydantic pydantic-settings \
     python-frontmatter aiosqlite aiofiles anthropic pyyaml psutil
+WORKDIR /app
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app && \
     chmod +x /app/docker-entrypoint.sh
+
+# Create data directories with proper permissions
+RUN mkdir -p /data/.obsidian-memory /data/.obsidian-memory/logs && \
+    chown -R appuser:appuser /data/.obsidian-memory || true
 
 USER appuser
 
@@ -111,4 +119,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 
 # Production entrypoint
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8765", "--workers", "2"]
+CMD ["sh", "-c", "cd /app/backend && uvicorn app.main:app --host 0.0.0.0 --port 8765 --workers 2"]

@@ -2,9 +2,9 @@ name: CI/CD
 
 on:
   push:
-    branches: [dev, main]
+    branches: [dev, master]
   pull_request:
-    branches: [dev, main]
+    branches: [dev, master]
 
 env:
   REGISTRY: ghcr.io
@@ -94,5 +94,5 @@ jobs:
           echo "Deployment to production environment would happen here"
           echo "SSH to server and run:"
           echo "  cd /path/to/obsidian-memory"
-          echo "  git pull origin main"
+          echo "  git pull origin master"
           echo "  make prod  # or docker compose commands"

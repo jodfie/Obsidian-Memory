@@ -79,7 +79,8 @@ async def cloudflare_access_middleware(request: Request, call_next: Callable):
     Returns:
         Response from next handler
     """
-    # Skip auth for health check and docs
+    # Skip auth for health check and docs only
+    # MCP endpoints are protected by Cloudflare Access OAuth 2.0
     if request.url.path in ["/health", "/docs", "/openapi.json", "/redoc"]:
         return await call_next(request)
 

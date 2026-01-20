@@ -13,6 +13,8 @@ services:
       - ENVIRONMENT=production
       - LOG_LEVEL=INFO
       - DEBUG=false
+      - CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-true}
+      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
     deploy:
       resources:
         limits:
@@ -42,9 +44,39 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.routers.memory.middlewares=memory-headers"
       - "traefik.http.middlewares.memory-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+      # MCP endpoint routing - routes /mcp/* to FastAPI backend which proxies to MCP server
+      # No need for separate router, /mcp is handled by FastAPI
     networks:
       - proxy
     restart: unless-stopped
+
+  mcp-server:
+    container_name: memory-mcp
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    environment:
+      - MCP_TRANSPORT=sse
+      - MCP_SSE_PORT=3000
+      - MCP_SSE_PATH=/sse
+      - OBSIDIAN_MEMORY_API_URL=http://memory:8765
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    networks:
+      - proxy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Note: MCP server is accessed via FastAPI proxy at /mcp, not directly via Traefik
 
 networks:
   proxy:
