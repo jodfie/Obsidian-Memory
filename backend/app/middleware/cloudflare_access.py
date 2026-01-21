@@ -107,10 +107,19 @@ async def verify_cloudflare_access(request: Request) -> dict[str, str] | None:
 
     try:
         # Decode JWT header to get key ID (kid)
-        unverified_header = jwt.get_unverified_header(jwt_token)
+        try:
+            unverified_header = jwt.get_unverified_header(jwt_token)
+        except jwt.exceptions.DecodeError as e:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Invalid JWT format: {str(e)}",
+            )
         kid = unverified_header.get("kid")
         if not kid:
-            raise ValueError("JWT missing key ID (kid) in header")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="JWT missing key ID (kid) in header",
+            )
 
         # Fetch public keys
         public_keys = await get_cloudflare_public_keys(team_domain)

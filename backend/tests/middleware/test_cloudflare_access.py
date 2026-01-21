@@ -2,6 +2,7 @@
 
 import base64
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI, Request
@@ -11,9 +12,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.middleware.cloudflare_access import cloudflare_access_middleware
 
 
-def create_test_jwt(payload: dict) -> str:
+def create_test_jwt(payload: dict, kid: str = "test-key-id") -> str:
     """Create a test JWT token (not cryptographically signed)."""
-    header = {"alg": "RS256", "typ": "JWT"}
+    header = {"alg": "RS256", "typ": "JWT", "kid": kid}
     header_b64 = base64.urlsafe_b64encode(
         json.dumps(header).encode()
     ).decode().rstrip('=')
@@ -75,21 +76,27 @@ def test_protected_endpoint_with_valid_token(app_with_cloudflare, monkeypatch):
     from app.config import settings
     settings.cloudflare_access_enabled = True
 
-    payload = {
-        "email": "user@example.com",
-        "aud": "test-audience",
-        "iss": "https://test.cloudflareaccess.com",
-    }
-    jwt_token = create_test_jwt(payload)
+    # Mock verify_cloudflare_access to return a valid identity
+    with patch(
+        "app.middleware.cloudflare_access.verify_cloudflare_access",
+        new_callable=AsyncMock,
+        return_value={"email": "user@example.com", "aud": "test-audience", "iss": "https://test.cloudflareaccess.com"},
+    ):
+        payload = {
+            "email": "user@example.com",
+            "aud": "test-audience",
+            "iss": "https://test.cloudflareaccess.com",
+        }
+        jwt_token = create_test_jwt(payload)
 
-    client = TestClient(app_with_cloudflare)
-    response = client.get(
-        "/protected", headers={"CF-Access-JWT": jwt_token}
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["message"] == "protected"
-    assert data["identity"]["email"] == "user@example.com"
+        client = TestClient(app_with_cloudflare)
+        response = client.get(
+            "/protected", headers={"CF-Access-JWT": jwt_token}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["message"] == "protected"
+        assert data["identity"]["email"] == "user@example.com"
 
 
 def test_protected_endpoint_without_token_when_required(app_with_cloudflare, monkeypatch):
@@ -109,10 +116,11 @@ def test_protected_endpoint_with_invalid_token(app_with_cloudflare, monkeypatch)
     monkeypatch.setenv("CLOUDFLARE_ACCESS_ENABLED", "true")
     from app.config import settings
     settings.cloudflare_access_enabled = True
+    settings.cloudflare_access_team_domain = "test.cloudflareaccess.com"
 
     client = TestClient(app_with_cloudflare)
     response = client.get(
         "/protected", headers={"CF-Access-JWT": "invalid.token.here"}
     )
     assert response.status_code == 403
-    assert "Invalid Cloudflare Access token" in response.json()["detail"]
+    assert "Invalid JWT format" in response.json()["detail"]

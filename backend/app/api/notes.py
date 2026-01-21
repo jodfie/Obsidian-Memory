@@ -67,9 +67,10 @@ async def list_notes(
     for result in results.results:
         # Get full note content from vault
         try:
-            content = await vault_manager.read_file(
-                result.vault_name, result.relative_path
+            vault_file = await vault_manager.read_file(
+                result.relative_path, vault=result.vault_name
             )
+            content = vault_file.content
         except Exception:
             content = ""
 
@@ -145,7 +146,7 @@ async def create_note(
 
     # Write to vault
     try:
-        await vault_manager.write_file(vault_name, request.relative_path, content)
+        await vault_manager.write_file(request.relative_path, content, vault=vault_name)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -205,9 +206,10 @@ async def get_note(
 
     # Get full content from vault
     try:
-        content = await vault_manager.read_file(
-            indexed_note.vault_name, indexed_note.relative_path
+        vault_file = await vault_manager.read_file(
+            indexed_note.relative_path, vault=indexed_note.vault_name
         )
+        content = vault_file.content
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -249,9 +251,10 @@ async def update_note(
 
     # Read current content
     try:
-        content = await vault_manager.read_file(
-            indexed_note.vault_name, indexed_note.relative_path
+        vault_file = await vault_manager.read_file(
+            indexed_note.relative_path, vault=indexed_note.vault_name
         )
+        content = vault_file.content
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -300,7 +303,7 @@ async def update_note(
     # Write to vault
     try:
         await vault_manager.write_file(
-            indexed_note.vault_name, indexed_note.relative_path, content
+            indexed_note.relative_path, content, vault=indexed_note.vault_name
         )
     except Exception as e:
         raise HTTPException(
@@ -363,7 +366,7 @@ async def delete_note(
     # Delete from vault
     try:
         await vault_manager.delete_file(
-            indexed_note.vault_name, indexed_note.relative_path
+            indexed_note.relative_path, vault=indexed_note.vault_name
         )
     except Exception as e:
         raise HTTPException(
@@ -406,9 +409,10 @@ async def search_notes(
     for result in results.results:
         # Get full note content from vault
         try:
-            content = await vault_manager.read_file(
-                result.vault_name, result.relative_path
+            vault_file = await vault_manager.read_file(
+                result.relative_path, vault=result.vault_name
             )
+            content = vault_file.content
         except Exception:
             content = ""
 
