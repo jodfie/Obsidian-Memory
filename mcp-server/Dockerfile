@@ -33,10 +33,11 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
-# Run MCP server with SSE transport
+# Run MCP server with Streamable HTTP transport
 ENV MCP_TRANSPORT=sse
 ENV MCP_SSE_PORT=3000
-ENV MCP_SSE_PATH=/sse
+ENV MCP_PATH=/mcp
 ENV OBSIDIAN_MEMORY_API_URL=http://memory:8765
+ENV NODE_ENV=production
 
 CMD ["bun", "run", "dist/index.js"]

@@ -6,7 +6,8 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ApiClient } from '../client.js';
 
-const API_BASE_URL = process.env.OBSIDIAN_MEMORY_API_URL || 'http://localhost:8000';
+const env = process.env as Record<string, string | undefined>;
+const API_BASE_URL = env['OBSIDIAN_MEMORY_API_URL'] || 'http://localhost:8000';
 const client = new ApiClient(API_BASE_URL);
 
 /**
@@ -25,7 +26,7 @@ const client = new ApiClient(API_BASE_URL);
  */
 export function parseMemoryUri(uri: string): {
   type: string;
-  params: Record<string, string>;
+  params: Record<string, string | undefined>;
 } {
   if (!uri.startsWith('memory://')) {
     throw new Error(`Invalid memory URI: ${uri}`);
@@ -39,19 +40,19 @@ export function parseMemoryUri(uri: string): {
   }
 
   const type = parts[0];
-  const params: Record<string, string> = {};
+  const params: Record<string, string | undefined> = {};
 
   switch (type) {
     case 'note':
-      if (parts.length < 2) {
+      if (parts.length < 2 || !parts[1]) {
         throw new Error(`Invalid memory://note URI: ${uri}`);
       }
       // Check if it's a number (ID) or string (permalink)
-      const noteRef = parts[1];
+      const noteRef: string = parts[1];
       if (/^\d+$/.test(noteRef)) {
-        params.id = noteRef;
+        params['id'] = noteRef;
       } else {
-        params.permalink = noteRef;
+        params['permalink'] = noteRef;
       }
       break;
 
@@ -59,15 +60,15 @@ export function parseMemoryUri(uri: string): {
       if (parts.length < 2) {
         throw new Error(`Invalid memory://search URI: ${uri}`);
       }
-      params.query = decodeURIComponent(parts.slice(1).join('/'));
+      params['query'] = decodeURIComponent(parts.slice(1).join('/'));
       break;
 
     case 'path':
       if (parts.length < 3) {
         throw new Error(`Invalid memory://path URI: ${uri}`);
       }
-      params.vault = parts[1];
-      params.path = parts.slice(2).join('/');
+      params['vault'] = parts[1];
+      params['path'] = parts.slice(2).join('/');
       break;
 
     case 'graph':
@@ -75,7 +76,7 @@ export function parseMemoryUri(uri: string): {
         throw new Error(`Invalid memory://graph URI: ${uri}`);
       }
       const graphOp = parts[1];
-      params.operation = graphOp;
+      params['operation'] = graphOp;
 
       switch (graphOp) {
         case 'neighbors':
@@ -83,15 +84,15 @@ export function parseMemoryUri(uri: string): {
           if (parts.length < 3) {
             throw new Error(`Invalid memory://graph/${graphOp} URI: ${uri}`);
           }
-          params.node_id = parts[2];
+          params['node_id'] = parts[2];
           break;
 
         case 'path':
           if (parts.length < 4) {
             throw new Error(`Invalid memory://graph/path URI: ${uri}`);
           }
-          params.from_id = parts[2];
-          params.to_id = parts[3];
+          params['from_id'] = parts[2];
+          params['to_id'] = parts[3];
           break;
 
         default:
@@ -103,14 +104,14 @@ export function parseMemoryUri(uri: string): {
       if (parts.length < 2) {
         throw new Error(`Invalid memory://tags URI: ${uri}`);
       }
-      params.tags = parts[1];
+      params['tags'] = parts[1];
       break;
 
     case 'project':
       if (parts.length < 2) {
         throw new Error(`Invalid memory://project URI: ${uri}`);
       }
-      params.project = parts[1];
+      params['project'] = parts[1];
       break;
 
     default:
@@ -137,28 +138,34 @@ export async function buildContext(uris: string[]): Promise<{
     switch (type) {
       case 'note': {
         let note;
-        if (params.id) {
-          note = await client.getNoteById(parseInt(params.id, 10));
-        } else if (params.permalink) {
+        const noteId = params['id'];
+        const permalink = params['permalink'];
+        if (noteId && typeof noteId === 'string') {
+          note = await client.getNoteById(parseInt(noteId, 10));
+        } else if (permalink) {
           // Search by permalink
           const results = await client.searchNotes({
-            query: `permalink:${params.permalink}`,
+            query: `permalink:${permalink}`,
             limit: 1,
           });
-          if (results.notes.length > 0) {
-            note = await client.getNoteById(results.notes[0].id!);
+          if (results.notes.length > 0 && results.notes[0]?.['id']) {
+            note = await client.getNoteById(results.notes[0]['id']!);
           }
         }
-        if (note && note.id && !noteIds.has(note.id)) {
+        if (note && note['id'] && !noteIds.has(note['id'])) {
           notes.push(note);
-          noteIds.add(note.id);
+          noteIds.add(note['id']);
         }
         break;
       }
 
       case 'search': {
+        const query = params['query'];
+        if (!query) {
+          throw new Error('Search query is required');
+        }
         const results = await client.searchNotes({
-          query: params.query,
+          query: query,
           limit: 50,
         });
         for (const result of results.notes) {
@@ -176,16 +183,21 @@ export async function buildContext(uris: string[]): Promise<{
       case 'path': {
         // Note: This would require a new API endpoint
         // For now, search by path
+        const path = params['path'];
+        const vault = params['vault'];
+        if (!path) {
+          throw new Error('Path is required');
+        }
         const results = await client.searchNotes({
-          query: `path:${params.path}`,
-          vault: params.vault,
+          query: `path:${path}`,
+          vault: vault || null,
           limit: 1,
         });
-        if (results.notes.length > 0) {
-          const note = await client.getNoteById(results.notes[0].id!);
-          if (note && note.id && !noteIds.has(note.id)) {
+        if (results.notes.length > 0 && results.notes[0]?.['id']) {
+          const note = await client.getNoteById(results.notes[0]['id']!);
+          if (note && note['id'] && !noteIds.has(note['id'])) {
             notes.push(note);
-            noteIds.add(note.id);
+            noteIds.add(note['id']);
           }
         }
         break;
@@ -199,18 +211,22 @@ export async function buildContext(uris: string[]): Promise<{
       }
 
       case 'tags': {
-        const tagList = params.tags.split(',').map((t) => t.trim());
+        const tagsStr = params['tags'];
+        if (!tagsStr) {
+          throw new Error('Tags are required');
+        }
+        const tagList = tagsStr.split(',').map((t) => t.trim());
         const results = await client.searchNotes({
           query: '*',
           tags: tagList,
           limit: 50,
         });
         for (const result of results.notes) {
-          if (result.id && !noteIds.has(result.id)) {
-            const fullNote = await client.getNoteById(result.id);
+          if (result['id'] && !noteIds.has(result['id'])) {
+            const fullNote = await client.getNoteById(result['id']);
             if (fullNote) {
               notes.push(fullNote);
-              noteIds.add(result.id);
+              noteIds.add(result['id']);
             }
           }
         }
@@ -218,9 +234,13 @@ export async function buildContext(uris: string[]): Promise<{
       }
 
       case 'project': {
+        const project = params['project'];
+        if (!project) {
+          throw new Error('Project is required');
+        }
         const results = await client.searchNotes({
           query: '*',
-          project: params.project,
+          project: project || null,
           limit: 50,
         });
         for (const result of results.notes) {
@@ -286,6 +306,10 @@ export const buildContextTool: Tool = {
   name: 'build_context',
   description:
     'Build context from memory:// URI patterns. Supports note selection by ID, permalink, search, path, tags, project, and graph operations.',
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+  },
   inputSchema: {
     type: 'object',
     properties: {

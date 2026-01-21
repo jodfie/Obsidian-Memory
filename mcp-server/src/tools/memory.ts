@@ -4,29 +4,13 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ApiClient } from '../client.js';
-import {
-  buildContextTool,
-  handleBuildContext,
-} from './context.js';
-import {
-  graphTools,
-  handleGraphSimilar,
-  handleGraphTraverse,
-} from './graph.js';
-import {
-  handleProjectCreate,
-  handleProjectList,
-  handleProjectSwitch,
-  projectTools,
-} from './project.js';
-import {
-  handleSessionContext,
-  handleSessionObserve,
-  handleSessionSummary,
-  sessionTools,
-} from './session.js';
+import { buildContextTool } from './context.js';
+import { graphTools } from './graph.js';
+import { projectTools } from './project.js';
+import { sessionTools } from './session.js';
 
-const API_BASE_URL = process.env.OBSIDIAN_MEMORY_API_URL || 'http://localhost:8000';
+const env = process.env as Record<string, string | undefined>;
+const API_BASE_URL = env['OBSIDIAN_MEMORY_API_URL'] || 'http://localhost:8000';
 const client = new ApiClient(API_BASE_URL);
 
 /**
@@ -40,6 +24,10 @@ export const memoryTools: Tool[] = [
   {
     name: 'mem_read',
     description: 'Read a note from Obsidian-Memory by ID, permalink, or search query. Returns the full note content with metadata.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
     inputSchema: {
       type: 'object',
       properties: {
@@ -70,6 +58,10 @@ export const memoryTools: Tool[] = [
   {
     name: 'mem_write',
     description: 'Create or update a note in Obsidian-Memory. If note_id is provided, updates existing note; otherwise creates new note.',
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+    },
     inputSchema: {
       type: 'object',
       properties: {
@@ -114,6 +106,10 @@ export const memoryTools: Tool[] = [
   {
     name: 'mem_search',
     description: 'Search notes in Obsidian-Memory using full-text search with optional filters. Returns matching notes with snippets.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
     inputSchema: {
       type: 'object',
       properties: {
@@ -180,24 +176,24 @@ export async function handleMemRead(args: {
     // Search by permalink - we'll need to search and filter
     const results = await client.searchNotes({
       query: `permalink:${args.permalink}`,
-      vault: args.vault || undefined,
+      vault: args.vault || null,
       limit: 1,
     });
-    if (results.notes.length === 0) {
+    if (results.notes.length === 0 || !results.notes[0]?.id) {
       throw new Error(`Note with permalink "${args.permalink}" not found`);
     }
-    note = await client.getNoteById(results.notes[0].id!);
+    note = await client.getNoteById(results.notes[0].id);
   } else if (args.query) {
     // Search and return first match
     const results = await client.searchNotes({
       query: args.query,
-      vault: args.vault || undefined,
+      vault: args.vault || null,
       limit: 1,
     });
-    if (results.notes.length === 0) {
+    if (results.notes.length === 0 || !results.notes[0]?.id) {
       throw new Error(`No notes found matching query: "${args.query}"`);
     }
-    note = await client.getNoteById(results.notes[0].id!);
+    note = await client.getNoteById(results.notes[0].id);
   } else {
     throw new Error('Must provide id, permalink, or query');
   }
@@ -242,9 +238,9 @@ export async function handleMemWrite(args: {
     const note = await client.updateNote(args.note_id, {
       title: args.title,
       content: args.content,
-      note_type: args.note_type || undefined,
-      project: args.project || undefined,
-      tags: args.tags || undefined,
+      note_type: args.note_type || null,
+      project: args.project || null,
+      tags: args.tags || null,
     });
     return {
       note,
@@ -253,12 +249,12 @@ export async function handleMemWrite(args: {
   } else {
     // Create new note
     const note = await client.createNote({
-      vault_name: args.vault_name || undefined,
+      vault_name: args.vault_name || null,
       relative_path: args.relative_path,
       title: args.title,
       content: args.content,
       note_type: args.note_type || 'note',
-      project: args.project || undefined,
+      project: args.project || null,
       tags: args.tags || [],
     });
     return {
@@ -282,17 +278,32 @@ export async function handleMemSearch(args: {
   limit?: number;
   offset?: number;
 }): Promise<{ results: unknown[]; total: number; query: string }> {
-  const results = await client.searchNotes({
+  const searchRequest: {
+    query: string;
+    vault?: string | null;
+    project?: string | null;
+    note_type?: string | null;
+    tags?: string[];
+    tags_any?: string[];
+    sort?: string;
+    limit?: number;
+    offset?: number;
+  } = {
     query: args.query,
-    vault: args.vault || undefined,
-    project: args.project || undefined,
-    note_type: args.note_type || undefined,
-    tags: args.tags || undefined,
-    tags_any: args.tags_any || undefined,
+    vault: args.vault || null,
+    project: args.project || null,
+    note_type: args.note_type || null,
     sort: args.sort || 'relevance',
     limit: args.limit || 50,
     offset: args.offset || 0,
-  });
+  };
+  if (args.tags) {
+    searchRequest.tags = args.tags;
+  }
+  if (args.tags_any) {
+    searchRequest.tags_any = args.tags_any;
+  }
+  const results = await client.searchNotes(searchRequest);
 
   return {
     results: results.notes,

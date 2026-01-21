@@ -226,16 +226,17 @@ async function main(): Promise<void> {
   });
 
   // Determine transport based on environment
-  const transportType = process.env.MCP_TRANSPORT || 'stdio';
+  const env = process.env as Record<string, string | undefined>;
+  const transportType = env['MCP_TRANSPORT'] || 'stdio';
 
           if (transportType === 'sse') {
-            // Use SSE transport for HTTP/remote access
+            // Use Streamable HTTP transport for HTTP/remote access
             const { createSSEServer } = await import('./transport/sse.js');
             await createSSEServer(server, {
-              port: parseInt(process.env.MCP_SSE_PORT || '3000', 10),
-              path: process.env.MCP_SSE_PATH || '/sse',
+              port: parseInt(env['MCP_SSE_PORT'] || '3000', 10),
+              mcpPath: env['MCP_PATH'] || '/mcp',
             });
-            logger.info('Obsidian-Memory MCP Server started (SSE transport)');
+            logger.info('Obsidian-Memory MCP Server started (Streamable HTTP transport)');
           } else {
             // Default: use stdio transport for CLI
             const transport = new StdioServerTransport();

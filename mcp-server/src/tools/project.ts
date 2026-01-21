@@ -5,7 +5,8 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ApiClient } from '../client.js';
 
-const API_BASE_URL = process.env.OBSIDIAN_MEMORY_API_URL || 'http://localhost:8000';
+const env = process.env as Record<string, string | undefined>;
+const API_BASE_URL = env['OBSIDIAN_MEMORY_API_URL'] || 'http://localhost:8000';
 const client = new ApiClient(API_BASE_URL);
 
 /**
@@ -16,6 +17,10 @@ export const projectTools: Tool[] = [
     name: 'project_list',
     description:
       'List all projects with their note counts. Returns projects sorted by note count (descending).',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
     inputSchema: {
       type: 'object',
       properties: {},
@@ -25,6 +30,10 @@ export const projectTools: Tool[] = [
     name: 'project_switch',
     description:
       'Switch to a project context. Returns project details and recent notes. This is informational - actual project filtering happens in other tools.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
     inputSchema: {
       type: 'object',
       properties: {
@@ -44,6 +53,10 @@ export const projectTools: Tool[] = [
     name: 'project_create',
     description:
       'Create a new project. Projects are created implicitly when notes are added, but this validates the project name.',
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+    },
     inputSchema: {
       type: 'object',
       properties: {

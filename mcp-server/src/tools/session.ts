@@ -5,7 +5,8 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ApiClient } from '../client.js';
 
-const API_BASE_URL = process.env.OBSIDIAN_MEMORY_API_URL || 'http://localhost:8000';
+const env = process.env as Record<string, string | undefined>;
+const API_BASE_URL = env['OBSIDIAN_MEMORY_API_URL'] || 'http://localhost:8000';
 const client = new ApiClient(API_BASE_URL);
 
 /**
@@ -16,6 +17,10 @@ export const sessionTools: Tool[] = [
     name: 'session_observe',
     description:
       'Add an observation or event to a session. Use this to track decisions, errors, solutions, tool usage, file edits, etc.',
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+    },
     inputSchema: {
       type: 'object',
       properties: {
@@ -54,6 +59,10 @@ export const sessionTools: Tool[] = [
     name: 'session_summary',
     description:
       'Generate an AI summary of a session. Extracts key learnings, decisions, errors, solutions, and next steps.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
     inputSchema: {
       type: 'object',
       properties: {
@@ -69,6 +78,10 @@ export const sessionTools: Tool[] = [
     name: 'session_context',
     description:
       'Get context for a session including events and summary. Useful for loading session context into Claude.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
     inputSchema: {
       type: 'object',
       properties: {

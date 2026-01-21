@@ -5,7 +5,8 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ApiClient } from '../client.js';
 
-const API_BASE_URL = process.env.OBSIDIAN_MEMORY_API_URL || 'http://localhost:8000';
+const env = process.env as Record<string, string | undefined>;
+const API_BASE_URL = env['OBSIDIAN_MEMORY_API_URL'] || 'http://localhost:8000';
 const client = new ApiClient(API_BASE_URL);
 
 /**
@@ -16,6 +17,10 @@ export const graphTools: Tool[] = [
     name: 'graph_traverse',
     description:
       'Traverse the knowledge graph from a starting note using BFS or DFS. Returns visited nodes and optional paths.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
     inputSchema: {
       type: 'object',
       properties: {
@@ -59,6 +64,10 @@ export const graphTools: Tool[] = [
     name: 'graph_similar',
     description:
       'Find notes similar to a given note using graph structure and content similarity.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+    },
     inputSchema: {
       type: 'object',
       properties: {
@@ -114,7 +123,7 @@ export async function handleGraphTraverse(args: {
   });
 
   return {
-    visited_nodes: results.notes.map((n) => n.note_id),
+    visited_nodes: results.notes.map((n) => n.id || 0).filter((id) => id > 0),
     paths: [],
     depth_reached: 1,
   };
@@ -143,10 +152,10 @@ export async function handleGraphSimilar(args: {
   });
 
   // Filter out the source note
-  const similar = results.notes.filter((n) => n.note_id !== args.note_id);
+  const similar = results.notes.filter((n) => n.id !== args.note_id);
 
   return {
     similar_notes: similar,
-    scores: similar.map((n) => ({ note_id: n.note_id, score: n.score })),
+    scores: similar.map((n) => ({ note_id: n.id || 0, score: 0.0 })),
   };
 }

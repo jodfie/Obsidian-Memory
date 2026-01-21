@@ -19,7 +19,8 @@
     "validate": "bun run typecheck && bun run lint && bun run test"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

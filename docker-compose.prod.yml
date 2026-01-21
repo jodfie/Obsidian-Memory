@@ -15,6 +15,9 @@ services:
       - DEBUG=false
       - CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-true}
       - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
+      # OAuth configuration for Claude.ai
+      - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
+      - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     deploy:
       resources:
         limits:
@@ -58,8 +61,14 @@ services:
     environment:
       - MCP_TRANSPORT=sse
       - MCP_SSE_PORT=3000
-      - MCP_SSE_PATH=/sse
+      - MCP_PATH=/mcp
+      - MCP_SERVER_URL=https://memory.redleif.dev
       - OBSIDIAN_MEMORY_API_URL=http://memory:8765
+      - NODE_ENV=production
+      # OAuth configuration for Claude.ai
+      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
+      - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
+      - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     deploy:
       resources:
         limits:
@@ -77,6 +86,23 @@ services:
         max-size: "10m"
         max-file: "3"
     # Note: MCP server is accessed via FastAPI proxy at /mcp, not directly via Traefik
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: memory-cloudflared
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - proxy
+    restart: unless-stopped
+    depends_on:
+      - memory
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   proxy:
