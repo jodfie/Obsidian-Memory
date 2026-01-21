@@ -185,9 +185,9 @@ async def test_list_notes(client: AsyncClient, search_index: SearchIndex) -> Non
     """Test listing notes."""
     await search_index.initialize()
 
-    # Create a few notes
+    # Create a few notes and verify each creation
     for i in range(3):
-        await client.post(
+        response = await client.post(
             "/api/notes",
             json={
                 "relative_path": f"test-note-{i}.md",
@@ -195,12 +195,13 @@ async def test_list_notes(client: AsyncClient, search_index: SearchIndex) -> Non
                 "content": f"---\ntitle: Test Note {i}\n---\n\n# Test Note {i}\n\nContent {i}.",
             },
         )
+        assert response.status_code == 201, f"Failed to create note {i}: {response.json()}"
 
     # List notes
     response = await client.get("/api/notes")
     assert response.status_code == 200
     data = response.json()
-    assert len(data["notes"]) >= 3
+    assert len(data["notes"]) >= 3, f"Expected at least 3 notes, got {len(data['notes'])}: {data}"
     assert data["total"] >= 3
 
 

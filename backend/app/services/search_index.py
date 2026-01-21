@@ -490,11 +490,13 @@ class SearchIndex:
         where_parts = []
         params: list[Any] = []
 
-        # FTS query
-        fts_query = self._build_fts_query(query)
-        if fts_query:
-            where_parts.append("notes_fts MATCH ?")
-            params.append(fts_query)
+        # FTS query - treat "*" or empty string as "match all" (no FTS filter)
+        fts_query = ""
+        if query.query and query.query.strip() != "*":
+            fts_query = self._build_fts_query(query)
+            if fts_query:
+                where_parts.append("notes_fts MATCH ?")
+                params.append(fts_query)
 
         # Filters
         if query.vault:
@@ -562,35 +564,67 @@ class SearchIndex:
         elif query.sort == SortOrder.TITLE_ASC:
             order_by = "n.title ASC"
 
-        # Get total count
-        count_cursor = await self.db.execute(
-            f"""
-            SELECT COUNT(DISTINCT n.id) as total
-            FROM notes n
-            INNER JOIN notes_fts ON notes_fts.rowid = n.id
-            WHERE {where_clause}
-            """,
-            params,
-        )
-        count_row = await count_cursor.fetchone()
-        total_count = count_row['total'] if count_row else 0
+        # Get total count and results - different queries based on whether FTS is used
+        if fts_query:
+            # FTS search with bm25 scoring
+            count_cursor = await self.db.execute(
+                f"""
+                SELECT COUNT(DISTINCT n.id) as total
+                FROM notes n
+                INNER JOIN notes_fts ON notes_fts.rowid = n.id
+                WHERE {where_clause}
+                """,
+                params,
+            )
+            count_row = await count_cursor.fetchone()
+            total_count = count_row['total'] if count_row else 0
 
-        # Get results
-        search_cursor = await self.db.execute(
-            f"""
-            SELECT DISTINCT
-                n.id, n.vault_name, n.relative_path, n.permalink,
-                n.title, n.note_type, n.project,
-                n.created_at, n.updated_at,
-                bm25(notes_fts) as score
-            FROM notes n
-            INNER JOIN notes_fts ON notes_fts.rowid = n.id
-            WHERE {where_clause}
-            ORDER BY {order_by}
-            LIMIT ? OFFSET ?
-            """,
-            [*params, query.limit, query.offset],
-        )
+            search_cursor = await self.db.execute(
+                f"""
+                SELECT DISTINCT
+                    n.id, n.vault_name, n.relative_path, n.permalink,
+                    n.title, n.note_type, n.project,
+                    n.created_at, n.updated_at,
+                    bm25(notes_fts) as score
+                FROM notes n
+                INNER JOIN notes_fts ON notes_fts.rowid = n.id
+                WHERE {where_clause}
+                ORDER BY {order_by}
+                LIMIT ? OFFSET ?
+                """,
+                [*params, query.limit, query.offset],
+            )
+        else:
+            # No FTS search - direct query from notes table
+            count_cursor = await self.db.execute(
+                f"""
+                SELECT COUNT(*) as total
+                FROM notes n
+                WHERE {where_clause}
+                """,
+                params,
+            )
+            count_row = await count_cursor.fetchone()
+            total_count = count_row['total'] if count_row else 0
+
+            # Default sort when no FTS (can't use bm25)
+            if order_by == "bm25(notes_fts) ASC":
+                order_by = "n.updated_at DESC"
+
+            search_cursor = await self.db.execute(
+                f"""
+                SELECT
+                    n.id, n.vault_name, n.relative_path, n.permalink,
+                    n.title, n.note_type, n.project,
+                    n.created_at, n.updated_at,
+                    0.0 as score
+                FROM notes n
+                WHERE {where_clause}
+                ORDER BY {order_by}
+                LIMIT ? OFFSET ?
+                """,
+                [*params, query.limit, query.offset],
+            )
 
         results: list[SearchResult] = []
         async for row in search_cursor:
