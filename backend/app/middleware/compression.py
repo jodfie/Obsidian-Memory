@@ -41,21 +41,24 @@ async def compression_middleware(request: Request, call_next: Callable) -> Respo
             # Only compress if body is large enough (benefit from compression)
             if len(body) > 1024:  # 1KB threshold
                 compressed = gzip.compress(body, compresslevel=6)
+                # Build headers dict, removing Content-Length to let FastAPI set it automatically
+                headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+                headers["Content-Encoding"] = "gzip"
+                # Do NOT set Content-Length manually - FastAPI will calculate it from content
                 response = Response(
                     content=compressed,
                     status_code=response.status_code,
-                    headers={
-                        **response.headers,
-                        "Content-Encoding": "gzip",
-                        "Content-Length": str(len(compressed)),
-                    },
+                    headers=headers,
                     media_type=response.media_type,
                 )
             else:
+                # Build headers dict, removing Content-Length to let FastAPI set it automatically
+                headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+                # Do NOT set Content-Length manually - FastAPI will calculate it from content
                 response = Response(
                     content=body,
                     status_code=response.status_code,
-                    headers=response.headers,
+                    headers=headers,
                     media_type=response.media_type,
                 )
 
