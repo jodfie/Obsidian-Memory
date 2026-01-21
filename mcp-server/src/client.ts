@@ -2,18 +2,8 @@
  * HTTP client for communicating with the Obsidian-Memory backend API.
  */
 
-const API_BASE_URL = process.env.OBSIDIAN_MEMORY_API_URL || 'http://localhost:8000';
-const API_TOKEN = process.env.OBSIDIAN_MEMORY_API_TOKEN || null;
-
-function getHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (API_TOKEN) {
-    headers['Authorization'] = `Bearer ${API_TOKEN}`;
-  }
-  return headers;
-}
+// Get API token from environment (using bracket notation for TypeScript)
+const API_TOKEN: string | null = (process.env as Record<string, string | undefined>)['OBSIDIAN_MEMORY_API_TOKEN'] || null;
 
 export interface NoteResponse {
   id: number | null;
@@ -98,7 +88,7 @@ export class ApiClient {
       }
       throw new Error(`Failed to get note: ${response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<NoteResponse>;
   }
 
   /**
@@ -111,10 +101,10 @@ export class ApiClient {
       body: JSON.stringify(request),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
       throw new Error(`Failed to create note: ${error.detail || response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<NoteResponse>;
   }
 
   /**
@@ -130,10 +120,10 @@ export class ApiClient {
       if (response.status === 404) {
         throw new Error(`Note with ID ${id} not found`);
       }
-      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
       throw new Error(`Failed to update note: ${error.detail || response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<NoteResponse>;
   }
 
   /**
@@ -146,10 +136,10 @@ export class ApiClient {
       body: JSON.stringify(request),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
       throw new Error(`Failed to search notes: ${error.detail || response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<NoteListResponse>;
   }
 
   /**
@@ -174,7 +164,7 @@ export class ApiClient {
     if (!response.ok) {
       throw new Error(`Failed to list notes: ${response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<NoteListResponse>;
   }
 
   /**
@@ -187,7 +177,7 @@ export class ApiClient {
     if (!response.ok) {
       throw new Error(`Failed to list projects: ${response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<{ projects: Array<{ name: string; note_count: number }> }>;
   }
 
   /**
@@ -224,7 +214,19 @@ export class ApiClient {
       }
       throw new Error(`Failed to list project notes: ${response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<{
+      project: string;
+      notes: Array<{
+        note_id: number;
+        title: string;
+        permalink: string | null;
+        note_type: string;
+        updated_at: string | null;
+      }>;
+      total_count: number;
+      limit: number;
+      offset: number;
+    }>;
   }
 
   /**
@@ -241,10 +243,14 @@ export class ApiClient {
       body: JSON.stringify({ project_name: projectName }),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
       throw new Error(`Failed to create project: ${error.detail || response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<{
+      project: string;
+      status: string;
+      message: string;
+    }>;
   }
 
   /**
@@ -264,10 +270,15 @@ export class ApiClient {
       body: JSON.stringify({ project }),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
       throw new Error(`Failed to create session: ${error.detail || response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<{
+      session_id: string;
+      project: string | null;
+      started_at: string;
+      status: string;
+    }>;
   }
 
   /**
@@ -296,10 +307,14 @@ export class ApiClient {
       }),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
       throw new Error(`Failed to observe event: ${error.detail || response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<{
+      session_id: string;
+      event_count: number;
+      status: string;
+    }>;
   }
 
   /**
@@ -319,10 +334,18 @@ export class ApiClient {
       headers: this.getHeaders(),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
       throw new Error(`Failed to summarize session: ${error.detail || response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<{
+      key_learnings: string[];
+      decisions: string[];
+      errors_encountered: string[];
+      solutions_found: string[];
+      next_steps: string[];
+      summary_text: string;
+      compression_ratio: number;
+    }>;
   }
 
   /**
@@ -367,9 +390,31 @@ export class ApiClient {
       }),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
       throw new Error(`Failed to get session context: ${error.detail || response.statusText}`);
     }
-    return response.json();
+    return response.json() as Promise<{
+      session_id: string;
+      project: string | null;
+      started_at: string;
+      ended_at: string | null;
+      status: string;
+      event_count: number;
+      events?: Array<{
+        event_type: string;
+        content: string;
+        timestamp: string;
+        metadata: Record<string, unknown>;
+      }>;
+      summary?: {
+        key_learnings: string[];
+        decisions: string[];
+        errors_encountered: string[];
+        solutions_found: string[];
+        next_steps: string[];
+        summary_text: string;
+        compression_ratio: number;
+      };
+    }>;
   }
 }

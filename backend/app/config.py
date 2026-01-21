@@ -62,6 +62,16 @@ class Settings(BaseSettings):
     cloudflare_access_team_domain: str | None = Field(
         default=None, description="Cloudflare Access team domain (e.g., example.cloudflareaccess.com)"
     )
+    # Cloudflare API Configuration (for automated setup)
+    cloudflare_api_token: str | None = Field(
+        default=None, description="Cloudflare API token for managing Access applications"
+    )
+    cloudflare_account_id: str | None = Field(
+        default=None, description="Cloudflare account ID for Zero Trust applications"
+    )
+    cloudflare_oauth_client_id: str | None = Field(
+        default=None, description="Cloudflare Access OAuth client ID for MCP authentication"
+    )
 
     # Sync Configuration
     sync_state_file: Path = Field(

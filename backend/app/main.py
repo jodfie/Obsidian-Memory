@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.graph import router as graph_router
-from app.api.mcp import router as mcp_router
+from app.api.mcp import oauth_router, router as mcp_router
 from app.api.notes import router as notes_router
 from app.api.projects import router as projects_router
 from app.api.sessions import router as sessions_router
@@ -56,6 +56,7 @@ app.include_router(sessions_router)
 app.include_router(graph_router)
 app.include_router(sync_router)
 app.include_router(mcp_router)  # MCP server proxy
+app.include_router(oauth_router)  # OAuth 2.0 endpoints for Claude.ai
 
 
 @app.get("/")
