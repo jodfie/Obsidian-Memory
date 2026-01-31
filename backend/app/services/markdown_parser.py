@@ -39,7 +39,7 @@ RELATION_PATTERN = re.compile(
 )
 
 WIKILINK_PATTERN = re.compile(
-    r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]'
+    r'\[\[([^\]|#]+)(#\^[a-zA-Z0-9-]+|#[^\]|]+)?(?:\|([^\]]+))?\]\]'
 )
 
 HEADING_PATTERN = re.compile(
@@ -49,6 +49,15 @@ HEADING_PATTERN = re.compile(
 
 INLINE_TAG_PATTERN = re.compile(
     r'(?<!\S)#([\w-]+)(?!\S)'
+)
+
+CODE_FENCE_PATTERN = re.compile(
+    r'^```.*$',
+    re.MULTILINE
+)
+
+INLINE_CODE_PATTERN = re.compile(
+    r'`[^`]+`'
 )
 
 
@@ -69,7 +78,7 @@ class MarkdownParser:
             ParseError: If frontmatter is invalid YAML
         """
         # Parse frontmatter
-        frontmatter_obj, raw_content = self.parse_frontmatter(content)
+        frontmatter_obj, raw_content, raw_frontmatter = self.parse_frontmatter(content)
 
         # Extract all structured data
         observations = self.extract_observations(raw_content)
@@ -84,9 +93,51 @@ class MarkdownParser:
             wikilinks=wikilinks,
             raw_content=raw_content,
             headings=headings,
+            raw_frontmatter=raw_frontmatter,
+            frontmatter_modified=False,
         )
 
-    def parse_frontmatter(self, content: str) -> tuple[Frontmatter, str]:
+    def _get_code_block_ranges(self, content: str) -> list[tuple[int, int]]:
+        """
+        Identify line ranges that are inside code blocks.
+
+        Returns list of (start_line, end_line) tuples (1-indexed, inclusive).
+        """
+        lines = content.split('\n')
+        code_ranges: list[tuple[int, int]] = []
+        in_code_block = False
+        code_block_start = 0
+
+        for line_num, line in enumerate(lines, start=1):
+            # Check for code fence (```)
+            if line.strip().startswith('```'):
+                if in_code_block:
+                    # End of code block
+                    code_ranges.append((code_block_start, line_num))
+                    in_code_block = False
+                else:
+                    # Start of code block
+                    code_block_start = line_num
+                    in_code_block = True
+
+        # Handle unclosed code block (treat rest of file as code)
+        if in_code_block:
+            code_ranges.append((code_block_start, len(lines)))
+
+        return code_ranges
+
+    def _is_in_code_block(self, line_num: int, code_ranges: list[tuple[int, int]]) -> bool:
+        """Check if a line number is inside any code block range."""
+        for start, end in code_ranges:
+            if start <= line_num <= end:
+                return True
+        return False
+
+    def _mask_inline_code(self, line: str) -> str:
+        """Replace inline code with placeholder to prevent false matches."""
+        return INLINE_CODE_PATTERN.sub('`__CODE__`', line)
+
+    def parse_frontmatter(self, content: str) -> tuple[Frontmatter, str, str | None]:
         """
         Extract and parse YAML frontmatter.
 
@@ -94,11 +145,21 @@ class MarkdownParser:
             content: Raw markdown content
 
         Returns:
-            Tuple of (parsed frontmatter, remaining content)
+            Tuple of (parsed frontmatter, remaining content, raw frontmatter text)
 
         Raises:
             FrontmatterError: If YAML is malformed
         """
+        # Extract raw frontmatter text before parsing
+        raw_frontmatter = None
+        raw_content_with_exact_formatting = None
+        frontmatter_match = FRONTMATTER_PATTERN.match(content)
+        if frontmatter_match:
+            # Capture everything from start of file to end of closing ---
+            raw_frontmatter = frontmatter_match.group(0)
+            # Extract content after frontmatter, preserving exact formatting
+            raw_content_with_exact_formatting = content[frontmatter_match.end():]
+
         try:
             post = frontmatter.loads(content)
         except Exception as e:
@@ -167,7 +228,10 @@ class MarkdownParser:
             extra=extra,
         )
 
-        return frontmatter_obj, post.content
+        # Use raw content if available (preserves exact formatting), otherwise use parsed
+        content_to_return = raw_content_with_exact_formatting if raw_content_with_exact_formatting is not None else post.content
+
+        return frontmatter_obj, content_to_return, raw_frontmatter
 
     def extract_observations(self, content: str) -> list[Observation]:
         """
@@ -177,9 +241,16 @@ class MarkdownParser:
         """
         observations: list[Observation] = []
         lines = content.split('\n')
+        code_ranges = self._get_code_block_ranges(content)
 
         for line_num, line in enumerate(lines, start=1):
-            match = OBSERVATION_PATTERN.match(line.strip())
+            # Skip lines inside code blocks
+            if self._is_in_code_block(line_num, code_ranges):
+                continue
+
+            # Mask inline code to prevent false matches
+            masked_line = self._mask_inline_code(line)
+            match = OBSERVATION_PATTERN.match(masked_line.strip())
             if match:
                 category_str = match.group(1).lower()
                 content_text = match.group(2).strip()
@@ -221,9 +292,16 @@ class MarkdownParser:
         """
         relations: list[Relation] = []
         lines = content.split('\n')
+        code_ranges = self._get_code_block_ranges(content)
 
         for line_num, line in enumerate(lines, start=1):
-            match = RELATION_PATTERN.match(line.strip())
+            # Skip lines inside code blocks
+            if self._is_in_code_block(line_num, code_ranges):
+                continue
+
+            # Mask inline code to prevent false matches
+            masked_line = self._mask_inline_code(line)
+            match = RELATION_PATTERN.match(masked_line.strip())
             if match:
                 relation_type_str = match.group(1).lower()
                 target = match.group(2).strip()
@@ -269,11 +347,30 @@ class MarkdownParser:
         """
         wikilinks: list[Wikilink] = []
         lines = content.split('\n')
+        code_ranges = self._get_code_block_ranges(content)
 
         for line_num, line in enumerate(lines, start=1):
-            for match in WIKILINK_PATTERN.finditer(line):
+            # Skip lines inside code blocks
+            if self._is_in_code_block(line_num, code_ranges):
+                continue
+
+            # Mask inline code to prevent false matches
+            masked_line = self._mask_inline_code(line)
+            for match in WIKILINK_PATTERN.finditer(masked_line):
                 target = match.group(1).strip()
-                display_text = match.group(2)
+                anchor_or_block = match.group(2)  # Could be None, #heading, or #^blockid
+                display_text = match.group(3)
+
+                # Parse anchor or block reference
+                anchor = None
+                block_ref = None
+                if anchor_or_block:
+                    if anchor_or_block.startswith('#^'):
+                        # Block reference
+                        block_ref = anchor_or_block[2:]  # Remove #^
+                    elif anchor_or_block.startswith('#'):
+                        # Heading anchor
+                        anchor = anchor_or_block[1:]  # Remove #
 
                 # Parse path if present
                 path = None
@@ -290,6 +387,8 @@ class MarkdownParser:
                         target=target,
                         display_text=display_text,
                         path=path,
+                        anchor=anchor,
+                        block_ref=block_ref,
                         line_number=line_num,
                         column=column,
                     )
@@ -342,8 +441,14 @@ class MarkdownParser:
         Serialize ParsedNote back to markdown.
 
         Preserves original content structure while updating
-        frontmatter with any changes.
+        frontmatter with any changes. If frontmatter hasn't been modified,
+        uses the original raw frontmatter text for byte-identical output.
         """
+        # If frontmatter hasn't been modified and we have the raw version, use it
+        if not note.frontmatter_modified and note.raw_frontmatter:
+            return note.raw_frontmatter + note.raw_content
+
+        # Otherwise, regenerate frontmatter from parsed data
         # Build frontmatter dict
         metadata: dict[str, Any] = {
             'title': note.frontmatter.title,

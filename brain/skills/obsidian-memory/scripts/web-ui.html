@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Obsidian Memory - Knowledge Management</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0c0c0c;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .header { text-align: center; margin-bottom: 3rem; }
+        .header h1 { 
+            font-size: 2.5rem; 
+            color: #9f7aea; 
+            margin-bottom: 0.5rem;
+        }
+        .header p { font-size: 1.2rem; color: #a0a0a0; }
+        
+        .card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .search-section {
+            background: #1a1a1a;
+            padding: 2rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            border: 1px solid #333;
+        }
+        
+        .search-box {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        input[type="text"] {
+            flex: 1;
+            padding: 0.75rem;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 1rem;
+        }
+        
+        button {
+            padding: 0.75rem 1.5rem;
+            background: #9f7aea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        
+        button:hover {
+            background: #8b69d9;
+        }
+        
+        .results {
+            margin-top: 1rem;
+            min-height: 200px;
+            background: #0f0f0f;
+            border-radius: 6px;
+            padding: 1rem;
+            border: 1px solid #333;
+        }
+        
+        .result-item {
+            background: #1a1a1a;
+            margin: 0.5rem 0;
+            padding: 1rem;
+            border-radius: 6px;
+            border-left: 3px solid #9f7aea;
+        }
+        
+        .result-path {
+            color: #9f7aea;
+            font-size: 0.9rem;
+            font-family: 'Monaco', monospace;
+        }
+        
+        .result-content {
+            margin-top: 0.5rem;
+            color: #e0e0e0;
+        }
+        
+        .api-info {
+            background: #0f1419;
+            border: 1px solid #2a2a2a;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+        
+        .api-info h3 {
+            color: #9f7aea;
+            margin-bottom: 1rem;
+        }
+        
+        .endpoint {
+            background: #1a1a1a;
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-family: 'Monaco', monospace;
+            margin: 0.5rem 0;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        
+        .status-online { background: #10b981; }
+        .status-offline { background: #ef4444; }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 Obsidian Memory</h1>
+            <p>Knowledge Management & AI-Enhanced Search</p>
+        </div>
+        
+        <div class="api-info">
+            <h3>🔗 API Status</h3>
+            <p><span id="api-status" class="status-indicator status-offline"></span>
+               <span id="api-status-text">Checking connection...</span></p>
+            <p class="endpoint">Endpoint: <code>/mcp</code></p>
+            <p style="margin-top: 0.5rem; color: #a0a0a0;">
+                MCP Server providing full Obsidian-Memory functionality
+            </p>
+        </div>
+        
+        <div class="search-section">
+            <h3 style="color: #9f7aea; margin-bottom: 1rem;">🔍 Search Memory</h3>
+            <div class="search-box">
+                <input type="text" id="searchQuery" placeholder="Search your knowledge base..." />
+                <button onclick="searchMemory()">Search</button>
+            </div>
+            <div class="results" id="searchResults">
+                <p style="color: #666;">Enter a search query to explore your memory...</p>
+            </div>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <h3 style="color: #9f7aea; margin-bottom: 1rem;">📁 Features</h3>
+                <ul style="color: #a0a0a0; line-height: 2;">
+                    <li>Full-text search across all notes</li>
+                    <li>Knowledge graph traversal</li>
+                    <li>Project management</li>
+                    <li>Session tracking</li>
+                    <li>AI-powered insights</li>
+                    <li>Git integration</li>
+                </ul>
+            </div>
+            
+            <div class="card">
+                <h3 style="color: #9f7aea; margin-bottom: 1rem;">🛠️ API Methods</h3>
+                <div style="font-family: 'Monaco', monospace; font-size: 0.9rem; color: #a0a0a0;">
+                    <p>• mem_search</p>
+                    <p>• mem_read</p>
+                    <p>• mem_write</p>
+                    <p>• graph_traverse</p>
+                    <p>• project_list</p>
+                    <p>• session_create</p>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 style="color: #9f7aea; margin-bottom: 1rem;">📊 Stats</h3>
+                <div id="stats" style="color: #a0a0a0;">
+                    <p id="noteCount">Notes: Loading...</p>
+                    <p id="projectCount">Projects: Loading...</p>
+                    <p id="lastSync">Last sync: Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Check API status on load
+        async function checkApiStatus() {
+            try {
+                const response = await fetch('/mcp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        method: 'mem_search',
+                        params: { query: 'test', maxResults: 1 }
+                    })
+                });
+                
+                if (response.ok) {
+                    document.getElementById('api-status').className = 'status-indicator status-online';
+                    document.getElementById('api-status-text').textContent = 'MCP Server Online';
+                    loadStats();
+                } else {
+                    throw new Error('API not responding');
+                }
+            } catch (error) {
+                document.getElementById('api-status').className = 'status-indicator status-offline';
+                document.getElementById('api-status-text').textContent = 'MCP Server Offline';
+            }
+        }
+        
+        // Search function
+        async function searchMemory() {
+            const query = document.getElementById('searchQuery').value;
+            const resultsDiv = document.getElementById('searchResults');
+            
+            if (!query.trim()) {
+                resultsDiv.innerHTML = '<p style="color: #666;">Please enter a search query...</p>';
+                return;
+            }
+            
+            resultsDiv.innerHTML = '<p style="color: #666;">Searching...</p>';
+            
+            try {
+                const response = await fetch('/mcp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        method: 'mem_search',
+                        params: {
+                            query: query,
+                            maxResults: 10
+                        }
+                    })
+                });
+                
+                const data = await response.json();
+                displayResults(data);
+                
+            } catch (error) {
+                resultsDiv.innerHTML = '<p style="color: #ef4444;">Search failed. Check API connection.</p>';
+            }
+        }
+        
+        // Display search results
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('searchResults');
+            
+            if (!data.results || data.results.length === 0) {
+                resultsDiv.innerHTML = '<p style="color: #666;">No results found.</p>';
+                return;
+            }
+            
+            const resultsHtml = data.results.map(result => `
+                <div class="result-item">
+                    <div class="result-path">${result.path}:${result.line || ''}</div>
+                    <div class="result-content">${escapeHtml(result.content)}</div>
+                </div>
+            `).join('');
+            
+            resultsDiv.innerHTML = resultsHtml;
+        }
+        
+        // Load basic stats
+        async function loadStats() {
+            // This would call various API endpoints to get stats
+            document.getElementById('noteCount').textContent = 'Notes: Available via API';
+            document.getElementById('projectCount').textContent = 'Projects: Available via API';
+            document.getElementById('lastSync').textContent = 'Last sync: ' + new Date().toLocaleString();
+        }
+        
+        // Utility function
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Handle enter key in search
+        document.getElementById('searchQuery').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchMemory();
+            }
+        });
+        
+        // Initialize
+        checkApiStatus();
+    </script>
+</body>
+</html>

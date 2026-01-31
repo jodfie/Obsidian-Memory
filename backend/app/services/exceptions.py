@@ -82,3 +82,9 @@ class SyncConflictError(SyncError):
     """Raised when sync conflicts are detected."""
 
     pass
+
+
+class VaultConfigValidationError(VaultError):
+    """Raised when vault configuration validation fails."""
+
+    pass

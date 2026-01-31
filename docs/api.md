@@ -8,11 +8,36 @@ Default: `http://localhost:8000`
 
 ## Authentication
 
-If `REQUIRE_AUTH=true`, include Bearer token in requests:
+Obsidian-Memory supports multiple authentication methods:
+
+### Bearer Token Authentication
+
+If `REQUIRE_AUTH=true`, include a Bearer token in requests:
 
 ```
 Authorization: Bearer <your-token>
 ```
+
+Set the token via the `API_AUTH_TOKEN` environment variable.
+
+### Cloudflare Access (Recommended for Production)
+
+When `CLOUDFLARE_ACCESS_ENABLED=true`, requests are authenticated via Cloudflare Access JWT:
+
+```
+CF-Access-JWT: <jwt-token>
+```
+
+Configure with these environment variables:
+- `CLOUDFLARE_ACCESS_TEAM_DOMAIN` - Your Cloudflare Access team domain
+- `CLOUDFLARE_ACCESS_AUDIENCE` - Application audience tag (AUD)
+
+See [AUTHENTICATION.md](AUTHENTICATION.md) for detailed setup instructions.
+
+### OAuth 2.1 (Claude.ai MCP Integration)
+
+For Claude.ai MCP connector integration, OAuth 2.1 with PKCE is supported via the OAuth gateway.
+See [AUTHENTICATION.md](AUTHENTICATION.md) for OAuth configuration.
 
 ## Endpoints
 
@@ -190,6 +215,39 @@ Search notes with full-text search.
 
 **Response:**
 Same format as GET /api/notes.
+
+#### POST /api/notes/supersede
+
+Mark a note as superseded by another note. Creates bi-directional relationships:
+- Old note gets `superseded_by` pointing to new note
+- New note gets `supersedes` pointing to old note
+
+This is useful for knowledge evolution tracking when information is updated or replaced.
+
+**Request Body:**
+```json
+{
+  "old_note_id": 1,
+  "new_note_id": 2,
+  "reason": "Updated with latest findings"
+}
+```
+
+**Response:**
+```json
+{
+  "old_note_id": 1,
+  "new_note_id": 2,
+  "old_note_title": "Original Note",
+  "new_note_title": "Updated Note",
+  "message": "Note 1 marked as superseded by note 2"
+}
+```
+
+**Error Codes:**
+- `400` - Self-supersession not allowed (old_note_id == new_note_id)
+- `404` - Note not found
+- `409` - Notes are in different vaults
 
 ### Projects
 
@@ -531,7 +589,71 @@ Common status codes:
 
 ## Rate Limiting
 
-Currently no rate limiting is implemented. Consider implementing for production use.
+Rate limiting protects the API from abuse. When enabled, requests are limited per IP address.
+
+### Configuration
+
+Environment variables:
+- `RATE_LIMIT_ENABLED` - Enable/disable rate limiting (default: `true`)
+- `RATE_LIMIT_REQUESTS_PER_MINUTE` - Requests allowed per minute (default: `60`)
+- `RATE_LIMIT_BURST` - Additional burst allowance (default: `10`)
+
+### Response Headers
+
+All responses include rate limit information:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests allowed per minute |
+| `X-RateLimit-Remaining` | Requests remaining in current window |
+| `X-RateLimit-Reset` | Unix timestamp when the limit resets |
+
+### Rate Limit Exceeded
+
+When the rate limit is exceeded, the API returns:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+X-RateLimit-Remaining: 0
+
+{
+  "detail": "Too many requests. Please try again later.",
+  "retry_after": 30
+}
+```
+
+Wait for the `Retry-After` seconds before retrying.
+
+### Exempt Endpoints
+
+The following endpoints are exempt from rate limiting:
+- `GET /health` - Health check
+- `GET /metrics` - Metrics endpoint
+
+## Request Validation
+
+The API validates all incoming requests for security:
+
+### Path Traversal Protection
+
+Requests containing path traversal patterns are rejected with `400 Bad Request`:
+- `../` sequences
+- URL-encoded variants (`%2e%2e/`)
+- Double-encoded variants
+
+### Content-Type Validation
+
+POST, PUT, and PATCH requests must use valid content types:
+- `application/json`
+- `application/x-www-form-urlencoded`
+- `multipart/form-data`
+
+Invalid content types return `415 Unsupported Media Type`.
+
+### Request Size Limits
+
+Requests exceeding `MAX_REQUEST_SIZE_BYTES` (default: 10 MB) return `413 Request Entity Too Large`.
 
 ## Pagination
 

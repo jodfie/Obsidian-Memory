@@ -1,0 +1,133 @@
+# Docker Compose for MCP server integration with OAuth gateway
+# Use with: docker-compose -f docker-compose.gateway.yml up
+#
+# Prerequisites:
+# 1. Start the OAuth gateway first: cd oauth-gateway && docker-compose up -d
+# 2. Ensure the 'public' network exists: docker network create public
+# 3. Set BASE_DOMAIN in .env (e.g., BASE_DOMAIN=example.com)
+#
+# The MCP server will be accessible at: https://memory.${BASE_DOMAIN}/mcp
+# OAuth authentication is handled by the gateway's Traefik ForwardAuth
+
+services:
+  # Backend API service
+  memory:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: memory
+    environment:
+      - API_TITLE=Obsidian-Memory
+      - API_VERSION=0.1.0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - BASIC_MEMORY_HOME=${BASIC_MEMORY_HOME:-/data}
+      - BASIC_MEMORY_SYNC_CHANGES=${BASIC_MEMORY_SYNC_CHANGES:-true}
+      - BASIC_MEMORY_SYNC_DELAY=${BASIC_MEMORY_SYNC_DELAY:-1000}
+      - GIT_AUTO_COMMIT=${GIT_AUTO_COMMIT:-false}
+      - GIT_REMOTE=${GIT_REMOTE:-origin}
+      - VAULT_PATH=${VAULT_PATH:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Auth is handled by gateway - disable local auth
+      - REQUIRE_AUTH=false
+      - CLOUDFLARE_ACCESS_ENABLED=false
+    volumes:
+      - memory-data:/data
+      - memory-vaults:/vaults
+    networks:
+      - public
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # MCP server with OAuth gateway integration
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: memory-mcp
+    environment:
+      - MCP_TRANSPORT=sse
+      - MCP_SSE_PORT=3000
+      - MCP_PATH=/mcp
+      - OBSIDIAN_MEMORY_API_URL=http://memory:8765
+      - NODE_ENV=production
+      - MCP_PROTOCOL_VERSION=${MCP_PROTOCOL_VERSION:-2025-03-26}
+    networks:
+      - public
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=public"
+      - "traefik.http.services.memory-mcp.loadbalancer.server.port=3000"
+
+      # OAuth discovery route - Priority 10 (HIGHEST - must work without auth!)
+      # Redirects to auth service for OAuth metadata
+      - "traefik.http.routers.memory-mcp-oauth-discovery.rule=Host(`memory.${BASE_DOMAIN}`) && PathPrefix(`/.well-known/oauth-authorization-server`)"
+      - "traefik.http.routers.memory-mcp-oauth-discovery.priority=10"
+      - "traefik.http.routers.memory-mcp-oauth-discovery.entrypoints=websecure"
+      - "traefik.http.routers.memory-mcp-oauth-discovery.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.memory-mcp-oauth-discovery.middlewares=memory-mcp-oauth-discovery-rewrite@docker"
+      - "traefik.http.routers.memory-mcp-oauth-discovery.service=auth@docker"
+
+      # Middleware to rewrite host header for auth service
+      - "traefik.http.middlewares.memory-mcp-oauth-discovery-rewrite.headers.customrequestheaders.Host=auth.${BASE_DOMAIN}"
+
+      # CORS preflight route (OPTIONS) - Priority 4 (no auth for preflight)
+      - "traefik.http.routers.memory-mcp-cors.rule=Host(`memory.${BASE_DOMAIN}`) && Method(`OPTIONS`)"
+      - "traefik.http.routers.memory-mcp-cors.priority=4"
+      - "traefik.http.routers.memory-mcp-cors.entrypoints=websecure"
+      - "traefik.http.routers.memory-mcp-cors.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.memory-mcp-cors.service=memory-mcp"
+      - "traefik.http.routers.memory-mcp-cors.middlewares=mcp-cors@file"
+
+      # MCP route with auth - Priority 2
+      - "traefik.http.routers.memory-mcp.rule=Host(`memory.${BASE_DOMAIN}`) && PathPrefix(`/mcp`)"
+      - "traefik.http.routers.memory-mcp.priority=2"
+      - "traefik.http.routers.memory-mcp.entrypoints=websecure"
+      - "traefik.http.routers.memory-mcp.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.memory-mcp.middlewares=mcp-cors@file,mcp-auth@file"
+      - "traefik.http.routers.memory-mcp.service=memory-mcp"
+
+      # Health check route - Priority 2 (with auth for security)
+      - "traefik.http.routers.memory-mcp-health.rule=Host(`memory.${BASE_DOMAIN}`) && Path(`/health`)"
+      - "traefik.http.routers.memory-mcp-health.priority=2"
+      - "traefik.http.routers.memory-mcp-health.entrypoints=websecure"
+      - "traefik.http.routers.memory-mcp-health.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.memory-mcp-health.middlewares=mcp-cors@file"
+      - "traefik.http.routers.memory-mcp-health.service=memory-mcp"
+
+      # Catch-all route with auth - Priority 1 (LOWEST)
+      - "traefik.http.routers.memory-mcp-catchall.rule=Host(`memory.${BASE_DOMAIN}`)"
+      - "traefik.http.routers.memory-mcp-catchall.priority=1"
+      - "traefik.http.routers.memory-mcp-catchall.entrypoints=websecure"
+      - "traefik.http.routers.memory-mcp-catchall.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.memory-mcp-catchall.middlewares=mcp-cors@file,mcp-auth@file"
+      - "traefik.http.routers.memory-mcp-catchall.service=memory-mcp"
+
+      # HTTP to HTTPS redirect
+      - "traefik.http.routers.memory-mcp-redirect.rule=Host(`memory.${BASE_DOMAIN}`)"
+      - "traefik.http.routers.memory-mcp-redirect.entrypoints=web"
+      - "traefik.http.routers.memory-mcp-redirect.middlewares=redirect-to-https@file"
+      - "traefik.http.routers.memory-mcp-redirect.priority=1"
+      - "traefik.http.routers.memory-mcp-redirect.service=memory-mcp"
+
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -s -X POST http://localhost:3000/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"healthcheck\",\"version\":\"1.0\"}},\"id\":1}' | grep -q '\"protocolVersion\"'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  memory-data:
+    driver: local
+  memory-vaults:
+    driver: local
+
+networks:
+  public:
+    external: true

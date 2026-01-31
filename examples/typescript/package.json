@@ -1,0 +1,16 @@
+{
+  "name": "obsidian-memory-client-example",
+  "version": "1.0.0",
+  "description": "Example TypeScript SDK for Obsidian-Memory API",
+  "type": "module",
+  "main": "obsidian-memory-client.js",
+  "scripts": {
+    "build": "tsc",
+    "example": "npx tsx obsidian-memory-client.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5.5.0",
+    "tsx": "^4.0.0"
+  }
+}

@@ -104,6 +104,9 @@ class TraversalQuery(BaseModel):
     target_node_id: int | None = Field(
         default=None, description="Target node ID (for path-finding)"
     )
+    method: str = Field(
+        default="bfs", description="Traversal method: 'bfs' or 'dfs'"
+    )
     max_depth: int = Field(default=10, ge=1, le=100, description="Maximum traversal depth")
     edge_types: list[EdgeType] | None = Field(
         default=None, description="Filter by edge types (None = all types)"
@@ -114,3 +117,72 @@ class TraversalQuery(BaseModel):
     exclude_nodes: list[int] = Field(
         default_factory=list, description="Node IDs to exclude from traversal"
     )
+
+
+class BacklinkItem(BaseModel):
+    """Information about a single backlink to a note."""
+
+    source_node: Node = Field(..., description="The note that links TO the target")
+    edge_type: EdgeType = Field(..., description="Type of relationship")
+    context: str | None = Field(default=None, description="Context snippet from source note")
+    weight: float = Field(default=1.0, description="Edge weight for ranking")
+
+
+class BacklinkResponse(BaseModel):
+    """Response containing backlinks (notes that link TO a given note)."""
+
+    target_node_id: int = Field(..., description="The note being linked TO")
+    target_title: str = Field(..., description="Title of the target note")
+    backlinks: list[BacklinkItem] = Field(
+        default_factory=list, description="List of backlinks"
+    )
+    total_count: int = Field(..., description="Total number of backlinks")
+
+
+class NodeCentrality(BaseModel):
+    """Centrality metrics for a graph node."""
+
+    node_id: int = Field(..., description="Node ID")
+    title: str | None = Field(default=None, description="Node title")
+    permalink: str | None = Field(default=None, description="Node permalink")
+    degree_centrality: int = Field(..., description="Total degree (in + out)")
+    in_degree: int = Field(..., description="Number of incoming edges")
+    out_degree: int = Field(..., description="Number of outgoing edges")
+    normalized_centrality: float = Field(..., description="Normalized centrality (0-1)")
+    outgoing_by_type: dict[str, int] = Field(
+        default_factory=dict, description="Outgoing edge counts by type"
+    )
+    incoming_by_type: dict[str, int] = Field(
+        default_factory=dict, description="Incoming edge counts by type"
+    )
+
+
+class GraphStats(BaseModel):
+    """Statistics about the knowledge graph."""
+
+    total_nodes: int = Field(..., description="Total number of nodes")
+    total_edges: int = Field(..., description="Total number of edges")
+    edge_type_distribution: dict[str, int] = Field(
+        default_factory=dict, description="Edge count by type"
+    )
+    orphan_nodes: list[int] = Field(
+        default_factory=list, description="Nodes with no connections"
+    )
+    orphan_count: int = Field(..., description="Number of orphan nodes")
+    average_degree: float = Field(..., description="Average node degree")
+    graph_density: float = Field(..., description="Graph density (0-1)")
+    top_hubs: list[dict] = Field(
+        default_factory=list, description="Most connected nodes"
+    )
+
+
+class HubNode(BaseModel):
+    """A hub node with high connectivity."""
+
+    node_id: int = Field(..., description="Node ID")
+    title: str = Field(..., description="Node title")
+    permalink: str | None = Field(default=None, description="Node permalink")
+    degree_centrality: int = Field(..., description="Total degree")
+    in_degree: int = Field(..., description="Incoming edges")
+    out_degree: int = Field(..., description="Outgoing edges")
+    normalized_centrality: float = Field(..., description="Normalized centrality")

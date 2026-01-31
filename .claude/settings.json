@@ -75,6 +75,86 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/hooks/session-start.sh",
+            "env": {
+              "OBSIDIAN_MEMORY_API_URL": "${OBSIDIAN_MEMORY_API_URL:-http://localhost:8000}",
+              "OBSIDIAN_MEMORY_PROJECT": "${OBSIDIAN_MEMORY_PROJECT:-default}",
+              "OBSIDIAN_MEMORY_SESSION_ID": "${CLAUDE_SESSION_ID}"
+            }
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/hooks/user-prompt-submit.sh",
+            "env": {
+              "OBSIDIAN_MEMORY_API_URL": "${OBSIDIAN_MEMORY_API_URL:-http://localhost:8000}",
+              "OBSIDIAN_MEMORY_PROJECT": "${OBSIDIAN_MEMORY_PROJECT:-default}",
+              "OBSIDIAN_MEMORY_SESSION_ID": "${CLAUDE_SESSION_ID}"
+            }
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/hooks/post-tool-use.sh",
+            "env": {
+              "OBSIDIAN_MEMORY_API_URL": "${OBSIDIAN_MEMORY_API_URL:-http://localhost:8000}",
+              "OBSIDIAN_MEMORY_PROJECT": "${OBSIDIAN_MEMORY_PROJECT:-default}",
+              "OBSIDIAN_MEMORY_SESSION_ID": "${CLAUDE_SESSION_ID}"
+            }
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/hooks/pre-compact.sh",
+            "env": {
+              "OBSIDIAN_MEMORY_API_URL": "${OBSIDIAN_MEMORY_API_URL:-http://localhost:8000}",
+              "OBSIDIAN_MEMORY_PROJECT": "${OBSIDIAN_MEMORY_PROJECT:-default}",
+              "OBSIDIAN_MEMORY_SESSION_ID": "${CLAUDE_SESSION_ID}"
+            }
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/hooks/session-end.sh",
+            "env": {
+              "OBSIDIAN_MEMORY_API_URL": "${OBSIDIAN_MEMORY_API_URL:-http://localhost:8000}",
+              "OBSIDIAN_MEMORY_PROJECT": "${OBSIDIAN_MEMORY_PROJECT:-default}",
+              "OBSIDIAN_MEMORY_SESSION_ID": "${CLAUDE_SESSION_ID}"
+            }
+          }
+        ]
+      }
     ]
   },
   "model": "opus",

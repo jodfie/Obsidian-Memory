@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from app.config import settings
+from app.services.config_manager import ConfigurationManager
 from app.services.markdown_parser import MarkdownParser
 from app.services.search_index import SearchIndex
 from app.services.vault_manager import VaultManager, VaultManagerConfig
@@ -31,3 +32,8 @@ def get_search_index() -> SearchIndex:
     """Get SearchIndex instance."""
     db_path = settings.index_db_path
     return SearchIndex(db_path)
+
+
+def get_config_manager() -> ConfigurationManager:
+    """Get ConfigurationManager instance."""
+    return ConfigurationManager(config_path=settings.config_file)

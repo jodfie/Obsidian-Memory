@@ -1,0 +1,1808 @@
+{
+  "server": "http://memory-dev:8765/mcp",
+  "timestamp": "2026-01-28T22:53:05.532Z",
+  "tests": [
+    {
+      "name": "List Tools",
+      "type": "list-tools",
+      "status": "passed",
+      "duration": 27,
+      "error": null,
+      "output": [
+        {
+          "name": "mem_read",
+          "description": "Read a note from Obsidian-Memory by ID, permalink, or search query. Returns the full note content with metadata. Use this to retrieve specific notes when you know their identifier or want to find notes by searching.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "number",
+                "description": "Note ID (if known)"
+              },
+              "permalink": {
+                "type": "string",
+                "description": "Note permalink (if known)"
+              },
+              "query": {
+                "type": "string",
+                "description": "Search query to find note (returns first match)"
+              },
+              "vault": {
+                "type": "string",
+                "description": "Optional vault name to filter search"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            }
+          },
+          "annotations": {
+            "title": "Read Memory Note",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "mem_write",
+          "description": "Create or update a note in Obsidian-Memory. If note_id is provided, updates the existing note; otherwise creates a new note. Use this to save important information, decisions, patterns, or knowledge for future reference.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "note_id": {
+                "type": "number",
+                "description": "Note ID for update (omit for create)"
+              },
+              "vault_name": {
+                "type": "string",
+                "description": "Vault name (optional, uses default if not provided)"
+              },
+              "relative_path": {
+                "type": "string",
+                "description": "Relative path for the note (e.g., \"projects/api/auth.md\")"
+              },
+              "title": {
+                "type": "string",
+                "description": "Note title"
+              },
+              "content": {
+                "type": "string",
+                "description": "Markdown content of the note"
+              },
+              "note_type": {
+                "type": "string",
+                "enum": [
+                  "note",
+                  "decision",
+                  "error",
+                  "knowledge",
+                  "pattern",
+                  "session",
+                  "research"
+                ],
+                "default": "note",
+                "description": "Type of note"
+              },
+              "project": {
+                "type": "string",
+                "description": "Project identifier (optional)"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Tags for the note"
+              }
+            },
+            "required": [
+              "relative_path",
+              "title",
+              "content"
+            ]
+          },
+          "annotations": {
+            "title": "Write Memory Note",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "mem_search",
+          "description": "Search notes in Obsidian-Memory using full-text search with optional filters. Supports FTS5 syntax (terms, phrases, boolean operators). Returns matching notes with snippets and pagination metadata.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Search query (FTS5 syntax: terms, phrases, boolean operators)"
+              },
+              "vault": {
+                "type": "string",
+                "description": "Filter by vault name"
+              },
+              "project": {
+                "type": "string",
+                "description": "Filter by project"
+              },
+              "note_type": {
+                "type": "string",
+                "enum": [
+                  "note",
+                  "decision",
+                  "error",
+                  "knowledge",
+                  "pattern",
+                  "session",
+                  "research"
+                ],
+                "description": "Filter by note type"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by tags (AND - all must match)"
+              },
+              "tags_any": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by tags (OR - any can match)"
+              },
+              "sort": {
+                "type": "string",
+                "enum": [
+                  "relevance",
+                  "created_desc",
+                  "created_asc",
+                  "updated_desc",
+                  "updated_asc",
+                  "title_asc"
+                ],
+                "default": "relevance",
+                "description": "Sort order"
+              },
+              "limit": {
+                "type": "number",
+                "description": "Maximum results (1-1000, default: 50)"
+              },
+              "offset": {
+                "type": "number",
+                "description": "Result offset for pagination"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          },
+          "annotations": {
+            "title": "Search Memory Notes",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "build_context",
+          "description": "Build context from memory:// URI patterns. Supports note selection by ID, permalink, search, path, tags, project, and graph operations. Use this to gather related notes into a single context block.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "uris": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Array of memory:// URI patterns. Examples: \"memory://note/123\", \"memory://search/auth\", \"memory://tags/security,backend\", \"memory://project/api\""
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "uris"
+            ]
+          },
+          "annotations": {
+            "title": "Build Context from Memory",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "graph_traverse",
+          "description": "Traverse the knowledge graph from a starting note using BFS or DFS. Returns visited nodes and optional paths. Note: Currently uses search-based approximation while graph API is being implemented.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "start_node_id": {
+                "type": "number",
+                "description": "Starting node ID"
+              },
+              "target_node_id": {
+                "type": "number",
+                "description": "Optional target node ID (stops when found)"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "bfs",
+                  "dfs"
+                ],
+                "default": "bfs",
+                "description": "Traversal method: bfs or dfs"
+              },
+              "max_depth": {
+                "type": "number",
+                "default": 10,
+                "description": "Maximum traversal depth (1-100, default: 10)"
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "outgoing",
+                  "incoming",
+                  "both"
+                ],
+                "default": "both",
+                "description": "Edge direction to traverse"
+              },
+              "edge_types": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by edge types (e.g., [\"depends_on\", \"enables\"])"
+              },
+              "exclude_nodes": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "description": "Node IDs to exclude from traversal"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "start_node_id"
+            ]
+          },
+          "annotations": {
+            "title": "Traverse Knowledge Graph",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "graph_similar",
+          "description": "Find notes similar to a given note using graph structure and content similarity. Note: Currently uses search-based approximation while graph API is being implemented.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "note_id": {
+                "type": "number",
+                "description": "Source note ID"
+              },
+              "limit": {
+                "type": "number",
+                "default": 10,
+                "description": "Maximum similar notes to return (1-100, default: 10)"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "graph",
+                  "content",
+                  "hybrid"
+                ],
+                "default": "hybrid",
+                "description": "Similarity method: graph, content, or hybrid"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "note_id"
+            ]
+          },
+          "annotations": {
+            "title": "Find Similar Notes",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "project_list",
+          "description": "List all projects with their note counts. Returns projects sorted by note count (descending). Use this to discover available projects in the knowledge base.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            }
+          },
+          "annotations": {
+            "title": "List Projects",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "project_switch",
+          "description": "Switch to a project context. Returns project details and recent notes. This is informational - actual project filtering happens in other tools via the project parameter.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "project_name": {
+                "type": "string",
+                "description": "Name of the project to switch to"
+              },
+              "limit": {
+                "type": "number",
+                "default": 10,
+                "description": "Number of recent notes to return (default: 10)"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "project_name"
+            ]
+          },
+          "annotations": {
+            "title": "Switch Project Context",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "project_create",
+          "description": "Create a new project. Projects are created implicitly when notes are added with a project field, but this tool allows explicit creation with name validation.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "project_name": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_-]+$",
+                "description": "Name of the project to create (alphanumeric, dash, underscore only)"
+              }
+            },
+            "required": [
+              "project_name"
+            ]
+          },
+          "annotations": {
+            "title": "Create Project",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "session_observe",
+          "description": "Add an observation or event to a session. Use this to track decisions, errors, solutions, tool usage, file edits, commands, and other significant events during a development session.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "description": "Session ID (create one first if needed)"
+              },
+              "event_type": {
+                "type": "string",
+                "enum": [
+                  "observation",
+                  "decision",
+                  "error",
+                  "solution",
+                  "tool_use",
+                  "file_edit",
+                  "command",
+                  "research",
+                  "user_prompt"
+                ],
+                "description": "Type of event"
+              },
+              "content": {
+                "type": "string",
+                "description": "Event content/description"
+              },
+              "metadata": {
+                "type": "object",
+                "description": "Optional metadata (e.g., file path, command, tool name)"
+              }
+            },
+            "required": [
+              "session_id",
+              "event_type",
+              "content"
+            ]
+          },
+          "annotations": {
+            "title": "Observe Session Event",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "session_summary",
+          "description": "Generate an AI summary of a session. Extracts key learnings, decisions made, errors encountered, solutions found, and next steps from the session events.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "description": "Session ID to summarize"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "session_id"
+            ]
+          },
+          "annotations": {
+            "title": "Generate Session Summary",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "session_context",
+          "description": "Get context for a session including events and summary. Useful for loading session context into Claude to continue work or review what happened in a previous session.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "description": "Session ID"
+              },
+              "include_events": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include session events (default: true)"
+              },
+              "include_summary": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include AI summary if available (default: true)"
+              },
+              "limit": {
+                "type": "number",
+                "default": 50,
+                "description": "Maximum events to return (default: 50)"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "session_id"
+            ]
+          },
+          "annotations": {
+            "title": "Get Session Context",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "Server Connectivity",
+      "type": "list-tools",
+      "status": "passed",
+      "duration": 16,
+      "error": null,
+      "output": [
+        {
+          "name": "mem_read",
+          "description": "Read a note from Obsidian-Memory by ID, permalink, or search query. Returns the full note content with metadata. Use this to retrieve specific notes when you know their identifier or want to find notes by searching.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "number",
+                "description": "Note ID (if known)"
+              },
+              "permalink": {
+                "type": "string",
+                "description": "Note permalink (if known)"
+              },
+              "query": {
+                "type": "string",
+                "description": "Search query to find note (returns first match)"
+              },
+              "vault": {
+                "type": "string",
+                "description": "Optional vault name to filter search"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            }
+          },
+          "annotations": {
+            "title": "Read Memory Note",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "mem_write",
+          "description": "Create or update a note in Obsidian-Memory. If note_id is provided, updates the existing note; otherwise creates a new note. Use this to save important information, decisions, patterns, or knowledge for future reference.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "note_id": {
+                "type": "number",
+                "description": "Note ID for update (omit for create)"
+              },
+              "vault_name": {
+                "type": "string",
+                "description": "Vault name (optional, uses default if not provided)"
+              },
+              "relative_path": {
+                "type": "string",
+                "description": "Relative path for the note (e.g., \"projects/api/auth.md\")"
+              },
+              "title": {
+                "type": "string",
+                "description": "Note title"
+              },
+              "content": {
+                "type": "string",
+                "description": "Markdown content of the note"
+              },
+              "note_type": {
+                "type": "string",
+                "enum": [
+                  "note",
+                  "decision",
+                  "error",
+                  "knowledge",
+                  "pattern",
+                  "session",
+                  "research"
+                ],
+                "default": "note",
+                "description": "Type of note"
+              },
+              "project": {
+                "type": "string",
+                "description": "Project identifier (optional)"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Tags for the note"
+              }
+            },
+            "required": [
+              "relative_path",
+              "title",
+              "content"
+            ]
+          },
+          "annotations": {
+            "title": "Write Memory Note",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "mem_search",
+          "description": "Search notes in Obsidian-Memory using full-text search with optional filters. Supports FTS5 syntax (terms, phrases, boolean operators). Returns matching notes with snippets and pagination metadata.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Search query (FTS5 syntax: terms, phrases, boolean operators)"
+              },
+              "vault": {
+                "type": "string",
+                "description": "Filter by vault name"
+              },
+              "project": {
+                "type": "string",
+                "description": "Filter by project"
+              },
+              "note_type": {
+                "type": "string",
+                "enum": [
+                  "note",
+                  "decision",
+                  "error",
+                  "knowledge",
+                  "pattern",
+                  "session",
+                  "research"
+                ],
+                "description": "Filter by note type"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by tags (AND - all must match)"
+              },
+              "tags_any": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by tags (OR - any can match)"
+              },
+              "sort": {
+                "type": "string",
+                "enum": [
+                  "relevance",
+                  "created_desc",
+                  "created_asc",
+                  "updated_desc",
+                  "updated_asc",
+                  "title_asc"
+                ],
+                "default": "relevance",
+                "description": "Sort order"
+              },
+              "limit": {
+                "type": "number",
+                "description": "Maximum results (1-1000, default: 50)"
+              },
+              "offset": {
+                "type": "number",
+                "description": "Result offset for pagination"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          },
+          "annotations": {
+            "title": "Search Memory Notes",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "build_context",
+          "description": "Build context from memory:// URI patterns. Supports note selection by ID, permalink, search, path, tags, project, and graph operations. Use this to gather related notes into a single context block.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "uris": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Array of memory:// URI patterns. Examples: \"memory://note/123\", \"memory://search/auth\", \"memory://tags/security,backend\", \"memory://project/api\""
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "uris"
+            ]
+          },
+          "annotations": {
+            "title": "Build Context from Memory",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "graph_traverse",
+          "description": "Traverse the knowledge graph from a starting note using BFS or DFS. Returns visited nodes and optional paths. Note: Currently uses search-based approximation while graph API is being implemented.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "start_node_id": {
+                "type": "number",
+                "description": "Starting node ID"
+              },
+              "target_node_id": {
+                "type": "number",
+                "description": "Optional target node ID (stops when found)"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "bfs",
+                  "dfs"
+                ],
+                "default": "bfs",
+                "description": "Traversal method: bfs or dfs"
+              },
+              "max_depth": {
+                "type": "number",
+                "default": 10,
+                "description": "Maximum traversal depth (1-100, default: 10)"
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "outgoing",
+                  "incoming",
+                  "both"
+                ],
+                "default": "both",
+                "description": "Edge direction to traverse"
+              },
+              "edge_types": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by edge types (e.g., [\"depends_on\", \"enables\"])"
+              },
+              "exclude_nodes": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "description": "Node IDs to exclude from traversal"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "start_node_id"
+            ]
+          },
+          "annotations": {
+            "title": "Traverse Knowledge Graph",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "graph_similar",
+          "description": "Find notes similar to a given note using graph structure and content similarity. Note: Currently uses search-based approximation while graph API is being implemented.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "note_id": {
+                "type": "number",
+                "description": "Source note ID"
+              },
+              "limit": {
+                "type": "number",
+                "default": 10,
+                "description": "Maximum similar notes to return (1-100, default: 10)"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "graph",
+                  "content",
+                  "hybrid"
+                ],
+                "default": "hybrid",
+                "description": "Similarity method: graph, content, or hybrid"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "note_id"
+            ]
+          },
+          "annotations": {
+            "title": "Find Similar Notes",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "project_list",
+          "description": "List all projects with their note counts. Returns projects sorted by note count (descending). Use this to discover available projects in the knowledge base.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            }
+          },
+          "annotations": {
+            "title": "List Projects",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "project_switch",
+          "description": "Switch to a project context. Returns project details and recent notes. This is informational - actual project filtering happens in other tools via the project parameter.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "project_name": {
+                "type": "string",
+                "description": "Name of the project to switch to"
+              },
+              "limit": {
+                "type": "number",
+                "default": 10,
+                "description": "Number of recent notes to return (default: 10)"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "project_name"
+            ]
+          },
+          "annotations": {
+            "title": "Switch Project Context",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "project_create",
+          "description": "Create a new project. Projects are created implicitly when notes are added with a project field, but this tool allows explicit creation with name validation.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "project_name": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_-]+$",
+                "description": "Name of the project to create (alphanumeric, dash, underscore only)"
+              }
+            },
+            "required": [
+              "project_name"
+            ]
+          },
+          "annotations": {
+            "title": "Create Project",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "session_observe",
+          "description": "Add an observation or event to a session. Use this to track decisions, errors, solutions, tool usage, file edits, commands, and other significant events during a development session.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "description": "Session ID (create one first if needed)"
+              },
+              "event_type": {
+                "type": "string",
+                "enum": [
+                  "observation",
+                  "decision",
+                  "error",
+                  "solution",
+                  "tool_use",
+                  "file_edit",
+                  "command",
+                  "research",
+                  "user_prompt"
+                ],
+                "description": "Type of event"
+              },
+              "content": {
+                "type": "string",
+                "description": "Event content/description"
+              },
+              "metadata": {
+                "type": "object",
+                "description": "Optional metadata (e.g., file path, command, tool name)"
+              }
+            },
+            "required": [
+              "session_id",
+              "event_type",
+              "content"
+            ]
+          },
+          "annotations": {
+            "title": "Observe Session Event",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "session_summary",
+          "description": "Generate an AI summary of a session. Extracts key learnings, decisions made, errors encountered, solutions found, and next steps from the session events.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "description": "Session ID to summarize"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "session_id"
+            ]
+          },
+          "annotations": {
+            "title": "Generate Session Summary",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "session_context",
+          "description": "Get context for a session including events and summary. Useful for loading session context into Claude to continue work or review what happened in a previous session.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "description": "Session ID"
+              },
+              "include_events": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include session events (default: true)"
+              },
+              "include_summary": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include AI summary if available (default: true)"
+              },
+              "limit": {
+                "type": "number",
+                "default": 50,
+                "description": "Maximum events to return (default: 50)"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "session_id"
+            ]
+          },
+          "annotations": {
+            "title": "Get Session Context",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "List Tools - Has Expected Tools",
+      "type": "list-tools",
+      "status": "passed",
+      "duration": 21,
+      "error": null,
+      "output": [
+        {
+          "name": "mem_read",
+          "description": "Read a note from Obsidian-Memory by ID, permalink, or search query. Returns the full note content with metadata. Use this to retrieve specific notes when you know their identifier or want to find notes by searching.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "number",
+                "description": "Note ID (if known)"
+              },
+              "permalink": {
+                "type": "string",
+                "description": "Note permalink (if known)"
+              },
+              "query": {
+                "type": "string",
+                "description": "Search query to find note (returns first match)"
+              },
+              "vault": {
+                "type": "string",
+                "description": "Optional vault name to filter search"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            }
+          },
+          "annotations": {
+            "title": "Read Memory Note",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "mem_write",
+          "description": "Create or update a note in Obsidian-Memory. If note_id is provided, updates the existing note; otherwise creates a new note. Use this to save important information, decisions, patterns, or knowledge for future reference.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "note_id": {
+                "type": "number",
+                "description": "Note ID for update (omit for create)"
+              },
+              "vault_name": {
+                "type": "string",
+                "description": "Vault name (optional, uses default if not provided)"
+              },
+              "relative_path": {
+                "type": "string",
+                "description": "Relative path for the note (e.g., \"projects/api/auth.md\")"
+              },
+              "title": {
+                "type": "string",
+                "description": "Note title"
+              },
+              "content": {
+                "type": "string",
+                "description": "Markdown content of the note"
+              },
+              "note_type": {
+                "type": "string",
+                "enum": [
+                  "note",
+                  "decision",
+                  "error",
+                  "knowledge",
+                  "pattern",
+                  "session",
+                  "research"
+                ],
+                "default": "note",
+                "description": "Type of note"
+              },
+              "project": {
+                "type": "string",
+                "description": "Project identifier (optional)"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Tags for the note"
+              }
+            },
+            "required": [
+              "relative_path",
+              "title",
+              "content"
+            ]
+          },
+          "annotations": {
+            "title": "Write Memory Note",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "mem_search",
+          "description": "Search notes in Obsidian-Memory using full-text search with optional filters. Supports FTS5 syntax (terms, phrases, boolean operators). Returns matching notes with snippets and pagination metadata.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Search query (FTS5 syntax: terms, phrases, boolean operators)"
+              },
+              "vault": {
+                "type": "string",
+                "description": "Filter by vault name"
+              },
+              "project": {
+                "type": "string",
+                "description": "Filter by project"
+              },
+              "note_type": {
+                "type": "string",
+                "enum": [
+                  "note",
+                  "decision",
+                  "error",
+                  "knowledge",
+                  "pattern",
+                  "session",
+                  "research"
+                ],
+                "description": "Filter by note type"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by tags (AND - all must match)"
+              },
+              "tags_any": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by tags (OR - any can match)"
+              },
+              "sort": {
+                "type": "string",
+                "enum": [
+                  "relevance",
+                  "created_desc",
+                  "created_asc",
+                  "updated_desc",
+                  "updated_asc",
+                  "title_asc"
+                ],
+                "default": "relevance",
+                "description": "Sort order"
+              },
+              "limit": {
+                "type": "number",
+                "description": "Maximum results (1-1000, default: 50)"
+              },
+              "offset": {
+                "type": "number",
+                "description": "Result offset for pagination"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          },
+          "annotations": {
+            "title": "Search Memory Notes",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "build_context",
+          "description": "Build context from memory:// URI patterns. Supports note selection by ID, permalink, search, path, tags, project, and graph operations. Use this to gather related notes into a single context block.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "uris": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Array of memory:// URI patterns. Examples: \"memory://note/123\", \"memory://search/auth\", \"memory://tags/security,backend\", \"memory://project/api\""
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "uris"
+            ]
+          },
+          "annotations": {
+            "title": "Build Context from Memory",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "graph_traverse",
+          "description": "Traverse the knowledge graph from a starting note using BFS or DFS. Returns visited nodes and optional paths. Note: Currently uses search-based approximation while graph API is being implemented.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "start_node_id": {
+                "type": "number",
+                "description": "Starting node ID"
+              },
+              "target_node_id": {
+                "type": "number",
+                "description": "Optional target node ID (stops when found)"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "bfs",
+                  "dfs"
+                ],
+                "default": "bfs",
+                "description": "Traversal method: bfs or dfs"
+              },
+              "max_depth": {
+                "type": "number",
+                "default": 10,
+                "description": "Maximum traversal depth (1-100, default: 10)"
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "outgoing",
+                  "incoming",
+                  "both"
+                ],
+                "default": "both",
+                "description": "Edge direction to traverse"
+              },
+              "edge_types": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Filter by edge types (e.g., [\"depends_on\", \"enables\"])"
+              },
+              "exclude_nodes": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "description": "Node IDs to exclude from traversal"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "start_node_id"
+            ]
+          },
+          "annotations": {
+            "title": "Traverse Knowledge Graph",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "graph_similar",
+          "description": "Find notes similar to a given note using graph structure and content similarity. Note: Currently uses search-based approximation while graph API is being implemented.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "note_id": {
+                "type": "number",
+                "description": "Source note ID"
+              },
+              "limit": {
+                "type": "number",
+                "default": 10,
+                "description": "Maximum similar notes to return (1-100, default: 10)"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "graph",
+                  "content",
+                  "hybrid"
+                ],
+                "default": "hybrid",
+                "description": "Similarity method: graph, content, or hybrid"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "note_id"
+            ]
+          },
+          "annotations": {
+            "title": "Find Similar Notes",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "project_list",
+          "description": "List all projects with their note counts. Returns projects sorted by note count (descending). Use this to discover available projects in the knowledge base.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            }
+          },
+          "annotations": {
+            "title": "List Projects",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "project_switch",
+          "description": "Switch to a project context. Returns project details and recent notes. This is informational - actual project filtering happens in other tools via the project parameter.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "project_name": {
+                "type": "string",
+                "description": "Name of the project to switch to"
+              },
+              "limit": {
+                "type": "number",
+                "default": 10,
+                "description": "Number of recent notes to return (default: 10)"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "project_name"
+            ]
+          },
+          "annotations": {
+            "title": "Switch Project Context",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "project_create",
+          "description": "Create a new project. Projects are created implicitly when notes are added with a project field, but this tool allows explicit creation with name validation.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "project_name": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_-]+$",
+                "description": "Name of the project to create (alphanumeric, dash, underscore only)"
+              }
+            },
+            "required": [
+              "project_name"
+            ]
+          },
+          "annotations": {
+            "title": "Create Project",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "session_observe",
+          "description": "Add an observation or event to a session. Use this to track decisions, errors, solutions, tool usage, file edits, commands, and other significant events during a development session.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "description": "Session ID (create one first if needed)"
+              },
+              "event_type": {
+                "type": "string",
+                "enum": [
+                  "observation",
+                  "decision",
+                  "error",
+                  "solution",
+                  "tool_use",
+                  "file_edit",
+                  "command",
+                  "research",
+                  "user_prompt"
+                ],
+                "description": "Type of event"
+              },
+              "content": {
+                "type": "string",
+                "description": "Event content/description"
+              },
+              "metadata": {
+                "type": "object",
+                "description": "Optional metadata (e.g., file path, command, tool name)"
+              }
+            },
+            "required": [
+              "session_id",
+              "event_type",
+              "content"
+            ]
+          },
+          "annotations": {
+            "title": "Observe Session Event",
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "session_summary",
+          "description": "Generate an AI summary of a session. Extracts key learnings, decisions made, errors encountered, solutions found, and next steps from the session events.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "description": "Session ID to summarize"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "session_id"
+            ]
+          },
+          "annotations": {
+            "title": "Generate Session Summary",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        },
+        {
+          "name": "session_context",
+          "description": "Get context for a session including events and summary. Useful for loading session context into Claude to continue work or review what happened in a previous session.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "session_id": {
+                "type": "string",
+                "description": "Session ID"
+              },
+              "include_events": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include session events (default: true)"
+              },
+              "include_summary": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include AI summary if available (default: true)"
+              },
+              "limit": {
+                "type": "number",
+                "default": 50,
+                "description": "Maximum events to return (default: 50)"
+              },
+              "response_format": {
+                "type": "string",
+                "enum": [
+                  "json",
+                  "markdown"
+                ],
+                "default": "json",
+                "description": "Response format: \"json\" for structured data, \"markdown\" for human-readable text"
+              }
+            },
+            "required": [
+              "session_id"
+            ]
+          },
+          "annotations": {
+            "title": "Get Session Context",
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "mem_search - Search Notes",
+      "type": "call-tool",
+      "status": "passed",
+      "duration": 57,
+      "error": null,
+      "output": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\n  \"query\": \"*\",\n  \"total\": 0,\n  \"count\": 0,\n  \"has_more\": false,\n  \"next_offset\": null,\n  \"notes\": []\n}"
+          }
+        ],
+        "structuredContent": {
+          "query": "*",
+          "total": 0,
+          "count": 0,
+          "has_more": false,
+          "next_offset": null,
+          "notes": []
+        }
+      }
+    },
+    {
+      "name": "project_list - List Projects",
+      "type": "call-tool",
+      "status": "passed",
+      "duration": 33,
+      "error": null,
+      "output": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\n  \"projects\": [],\n  \"total\": 0\n}"
+          }
+        ],
+        "structuredContent": {
+          "projects": []
+        }
+      }
+    },
+    {
+      "name": "mem_read - Read Non-Existent Note",
+      "type": "call-tool",
+      "status": "passed",
+      "duration": 38,
+      "error": "MCP error -32603: Note with permalink \"nonexistent/test-note-99999\" not found",
+      "output": null
+    },
+    {
+      "name": "build_context - Build Empty Context",
+      "type": "call-tool",
+      "status": "passed",
+      "duration": 33,
+      "error": null,
+      "output": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\n  \"content\": \"\",\n  \"notes\": [],\n  \"total_notes\": 0\n}"
+          }
+        ],
+        "structuredContent": {
+          "content": "",
+          "notes": [],
+          "total_notes": 0
+        }
+      }
+    },
+    {
+      "name": "graph_similar - Invalid Note ID",
+      "type": "call-tool",
+      "status": "passed",
+      "duration": 30,
+      "error": "MCP error -32603: Note with ID 999999 not found",
+      "output": null
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  }
+}

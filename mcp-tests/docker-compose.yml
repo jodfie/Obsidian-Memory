@@ -1,0 +1,70 @@
+version: "3.8"
+
+# MCP Server Testing Harness
+# 
+# Usage:
+#   docker compose run --rm tests                    # Run test suite
+#   docker compose run --rm tests list-tools         # List available tools
+#   docker compose run --rm tests test-tool echo     # Test specific tool
+#   docker compose up inspector                      # Start Inspector UI
+
+services:
+  # Main test runner
+  tests:
+    build: .
+    image: mcp-test-harness:latest
+    environment:
+      - MCP_SERVER_URL=${MCP_SERVER_URL}
+      - MCP_ACCESS_TOKEN=${MCP_ACCESS_TOKEN}
+      - MCP_REFRESH_TOKEN=${MCP_REFRESH_TOKEN}
+      - CF_ACCESS_CLIENT_ID=${CF_ACCESS_CLIENT_ID}
+      - CF_ACCESS_CLIENT_SECRET=${CF_ACCESS_CLIENT_SECRET}
+      - TEST_TIMEOUT=${TEST_TIMEOUT:-30000}
+    volumes:
+      # Custom tests
+      - ./tests:/app/tests:ro
+      # Auth tokens (if using volume mount instead of env vars)
+      - ${MCP_AUTH_DIR:-./mcp-auth}:/root/.mcp-auth:ro
+      # Test results output
+      - ./results:/app/results
+    networks:
+      - mcp-testing
+      - proxy
+
+  # MCP Inspector for interactive testing
+  inspector:
+    image: ghcr.io/modelcontextprotocol/inspector:latest
+    ports:
+      - "6274:6274"
+      - "6277:6277"
+    environment:
+      - HOST=0.0.0.0
+      - MCP_AUTO_OPEN_ENABLED=false
+    networks:
+      - mcp-testing
+
+  # Alternative: mcpuse inspector with OAuth support
+  inspector-oauth:
+    image: mcpuse/inspector:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+    networks:
+      - mcp-testing
+
+  # Playwright for browser automation (if needed)
+  playwright:
+    image: mcr.microsoft.com/playwright/mcp
+    ports:
+      - "8931:8931"
+    command: ["cli.js", "--headless", "--browser", "chromium", "--port", "8931"]
+    networks:
+      - mcp-testing
+
+networks:
+  mcp-testing:
+    driver: bridge
+  proxy:
+    external: true

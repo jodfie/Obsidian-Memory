@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-01-26T04:30:00Z",
+  "rolling5h": {
+    "percentage": 2,
+    "time_est": "9:30AM EST"
+  },
+  "weekly": {
+    "percentage": 46,
+    "date": "Jan 28"
+  },
+  "fallbackApi": {
+    "balance": 12.45,
+    "lastUpdated": "2026-01-24T10:30:00Z"
+  },
+  "sessionAlerts": []
+}

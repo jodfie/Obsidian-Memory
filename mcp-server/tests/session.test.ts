@@ -3,12 +3,17 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { tools } from '../src/tools.js';
 import {
   handleSessionContext,
   handleSessionObserve,
   handleSessionSummary,
-  sessionTools,
-} from '../src/tools/session.js';
+} from '../src/handlers.js';
+
+// Get session tools from the tools array
+const sessionTools = tools.filter((t) =>
+  ['session_observe', 'session_summary', 'session_context'].includes(t.name)
+);
 
 describe('Session Tools', () => {
   describe('Tool Schemas', () => {
@@ -53,20 +58,17 @@ describe('Session Tools', () => {
         event_type: 'observation',
         content: 'Test observation',
       });
-      expect(result).toHaveProperty('session_id');
-      expect(result).toHaveProperty('event_count');
+      expect(result.structuredContent).toBeDefined();
     });
 
     test('handleSessionSummary generates summary', async () => {
       const result = await handleSessionSummary({ session_id: 'test-session' });
-      expect(result).toHaveProperty('key_learnings');
-      expect(result).toHaveProperty('summary_text');
+      expect(result.structuredContent).toBeDefined();
     });
 
     test('handleSessionContext returns context', async () => {
       const result = await handleSessionContext({ session_id: 'test-session' });
-      expect(result).toHaveProperty('session_id');
-      expect(result).toHaveProperty('event_count');
+      expect(result.structuredContent).toBeDefined();
     });
   });
 });

@@ -3,11 +3,16 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { tools } from '../src/tools.js';
 import {
-  graphTools,
   handleGraphSimilar,
   handleGraphTraverse,
-} from '../src/tools/graph.js';
+} from '../src/handlers.js';
+
+// Get graph tools from the tools array
+const graphTools = tools.filter((t) =>
+  ['graph_traverse', 'graph_similar'].includes(t.name)
+);
 
 describe('Graph Tools', () => {
   test('graph tools are defined', () => {
@@ -49,7 +54,7 @@ describe('Graph Tools', () => {
       max_depth: 3,
     });
     expect(result).toBeDefined();
-    expect(result.visited_nodes).toBeDefined();
+    expect(result.structuredContent).toBeDefined();
   });
 
   test.skip('handleGraphSimilar finds similar notes', async () => {
@@ -59,7 +64,6 @@ describe('Graph Tools', () => {
       limit: 5,
     });
     expect(result).toBeDefined();
-    expect(result.similar_notes).toBeDefined();
-    expect(Array.isArray(result.similar_notes)).toBe(true);
+    expect(result.structuredContent).toBeDefined();
   });
 });

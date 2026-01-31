@@ -1,0 +1,2 @@
+# Obsidian-Memory Python SDK Dependencies
+httpx>=0.25.0

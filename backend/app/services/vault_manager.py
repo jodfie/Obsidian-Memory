@@ -10,9 +10,10 @@ from pathlib import Path
 import aiofiles
 from aiofiles import os as aiofiles_os
 
-from app.models.vault import VaultConfig, VaultFile, VaultManagerConfig
+from app.models.vault import VaultConfig, VaultFile, VaultManagerConfig, VaultStatus
 from app.services.exceptions import (
     AtomicWriteError,
+    VaultConfigValidationError,
     VaultNotFoundError,
     VaultReadOnlyError,
 )
@@ -46,6 +47,73 @@ class VaultManager:
         # Verify vault exists
         self.get_vault(name)
         self._config.default_vault = name
+
+    def validate_vault_config(self, vault: VaultConfig) -> list[str]:
+        """
+        Validate a vault configuration before registration.
+
+        Args:
+            vault: VaultConfig to validate
+
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors: list[str] = []
+
+        # Check if path exists
+        if not vault.path.exists():
+            errors.append(f"Vault path does not exist: {vault.path}")
+            return errors  # Can't continue validation if path doesn't exist
+
+        # Check if path is a directory
+        if not vault.path.is_dir():
+            errors.append(f"Vault path is not a directory: {vault.path}")
+            return errors
+
+        # Check if path is readable
+        if not os.access(vault.path, os.R_OK):
+            errors.append(f"Vault path is not readable: {vault.path}")
+
+        # Check if path is writable (if not read-only)
+        if not vault.read_only and not os.access(vault.path, os.W_OK):
+            errors.append(
+                f"Vault path is not writable but read_only=False: {vault.path}"
+            )
+
+        # Check if memory folder can be created/accessed
+        memory_path = vault.path / vault.memory_folder
+        if memory_path.exists():
+            # Memory folder exists - check if it's a directory and accessible
+            if not memory_path.is_dir():
+                errors.append(
+                    f"Memory folder exists but is not a directory: {memory_path}"
+                )
+            elif not os.access(memory_path, os.R_OK):
+                errors.append(f"Memory folder is not readable: {memory_path}")
+            elif not vault.read_only and not os.access(memory_path, os.W_OK):
+                errors.append(f"Memory folder is not writable: {memory_path}")
+        else:
+            # Memory folder doesn't exist - check if we can create it
+            if not vault.read_only and not os.access(vault.path, os.W_OK):
+                errors.append(
+                    f"Cannot create memory folder (vault not writable): {memory_path}"
+                )
+
+        return errors
+
+    def validate_all_vaults(self) -> dict[str, list[str]]:
+        """
+        Validate all configured vaults.
+
+        Returns:
+            Dictionary mapping vault name to list of validation errors
+        """
+        validation_results: dict[str, list[str]] = {}
+        for vault in self._config.vaults:
+            errors = self.validate_vault_config(vault)
+            if errors:
+                validation_results[vault.name] = errors
+        return validation_results
 
     def _get_vault_or_default(self, vault: str | None) -> VaultConfig:
         """Get vault by name or use default. Raises VaultNotFoundError if missing."""
@@ -500,3 +568,205 @@ class VaultManager:
             path = f"{memory_folder}/global/patterns/{filename}.md"
 
         return path
+
+    def initialize_memory_structure(self, vault_name: str) -> None:
+        """
+        Initialize the full memory folder hierarchy for a vault.
+
+        Creates:
+        - _claude-mem/projects/
+        - _claude-mem/global/patterns/
+        - _claude-mem/sessions/
+
+        Args:
+            vault_name: Vault name
+
+        Raises:
+            VaultNotFoundError: If vault doesn't exist
+            VaultReadOnlyError: If vault is read-only
+        """
+        vault = self.get_vault(vault_name)
+
+        if vault.read_only:
+            raise VaultReadOnlyError(
+                f"Cannot initialize memory structure in read-only vault '{vault_name}'"
+            )
+
+        memory_path = vault.path / vault.memory_folder
+
+        # Create base structure
+        folders = [
+            "projects",
+            "global/patterns",
+            "sessions",
+        ]
+
+        for folder in folders:
+            (memory_path / folder).mkdir(parents=True, exist_ok=True)
+
+    def ensure_memory_folder(self, vault_name: str) -> None:
+        """
+        Ensure memory folder exists for a vault.
+
+        Creates the memory folder if it doesn't exist.
+        Idempotent - can be called multiple times safely.
+
+        Args:
+            vault_name: Vault name
+
+        Raises:
+            VaultNotFoundError: If vault doesn't exist
+            VaultReadOnlyError: If vault is read-only and folder doesn't exist
+        """
+        vault = self.get_vault(vault_name)
+        memory_path = vault.path / vault.memory_folder
+
+        if not memory_path.exists():
+            if vault.read_only:
+                raise VaultReadOnlyError(
+                    f"Cannot create memory folder in read-only vault '{vault_name}'"
+                )
+            memory_path.mkdir(parents=True, exist_ok=True)
+
+    def list_projects(self, vault_name: str) -> list[str]:
+        """
+        List all project names in a vault's memory folder.
+
+        Scans _claude-mem/projects/*/ directories.
+
+        Args:
+            vault_name: Vault name
+
+        Returns:
+            List of project names (directory names under projects/)
+
+        Raises:
+            VaultNotFoundError: If vault doesn't exist
+        """
+        vault = self.get_vault(vault_name)
+        projects_path = vault.path / vault.memory_folder / "projects"
+
+        if not projects_path.exists() or not projects_path.is_dir():
+            return []
+
+        projects: list[str] = []
+        for item in projects_path.iterdir():
+            if item.is_dir():
+                projects.append(item.name)
+
+        return sorted(projects)
+
+    def create_project(self, vault_name: str, project_name: str) -> None:
+        """
+        Create project subfolder structure in memory folder.
+
+        Creates:
+        - _claude-mem/projects/{project_name}/decisions/
+        - _claude-mem/projects/{project_name}/errors/
+        - _claude-mem/projects/{project_name}/knowledge/
+        - _claude-mem/projects/{project_name}/patterns/
+        - _claude-mem/projects/{project_name}/sessions/
+
+        Args:
+            vault_name: Vault name
+            project_name: Project identifier
+
+        Raises:
+            VaultNotFoundError: If vault doesn't exist
+            VaultReadOnlyError: If vault is read-only
+            ValueError: If project_name is invalid
+        """
+        vault = self.get_vault(vault_name)
+
+        if vault.read_only:
+            raise VaultReadOnlyError(
+                f"Cannot create project in read-only vault '{vault_name}'"
+            )
+
+        # Validate project name (alphanumeric, underscores, hyphens only)
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_-]+$", project_name):
+            raise ValueError(
+                f"Invalid project name '{project_name}'. "
+                "Must contain only alphanumeric characters, underscores, and hyphens."
+            )
+
+        project_path = vault.path / vault.memory_folder / "projects" / project_name
+
+        # Create project subfolders
+        subfolders = ["decisions", "errors", "knowledge", "patterns", "sessions"]
+        for subfolder in subfolders:
+            (project_path / subfolder).mkdir(parents=True, exist_ok=True)
+
+    async def get_vault_status(self, vault_name: str) -> VaultStatus:
+        """
+        Get comprehensive status information for a vault.
+
+        Args:
+            vault_name: Vault name
+
+        Returns:
+            VaultStatus with accessibility, file counts, disk usage, and errors
+
+        Raises:
+            VaultNotFoundError: If vault doesn't exist in config
+        """
+        vault = self.get_vault(vault_name)
+
+        # Get validation errors
+        validation_errors = self.validate_vault_config(vault)
+
+        # Check if vault is accessible
+        is_accessible = vault.path.exists() and vault.path.is_dir()
+        is_writable = False
+        file_count = None
+        disk_usage_bytes = None
+        last_modified = None
+
+        if is_accessible:
+            # Check if writable
+            if not vault.read_only:
+                is_writable = os.access(vault.path, os.W_OK)
+
+            # Get file count and disk usage if possible
+            try:
+                files = await self.list_files(vault=vault_name)
+                file_count = len(files)
+
+                # Calculate disk usage and find most recent modification
+                total_size = 0
+                latest_mtime = None
+
+                for file_path in files:
+                    try:
+                        absolute_path = vault.path / file_path
+                        stat = await aiofiles_os.stat(absolute_path)
+                        total_size += stat.st_size
+
+                        file_mtime = datetime.fromtimestamp(stat.st_mtime)
+                        if latest_mtime is None or file_mtime > latest_mtime:
+                            latest_mtime = file_mtime
+                    except Exception:
+                        pass  # Skip files we can't access
+
+                disk_usage_bytes = total_size
+                last_modified = latest_mtime
+            except Exception:
+                # If we can't list files, leave metrics as None
+                pass
+
+        # Check if memory folder exists
+        memory_path = vault.path / vault.memory_folder
+        memory_folder_exists = memory_path.exists() and memory_path.is_dir()
+
+        return VaultStatus(
+            name=vault_name,
+            is_accessible=is_accessible,
+            is_writable=is_writable,
+            file_count=file_count,
+            disk_usage_bytes=disk_usage_bytes,
+            last_modified=last_modified,
+            memory_folder_exists=memory_folder_exists,
+            validation_errors=validation_errors,
+        )

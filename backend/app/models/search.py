@@ -47,6 +47,80 @@ class SearchQuery(BaseModel):
     limit: int = Field(default=50, ge=1, le=1000, description="Result limit")
     offset: int = Field(default=0, ge=0, description="Result offset")
 
+    # BM25 ranking parameters
+    # Note: k1 and b are reserved for future custom ranking function implementation.
+    # FTS5 uses fixed values (k1=1.2, b=0.75). Field boosting is the primary tuning mechanism.
+    bm25_k1: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=3.0,
+        description="Reserved: BM25 k1 parameter (not currently customizable in FTS5)"
+    )
+    bm25_b: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Reserved: BM25 b parameter (not currently customizable in FTS5)"
+    )
+    boost_title: float = Field(
+        default=2.0,
+        ge=0.0,
+        le=10.0,
+        description="Title field boost multiplier"
+    )
+    boost_tags: float = Field(
+        default=1.5,
+        ge=0.0,
+        le=10.0,
+        description="Tags field boost multiplier"
+    )
+    boost_observations: float = Field(
+        default=1.3,
+        ge=0.0,
+        le=10.0,
+        description="Observations field boost multiplier"
+    )
+    recency_boost: bool = Field(
+        default=False,
+        description="Apply recency boost to recent notes"
+    )
+    recency_decay: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=2.0,
+        description="Recency decay rate (higher = stronger boost for recent notes)"
+    )
+
+    # Snippet generation parameters
+    snippet_max_length: int = Field(
+        default=200,
+        ge=50,
+        le=1000,
+        description="Maximum snippet length in characters"
+    )
+    snippet_context_tokens: int = Field(
+        default=32,
+        ge=8,
+        le=128,
+        description="Number of tokens of context around matches"
+    )
+    snippet_highlight_start: str = Field(
+        default="<mark>",
+        description="HTML marker for start of highlight"
+    )
+    snippet_highlight_end: str = Field(
+        default="</mark>",
+        description="HTML marker for end of highlight"
+    )
+    snippet_html_safe: bool = Field(
+        default=True,
+        description="Return HTML-safe snippets (escaped)"
+    )
+    snippet_multi_field: bool = Field(
+        default=True,
+        description="Include snippets from multiple fields (title, content, tags, observations)"
+    )
+
 
 class SearchResult(BaseModel):
     """Single search result."""

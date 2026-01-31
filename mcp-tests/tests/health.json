@@ -1,0 +1,13 @@
+{
+  "name": "MCP Server Health Checks",
+  "description": "Basic connectivity and capability tests for any MCP server",
+  "tests": [
+    {
+      "name": "Server Connectivity",
+      "type": "list-tools",
+      "expect": {
+        "minTools": 0
+      }
+    }
+  ]
+}

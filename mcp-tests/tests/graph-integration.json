@@ -1,0 +1,185 @@
+{
+  "name": "Graph Integration Tests",
+  "description": "Comprehensive test suite for graph-related MCP tools",
+  "tests": [
+    {
+      "name": "graph_traverse - BFS Traversal",
+      "type": "call-tool",
+      "tool": "graph_traverse",
+      "arguments": {
+        "start_node_id": 1,
+        "method": "bfs",
+        "max_depth": 3
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should perform BFS traversal from node"
+      }
+    },
+    {
+      "name": "graph_traverse - DFS Traversal",
+      "type": "call-tool",
+      "tool": "graph_traverse",
+      "arguments": {
+        "start_node_id": 1,
+        "method": "dfs",
+        "max_depth": 3
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should perform DFS traversal from node"
+      }
+    },
+    {
+      "name": "graph_traverse - With Edge Type Filter",
+      "type": "call-tool",
+      "tool": "graph_traverse",
+      "arguments": {
+        "start_node_id": 1,
+        "method": "bfs",
+        "max_depth": 5,
+        "edge_types": ["depends_on", "enables"]
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should filter by edge types"
+      }
+    },
+    {
+      "name": "graph_traverse - Incoming Direction",
+      "type": "call-tool",
+      "tool": "graph_traverse",
+      "arguments": {
+        "start_node_id": 1,
+        "method": "bfs",
+        "direction": "incoming",
+        "max_depth": 2
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should traverse incoming edges"
+      }
+    },
+    {
+      "name": "graph_traverse - Invalid Node ID",
+      "type": "call-tool",
+      "tool": "graph_traverse",
+      "arguments": {
+        "start_node_id": 999999,
+        "method": "bfs"
+      },
+      "expect": {
+        "isError": true,
+        "description": "Should error on non-existent node"
+      }
+    },
+    {
+      "name": "graph_similar - Find Similar Notes",
+      "type": "call-tool",
+      "tool": "graph_similar",
+      "arguments": {
+        "note_id": 1,
+        "method": "hybrid",
+        "limit": 5
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should find similar notes using hybrid method"
+      }
+    },
+    {
+      "name": "graph_similar - Content Method",
+      "type": "call-tool",
+      "tool": "graph_similar",
+      "arguments": {
+        "note_id": 1,
+        "method": "content",
+        "limit": 3
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should find similar notes by content"
+      }
+    },
+    {
+      "name": "graph_similar - Graph Method",
+      "type": "call-tool",
+      "tool": "graph_similar",
+      "arguments": {
+        "note_id": 1,
+        "method": "graph",
+        "limit": 3
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should find similar notes by graph structure"
+      }
+    },
+    {
+      "name": "build_context - Graph Neighbors URI",
+      "type": "call-tool",
+      "tool": "build_context",
+      "arguments": {
+        "uris": ["memory://graph/neighbors/1"]
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should build context from graph neighbors"
+      }
+    },
+    {
+      "name": "build_context - Graph Reachable URI",
+      "type": "call-tool",
+      "tool": "build_context",
+      "arguments": {
+        "uris": ["memory://graph/reachable/1"],
+        "max_length": 5000
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should build context from reachable nodes"
+      }
+    },
+    {
+      "name": "build_context - Graph Path URI",
+      "type": "call-tool",
+      "tool": "build_context",
+      "arguments": {
+        "uris": ["memory://graph/path/1/2"]
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should build context from path between nodes"
+      }
+    },
+    {
+      "name": "build_context - Invalid Graph URI",
+      "type": "call-tool",
+      "tool": "build_context",
+      "arguments": {
+        "uris": ["memory://graph/invalid/999999"]
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should handle invalid graph URIs gracefully"
+      }
+    },
+    {
+      "name": "build_context - Multiple Graph URIs",
+      "type": "call-tool",
+      "tool": "build_context",
+      "arguments": {
+        "uris": [
+          "memory://graph/neighbors/1",
+          "memory://search/test",
+          "memory://graph/reachable/2"
+        ],
+        "max_length": 10000
+      },
+      "expect": {
+        "isError": false,
+        "description": "Should combine multiple graph contexts"
+      }
+    }
+  ]
+}

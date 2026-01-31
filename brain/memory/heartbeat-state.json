@@ -1,0 +1,11 @@
+{
+  "lastChecks": {
+    "sessions": 1769533200,
+    "usage_stats": 1769533200,
+    "memory_maintenance": 1769533200
+  },
+  "last_session_alerts": [
+    "troop30022: 130k tokens",
+    "jody-to-do: 200k context (extracted to memory)"
+  ]
+}

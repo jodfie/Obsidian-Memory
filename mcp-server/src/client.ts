@@ -2,6 +2,8 @@
  * HTTP client for communicating with the Obsidian-Memory backend API.
  */
 
+import { API_BASE_URL } from './constants.js';
+
 // Get API token from environment (using bracket notation for TypeScript)
 const API_TOKEN: string | null = (process.env as Record<string, string | undefined>)['OBSIDIAN_MEMORY_API_TOKEN'] || null;
 
@@ -417,4 +419,180 @@ export class ApiClient {
       };
     }>;
   }
+
+  /**
+   * Traverse the knowledge graph using BFS or DFS.
+   */
+  async traverseGraph(params: {
+    start_node_id: number;
+    target_node_id?: number;
+    method?: 'bfs' | 'dfs';
+    max_depth?: number;
+    direction?: 'outgoing' | 'incoming' | 'both';
+    edge_types?: string[];
+    exclude_nodes?: number[];
+  }): Promise<{
+    start_node_id: number;
+    target_node_id: number | null;
+    method: string;
+    visited_nodes: number[];
+    paths: number[][];
+    depth_reached: number;
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/graph/traverse`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        start_node_id: params.start_node_id,
+        target_node_id: params.target_node_id || null,
+        method: params.method || 'bfs',
+        max_depth: params.max_depth || 10,
+        direction: params.direction || 'outgoing',
+        edge_types: params.edge_types || null,
+        exclude_nodes: params.exclude_nodes || [],
+      }),
+    });
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error(`Start node ${params.start_node_id} not found`);
+      }
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
+      throw new Error(`Failed to traverse graph: ${error.detail || response.statusText}`);
+    }
+    return response.json() as Promise<{
+      start_node_id: number;
+      target_node_id: number | null;
+      method: string;
+      visited_nodes: number[];
+      paths: number[][];
+      depth_reached: number;
+    }>;
+  }
+
+  /**
+   * Find notes similar to a given note.
+   */
+  async findSimilarNotes(
+    nodeId: number,
+    limit?: number,
+    method?: 'graph' | 'content' | 'hybrid'
+  ): Promise<{
+    source_node_id: number;
+    method: string;
+    similar_notes: Array<{
+      note_id: number;
+      title: string;
+      vault_name: string;
+      relative_path: string;
+      note_type: string;
+      score: number;
+    }>;
+    count: number;
+  }> {
+    const queryParams = new URLSearchParams();
+    if (limit) queryParams.append('limit', limit.toString());
+    if (method) queryParams.append('method', method);
+
+    const url = `${this.baseUrl}/api/graph/nodes/${nodeId}/similar${queryParams.toString() ? `?${queryParams}` : ''}`;
+    const response = await fetch(url, {
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error(`Node ${nodeId} not found`);
+      }
+      throw new Error(`Failed to find similar notes: ${response.statusText}`);
+    }
+    return response.json() as Promise<{
+      source_node_id: number;
+      method: string;
+      similar_notes: Array<{
+        note_id: number;
+        title: string;
+        vault_name: string;
+        relative_path: string;
+        note_type: string;
+        score: number;
+      }>;
+      count: number;
+    }>;
+  }
+
+  /**
+   * Get neighbors of a node in the graph.
+   */
+  async getGraphNeighbors(
+    nodeId: number,
+    direction?: 'outgoing' | 'incoming' | 'both'
+  ): Promise<{
+    node_id: number;
+    neighbors: number[];
+    direction: string;
+  }> {
+    const queryParams = new URLSearchParams();
+    if (direction) queryParams.append('direction', direction);
+
+    const url = `${this.baseUrl}/api/graph/nodes/${nodeId}/neighbors${queryParams.toString() ? `?${queryParams}` : ''}`;
+    const response = await fetch(url, {
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error(`Node ${nodeId} not found`);
+      }
+      throw new Error(`Failed to get neighbors: ${response.statusText}`);
+    }
+    return response.json() as Promise<{
+      node_id: number;
+      neighbors: number[];
+      direction: string;
+    }>;
+  }
+
+  /**
+   * Supersede a note with another note.
+   * Creates a bi-directional supersedes relationship.
+   */
+  async supersedeNote(
+    oldNoteId: number,
+    newNoteId: number,
+    reason?: string
+  ): Promise<{
+    old_note_id: number;
+    new_note_id: number;
+    old_note_title: string;
+    new_note_title: string;
+    message: string;
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/notes/supersede`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        old_note_id: oldNoteId,
+        new_note_id: newNoteId,
+        reason: reason || null,
+      }),
+    });
+    if (!response.ok) {
+      if (response.status === 404) {
+        const error = (await response.json().catch(() => ({ detail: 'Note not found' }))) as { detail?: string };
+        throw new Error(error.detail || 'Note not found');
+      }
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
+      throw new Error(`Failed to supersede note: ${error.detail || response.statusText}`);
+    }
+    return response.json() as Promise<{
+      old_note_id: number;
+      new_note_id: number;
+      old_note_title: string;
+      new_note_title: string;
+      message: string;
+    }>;
+  }
 }
+
+/**
+ * Singleton API client instance.
+ * Use this shared instance across all tools to avoid creating multiple connections.
+ */
+export const apiClient = new ApiClient(API_BASE_URL);

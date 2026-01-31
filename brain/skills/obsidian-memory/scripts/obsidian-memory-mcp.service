@@ -1,0 +1,33 @@
+[Unit]
+Description=Obsidian-Memory MCP Server
+Documentation=https://github.com/jfielder/obsidian-memory
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=redleif
+Group=redleif
+WorkingDirectory=/home/redleif/obsidian-memory-mcp
+ExecStart=/usr/bin/node mcp-server.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+EnvironmentFile=/home/redleif/obsidian-memory-mcp/.env
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/redleif/Obsidian-Memory
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

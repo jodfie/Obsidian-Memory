@@ -3,12 +3,12 @@
  * Supports memory:// URI patterns for flexible note selection.
  */
 
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { ApiClient } from '../client.js';
+/**
+ * Context building utilities for Obsidian-Memory MCP server.
+ * Supports memory:// URI patterns for flexible note selection.
+ */
 
-const env = process.env as Record<string, string | undefined>;
-const API_BASE_URL = env['OBSIDIAN_MEMORY_API_URL'] || 'http://localhost:8000';
-const client = new ApiClient(API_BASE_URL);
+import { apiClient } from '../client.js';
 
 /**
  * Parse a memory:// URI pattern.
@@ -141,15 +141,15 @@ export async function buildContext(uris: string[]): Promise<{
         const noteId = params['id'];
         const permalink = params['permalink'];
         if (noteId && typeof noteId === 'string') {
-          note = await client.getNoteById(parseInt(noteId, 10));
+          note = await apiClient.getNoteById(parseInt(noteId, 10));
         } else if (permalink) {
           // Search by permalink
-          const results = await client.searchNotes({
+          const results = await apiClient.searchNotes({
             query: `permalink:${permalink}`,
             limit: 1,
           });
           if (results.notes.length > 0 && results.notes[0]?.['id']) {
-            note = await client.getNoteById(results.notes[0]['id']!);
+            note = await apiClient.getNoteById(results.notes[0]['id']!);
           }
         }
         if (note && note['id'] && !noteIds.has(note['id'])) {
@@ -164,13 +164,13 @@ export async function buildContext(uris: string[]): Promise<{
         if (!query) {
           throw new Error('Search query is required');
         }
-        const results = await client.searchNotes({
+        const results = await apiClient.searchNotes({
           query: query,
           limit: 50,
         });
         for (const result of results.notes) {
           if (result.id && !noteIds.has(result.id)) {
-            const fullNote = await client.getNoteById(result.id);
+            const fullNote = await apiClient.getNoteById(result.id);
             if (fullNote) {
               notes.push(fullNote);
               noteIds.add(result.id);
@@ -188,13 +188,13 @@ export async function buildContext(uris: string[]): Promise<{
         if (!path) {
           throw new Error('Path is required');
         }
-        const results = await client.searchNotes({
+        const results = await apiClient.searchNotes({
           query: `path:${path}`,
           vault: vault || null,
           limit: 1,
         });
         if (results.notes.length > 0 && results.notes[0]?.['id']) {
-          const note = await client.getNoteById(results.notes[0]['id']!);
+          const note = await apiClient.getNoteById(results.notes[0]['id']!);
           if (note && note['id'] && !noteIds.has(note['id'])) {
             notes.push(note);
             noteIds.add(note['id']);
@@ -204,9 +204,106 @@ export async function buildContext(uris: string[]): Promise<{
       }
 
       case 'graph': {
-        // Graph operations would require graph API endpoints
-        // For now, return empty or placeholder
-        // TODO: Implement when graph API is available
+        const operation = params['operation'];
+        const nodeId = params['node_id'];
+        const fromId = params['from_id'];
+        const toId = params['to_id'];
+
+        switch (operation) {
+          case 'neighbors': {
+            if (!nodeId) {
+              throw new Error('Node ID required for neighbors operation');
+            }
+            const neighborsResult = await apiClient.getGraphNeighbors(
+              parseInt(nodeId, 10),
+              'both'
+            );
+            // Fetch full note details for each neighbor
+            for (const neighborId of neighborsResult.neighbors) {
+              if (!noteIds.has(neighborId)) {
+                try {
+                  const note = await apiClient.getNoteById(neighborId);
+                  if (note && note.id) {
+                    notes.push(note);
+                    noteIds.add(note.id);
+                  }
+                } catch {
+                  // Skip notes that can't be fetched
+                }
+              }
+            }
+            break;
+          }
+
+          case 'reachable': {
+            if (!nodeId) {
+              throw new Error('Node ID required for reachable operation');
+            }
+            // Use BFS traversal to find all reachable nodes
+            const traverseResult = await apiClient.traverseGraph({
+              start_node_id: parseInt(nodeId, 10),
+              method: 'bfs',
+              max_depth: 5,
+              direction: 'both',
+            });
+            // Fetch full note details for each visited node
+            for (const visitedId of traverseResult.visited_nodes) {
+              if (!noteIds.has(visitedId)) {
+                try {
+                  const note = await apiClient.getNoteById(visitedId);
+                  if (note && note.id) {
+                    notes.push(note);
+                    noteIds.add(note.id);
+                  }
+                } catch {
+                  // Skip notes that can't be fetched
+                }
+              }
+            }
+            break;
+          }
+
+          case 'path': {
+            if (!fromId || !toId) {
+              throw new Error('Both from_id and to_id required for path operation');
+            }
+            // Use BFS with target to find path
+            const pathResult = await apiClient.traverseGraph({
+              start_node_id: parseInt(fromId, 10),
+              target_node_id: parseInt(toId, 10),
+              method: 'bfs',
+              max_depth: 10,
+              direction: 'both',
+            });
+            // Collect all nodes from paths found
+            const pathNodes = new Set<number>();
+            for (const path of pathResult.paths) {
+              for (const pathNodeId of path) {
+                pathNodes.add(pathNodeId);
+              }
+            }
+            // Also add start node
+            pathNodes.add(parseInt(fromId, 10));
+            // Fetch full note details for path nodes
+            for (const pathNodeId of pathNodes) {
+              if (!noteIds.has(pathNodeId)) {
+                try {
+                  const note = await apiClient.getNoteById(pathNodeId);
+                  if (note && note.id) {
+                    notes.push(note);
+                    noteIds.add(note.id);
+                  }
+                } catch {
+                  // Skip notes that can't be fetched
+                }
+              }
+            }
+            break;
+          }
+
+          default:
+            throw new Error(`Unknown graph operation: ${operation}`);
+        }
         break;
       }
 
@@ -216,14 +313,14 @@ export async function buildContext(uris: string[]): Promise<{
           throw new Error('Tags are required');
         }
         const tagList = tagsStr.split(',').map((t) => t.trim());
-        const results = await client.searchNotes({
+        const results = await apiClient.searchNotes({
           query: '*',
           tags: tagList,
           limit: 50,
         });
         for (const result of results.notes) {
           if (result['id'] && !noteIds.has(result['id'])) {
-            const fullNote = await client.getNoteById(result['id']);
+            const fullNote = await apiClient.getNoteById(result['id']);
             if (fullNote) {
               notes.push(fullNote);
               noteIds.add(result['id']);
@@ -238,14 +335,14 @@ export async function buildContext(uris: string[]): Promise<{
         if (!project) {
           throw new Error('Project is required');
         }
-        const results = await client.searchNotes({
+        const results = await apiClient.searchNotes({
           query: '*',
           project: project || null,
           limit: 50,
         });
         for (const result of results.notes) {
           if (result.id && !noteIds.has(result.id)) {
-            const fullNote = await client.getNoteById(result.id);
+            const fullNote = await apiClient.getNoteById(result.id);
             if (fullNote) {
               notes.push(fullNote);
               noteIds.add(result.id);
@@ -297,46 +394,4 @@ export async function buildContext(uris: string[]): Promise<{
     notes,
     total_notes: notes.length,
   };
-}
-
-/**
- * build_context tool definition.
- */
-export const buildContextTool: Tool = {
-  name: 'build_context',
-  description:
-    'Build context from memory:// URI patterns. Supports note selection by ID, permalink, search, path, tags, project, and graph operations.',
-  annotations: {
-    readOnlyHint: true,
-    destructiveHint: false,
-  },
-  inputSchema: {
-    type: 'object',
-    properties: {
-      uris: {
-        type: 'array',
-        items: { type: 'string' },
-        description:
-          'Array of memory:// URI patterns to include in context',
-        examples: [
-          'memory://note/123',
-          'memory://note/auth-jwt-impl',
-          'memory://search/authentication',
-          'memory://path/test_vault/projects/api/auth.md',
-          'memory://tags/security,backend',
-          'memory://project/api-service',
-        ],
-      },
-    },
-    required: ['uris'],
-  },
-};
-
-/**
- * Handle build_context tool call.
- */
-export async function handleBuildContext(args: {
-  uris: string[];
-}): Promise<{ content: string; notes: unknown[]; total_notes: number }> {
-  return buildContext(args.uris);
 }

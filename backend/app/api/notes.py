@@ -14,6 +14,8 @@ from app.api.models import (
     NoteCreateRequest,
     NoteListResponse,
     NoteResponse,
+    NoteSupersedRequest,
+    NoteSupersedResponse,
     NoteUpdateRequest,
     SearchRequest,
 )
@@ -434,4 +436,119 @@ async def search_notes(
 
     return NoteListResponse(
         notes=notes, total=results.total_count, limit=request.limit, offset=request.offset
+    )
+
+
+@router.post("/supersede", response_model=NoteSupersedResponse)
+async def supersede_note(
+    request: NoteSupersedRequest,
+    vault_manager: VaultManager = Depends(get_vault_manager),
+    markdown_parser: MarkdownParser = Depends(get_markdown_parser),
+    search_index: SearchIndex = Depends(get_search_index),
+) -> NoteSupersedResponse:
+    """Mark a note as superseded by another note.
+
+    This creates a bi-directional supersedes relationship:
+    - The old note gets a `superseded_by` field pointing to the new note
+    - The new note gets a `supersedes` field pointing to the old note
+
+    Both notes are re-indexed to reflect the relationship in the knowledge graph.
+    """
+    await _ensure_search_index_initialized(search_index)
+
+    # Get both notes
+    old_note = await search_index.get_note_by_id(request.old_note_id)
+    if not old_note:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Old note with ID {request.old_note_id} not found",
+        )
+
+    new_note = await search_index.get_note_by_id(request.new_note_id)
+    if not new_note:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"New note with ID {request.new_note_id} not found",
+        )
+
+    # Prevent self-supersession
+    if request.old_note_id == request.new_note_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A note cannot supersede itself",
+        )
+
+    async def _update_note_supersedes(
+        note: IndexedNote,
+        supersedes_permalink: str | None,
+        superseded_by_permalink: str | None,
+    ) -> None:
+        """Update a note's supersedes/superseded_by fields."""
+        # Read current content
+        vault_file = await vault_manager.read_file(
+            note.relative_path, vault=note.vault_name
+        )
+        parsed = markdown_parser.parse(vault_file.content)
+
+        # Update supersedes fields
+        if supersedes_permalink is not None:
+            parsed.frontmatter.supersedes = supersedes_permalink
+        if superseded_by_permalink is not None:
+            parsed.frontmatter.superseded_by = superseded_by_permalink
+
+        parsed.frontmatter.updated = datetime.utcnow()
+        parsed.frontmatter_modified = True
+
+        # Serialize and write back
+        content = markdown_parser.serialize(parsed)
+        await vault_manager.write_file(
+            note.relative_path, content, vault=note.vault_name
+        )
+
+        # Re-index the note
+        file_hash = compute_file_hash(content)
+        updated_indexed = IndexedNote(
+            vault_name=note.vault_name,
+            relative_path=note.relative_path,
+            permalink=parsed.frontmatter.permalink,
+            title=parsed.frontmatter.title,
+            note_type=parsed.frontmatter.type.value,
+            project=parsed.frontmatter.project,
+            content=parsed.raw_content,
+            tags=parsed.frontmatter.tags,
+            observations=parsed.observations,
+            relations=parsed.relations,
+            wikilinks=parsed.wikilinks,
+            created_at=parsed.frontmatter.created or note.created_at,
+            updated_at=parsed.frontmatter.updated or datetime.utcnow(),
+            file_hash=file_hash,
+        )
+        await search_index.index_note(updated_indexed)
+
+    # Determine permalinks for linking (use permalink or title as fallback)
+    old_permalink = old_note.permalink or old_note.title
+    new_permalink = new_note.permalink or new_note.title
+
+    try:
+        # Update old note: set superseded_by to new note's permalink
+        await _update_note_supersedes(old_note, None, new_permalink)
+
+        # Update new note: set supersedes to old note's permalink
+        await _update_note_supersedes(new_note, old_permalink, None)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update notes: {e}",
+        ) from e
+
+    message = f"Note '{old_note.title}' is now superseded by '{new_note.title}'"
+    if request.reason:
+        message += f" (reason: {request.reason})"
+
+    return NoteSupersedResponse(
+        old_note_id=request.old_note_id,
+        new_note_id=request.new_note_id,
+        old_note_title=old_note.title,
+        new_note_title=new_note.title,
+        message=message,
     )

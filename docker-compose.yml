@@ -9,6 +9,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: memory
+    depends_on:
+      mcp-server:
+        condition: service_healthy
     environment:
       - API_TITLE=Obsidian-Memory
       - API_VERSION=0.1.0
@@ -42,6 +45,12 @@ services:
       - MCP_PATH=/mcp
       - OBSIDIAN_MEMORY_API_URL=http://memory:8765
       - NODE_ENV=development
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     networks:
       - proxy
     restart: unless-stopped

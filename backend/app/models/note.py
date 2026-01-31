@@ -116,6 +116,12 @@ class Wikilink(BaseModel):
     path: str | None = Field(
         default=None, description="Optional folder path"
     )
+    anchor: str | None = Field(
+        default=None, description="Optional heading anchor (e.g., #Section)"
+    )
+    block_ref: str | None = Field(
+        default=None, description="Optional block reference (e.g., #^blockid)"
+    )
     line_number: int = Field(..., description="Line number")
     column: int = Field(..., description="Character position in line")
 
@@ -136,4 +142,12 @@ class ParsedNote(BaseModel):
     raw_content: str = Field(..., description="Original content without frontmatter")
     headings: list[tuple[int, str]] = Field(
         default_factory=list, description="(level, text) pairs"
+    )
+    raw_frontmatter: str | None = Field(
+        default=None,
+        description="Original frontmatter text including delimiters for round-trip preservation",
+    )
+    frontmatter_modified: bool = Field(
+        default=False,
+        description="Flag indicating if frontmatter has been modified since parsing",
     )

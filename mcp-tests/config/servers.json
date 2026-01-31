@@ -1,0 +1,17 @@
+{
+  "servers": {
+    "basicmemory": {
+      "url": "https://mcp.redleif.dev/mcp",
+      "transport": "streamable-http",
+      "description": "BasicMemory MCP Server"
+    },
+    "basicmemory-sse": {
+      "url": "https://mcp.redleif.dev/sse", 
+      "transport": "sse",
+      "description": "BasicMemory MCP Server (SSE)"
+    }
+  },
+  "defaults": {
+    "timeout": 30000
+  }
+}

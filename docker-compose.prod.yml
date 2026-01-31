@@ -9,6 +9,9 @@ services:
       context: .
       dockerfile: Dockerfile
       target: prod
+    depends_on:
+      mcp-server:
+        condition: service_healthy
     environment:
       - ENVIRONMENT=production
       - LOG_LEVEL=INFO
@@ -69,6 +72,12 @@ services:
       - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     deploy:
       resources:
         limits:

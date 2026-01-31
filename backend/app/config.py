@@ -82,6 +82,31 @@ class Settings(BaseSettings):
         default=None, description="Device identifier for cross-device sync tracking"
     )
 
+    # Rate Limiting Configuration
+    rate_limit_enabled: bool = Field(
+        default=True, description="Enable rate limiting"
+    )
+    rate_limit_requests_per_minute: int = Field(
+        default=60, ge=1, le=1000, description="Maximum requests per minute per IP"
+    )
+    rate_limit_burst: int = Field(
+        default=10, ge=1, le=100, description="Burst allowance (extra requests allowed)"
+    )
+
+    # Request Validation Configuration
+    max_request_size_bytes: int = Field(
+        default=10 * 1024 * 1024,  # 10 MB
+        ge=1024,
+        description="Maximum request body size in bytes"
+    )
+    cors_enabled: bool = Field(
+        default=True, description="Enable CORS middleware"
+    )
+    cors_allowed_origins: list[str] = Field(
+        default=["*"],
+        description="Allowed CORS origins (use ['*'] for all)"
+    )
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Settings":
         """Create settings from a dictionary."""

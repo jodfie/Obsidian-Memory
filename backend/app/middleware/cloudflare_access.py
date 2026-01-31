@@ -1,6 +1,8 @@
 """Cloudflare Access authentication middleware for FastAPI."""
 
+import ipaddress
 import json
+import os
 import time
 from typing import Callable
 
@@ -8,6 +10,48 @@ import httpx
 import jwt
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
+
+# Trusted internal networks (Docker internal networks)
+# These bypass Cloudflare Access auth and use regular Bearer token auth instead
+TRUSTED_INTERNAL_NETWORKS = [
+    ipaddress.ip_network("172.16.0.0/12"),  # Docker default bridge networks
+    ipaddress.ip_network("10.0.0.0/8"),  # Private network range A
+    ipaddress.ip_network("192.168.0.0/16"),  # Private network range C
+    ipaddress.ip_network("127.0.0.0/8"),  # Localhost
+]
+
+# Environment variable to disable internal bypass (for testing)
+DISABLE_INTERNAL_BYPASS = os.getenv("DISABLE_INTERNAL_BYPASS", "false").lower() == "true"
+
+
+def is_trusted_internal_request(request: Request) -> bool:
+    """Check if request comes from a trusted internal network.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        True if request is from trusted internal network
+    """
+    if DISABLE_INTERNAL_BYPASS:
+        return False
+
+    # Get client IP from request
+    client_host = request.client.host if request.client else None
+    if not client_host:
+        return False
+
+    try:
+        client_ip = ipaddress.ip_address(client_host)
+        for network in TRUSTED_INTERNAL_NETWORKS:
+            if client_ip in network:
+                return True
+    except ValueError:
+        # Invalid IP address format
+        pass
+
+    return False
+
 
 # Cache for Cloudflare public keys (JWKS)
 # Keys are fetched from: https://<team-domain>.cloudflareaccess.com/cdn-cgi/access/certs
@@ -194,6 +238,11 @@ async def cloudflare_access_middleware(request: Request, call_next: Callable):
     if request.method == "OPTIONS":
         return await call_next(request)
 
+    # Skip Cloudflare Access auth for trusted internal network requests
+    # These will still go through regular Bearer token auth if configured
+    if is_trusted_internal_request(request):
+        return await call_next(request)
+
     # Skip auth for health check, docs, and OAuth endpoints
     # OAuth endpoints must be public for the OAuth flow to work
     skip_paths = [
@@ -205,8 +254,17 @@ async def cloudflare_access_middleware(request: Request, call_next: Callable):
         "/token",
         "/.well-known/oauth-authorization-server",
         "/.well-known/openid-configuration",
+        "/.well-known/oauth-protected-resource",
     ]
-    if request.url.path in skip_paths:
+    # Also skip auth for MCP OAuth endpoints (prefixed with /mcp)
+    mcp_oauth_paths = [
+        "/mcp/authorize",
+        "/mcp/token",
+        "/mcp/.well-known/oauth-authorization-server",
+        "/mcp/.well-known/openid-configuration",
+        "/mcp/.well-known/oauth-protected-resource",
+    ]
+    if request.url.path in skip_paths or request.url.path in mcp_oauth_paths:
         return await call_next(request)
 
     # Verify Cloudflare Access token

@@ -1,0 +1,70 @@
+{
+  "name": "Obsidian-Memory MCP Server Tests",
+  "description": "Test suite for Obsidian-Memory MCP server tools",
+  "tests": [
+    {
+      "name": "List Tools - Has Expected Tools",
+      "type": "list-tools",
+      "expect": {
+        "minTools": 12
+      }
+    },
+    {
+      "name": "mem_search - Search Notes",
+      "type": "call-tool",
+      "tool": "mem_search",
+      "arguments": {
+        "query": "*",
+        "limit": 5
+      },
+      "expect": {
+        "isError": false
+      }
+    },
+    {
+      "name": "project_list - List Projects",
+      "type": "call-tool",
+      "tool": "project_list",
+      "arguments": {
+        "response_format": "json"
+      },
+      "expect": {
+        "isError": false
+      }
+    },
+    {
+      "name": "mem_read - Read Non-Existent Note",
+      "type": "call-tool",
+      "tool": "mem_read",
+      "arguments": {
+        "permalink": "nonexistent/test-note-99999"
+      },
+      "expect": {
+        "isError": true
+      }
+    },
+    {
+      "name": "build_context - Build Empty Context",
+      "type": "call-tool",
+      "tool": "build_context",
+      "arguments": {
+        "uris": ["memory://search/nonexistent-query-xyz123"]
+      },
+      "expect": {
+        "isError": false
+      }
+    },
+    {
+      "name": "graph_similar - Invalid Note ID",
+      "type": "call-tool",
+      "tool": "graph_similar",
+      "arguments": {
+        "note_id": 999999,
+        "limit": 5
+      },
+      "expect": {
+        "isError": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="MCP Server Tests" tests="8" failures="0" skipped="0" timestamp="2026-01-28T22:53:05.532Z">
+  <testcase name="List Tools" time="0.027"/>
+  <testcase name="Server Connectivity" time="0.016"/>
+  <testcase name="List Tools - Has Expected Tools" time="0.021"/>
+  <testcase name="mem_search - Search Notes" time="0.057"/>
+  <testcase name="project_list - List Projects" time="0.033"/>
+  <testcase name="mem_read - Read Non-Existent Note" time="0.038"/>
+  <testcase name="build_context - Build Empty Context" time="0.033"/>
+  <testcase name="graph_similar - Invalid Note ID" time="0.03"/>
+</testsuite>

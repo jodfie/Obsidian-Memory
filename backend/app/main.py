@@ -1,24 +1,27 @@
 """FastAPI application entry point."""
 
-import time
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.graph import router as graph_router
-from app.api.mcp import oauth_router, router as mcp_router
+from app.api.mcp import router as mcp_router
 from app.api.notes import router as notes_router
 from app.api.projects import router as projects_router
 from app.api.sessions import router as sessions_router
 from app.api.sync import router as sync_router
+from app.api.vaults import router as vaults_router
 from app.config import settings
 from app.middleware.auth import auth_middleware
 from app.middleware.cloudflare_access import cloudflare_access_middleware
 from app.middleware.compression import compression_middleware
 from app.middleware.error_handler import error_handler_middleware
 from app.middleware.logging import logging_middleware
+from app.middleware.rate_limiter import rate_limit_middleware
+from app.middleware.request_validation import request_validation_middleware
 from app.utils.logging import get_logger, setup_logging
 
 # Setup logging
@@ -35,11 +38,41 @@ app = FastAPI(
 # Add error handler middleware first (outermost)
 app.add_middleware(BaseHTTPMiddleware, dispatch=error_handler_middleware)
 
+# Add CORS middleware if enabled
+if settings.cors_enabled:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allowed_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=[
+            "Content-Type",
+            "Authorization",
+            "CF-Access-JWT",
+            "Mcp-Session-Id",
+            "X-Request-ID",
+        ],
+        expose_headers=[
+            "X-RateLimit-Limit",
+            "X-RateLimit-Remaining",
+            "X-RateLimit-Reset",
+            "Retry-After",
+            "Mcp-Session-Id",
+        ],
+    )
+
 # Add compression middleware (before logging to compress responses)
 app.add_middleware(BaseHTTPMiddleware, dispatch=compression_middleware)
 
 # Add logging middleware
 app.add_middleware(BaseHTTPMiddleware, dispatch=logging_middleware)
+
+# Add rate limiting middleware
+if settings.rate_limit_enabled:
+    app.add_middleware(BaseHTTPMiddleware, dispatch=rate_limit_middleware)
+
+# Add request validation middleware
+app.add_middleware(BaseHTTPMiddleware, dispatch=request_validation_middleware)
 
 # Add Cloudflare Access middleware if enabled (runs before Bearer token auth)
 if settings.cloudflare_access_enabled:
@@ -50,13 +83,13 @@ if settings.require_auth:
     app.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
 
 # Include routers
+app.include_router(vaults_router)
 app.include_router(notes_router)
 app.include_router(projects_router)
 app.include_router(sessions_router)
 app.include_router(graph_router)
 app.include_router(sync_router)
-app.include_router(mcp_router)  # MCP server proxy
-app.include_router(oauth_router)  # OAuth 2.0 endpoints for Claude.ai
+app.include_router(mcp_router)  # MCP server proxy (OAuth handled by gateway)
 
 
 @app.get("/")

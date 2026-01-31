@@ -516,3 +516,125 @@ class GraphEngine:
         result = self.traverse_bfs(query)
         # Remove start node from results
         return [nid for nid in result.visited_nodes if nid != start_id]
+
+    # Graph Analysis Methods
+
+    def get_node_centrality(self, node_id: int) -> dict:
+        """
+        Calculate centrality metrics for a node.
+
+        Returns degree centrality (incoming + outgoing edges),
+        plus breakdown by edge types.
+
+        Args:
+            node_id: Node ID to analyze
+
+        Returns:
+            Dictionary with centrality metrics
+        """
+        outgoing = self.get_outgoing_edges(node_id)
+        incoming = self.get_incoming_edges(node_id)
+
+        # Count by edge type
+        outgoing_by_type: dict[str, int] = {}
+        for edge in outgoing:
+            edge_type_name = edge.edge_type.value
+            outgoing_by_type[edge_type_name] = outgoing_by_type.get(edge_type_name, 0) + 1
+
+        incoming_by_type: dict[str, int] = {}
+        for edge in incoming:
+            edge_type_name = edge.edge_type.value
+            incoming_by_type[edge_type_name] = incoming_by_type.get(edge_type_name, 0) + 1
+
+        return {
+            "node_id": node_id,
+            "degree_centrality": len(outgoing) + len(incoming),
+            "in_degree": len(incoming),
+            "out_degree": len(outgoing),
+            "outgoing_by_type": outgoing_by_type,
+            "incoming_by_type": incoming_by_type,
+            "normalized_centrality": (len(outgoing) + len(incoming)) / max(len(self.graph.nodes) - 1, 1)
+        }
+
+    def get_graph_stats(self) -> dict:
+        """
+        Get comprehensive graph statistics.
+
+        Returns:
+            Dictionary with graph metrics including:
+            - Total nodes and edges
+            - Edge type distribution
+            - Orphan nodes (no connections)
+            - Average degree
+            - Most connected nodes
+        """
+        total_nodes = len(self.graph.nodes)
+        total_edges = len(self.graph.edges)
+
+        # Edge type distribution
+        edge_type_counts: dict[str, int] = {}
+        for edge in self.graph.edges:
+            edge_type_name = edge.edge_type.value
+            edge_type_counts[edge_type_name] = edge_type_counts.get(edge_type_name, 0) + 1
+
+        # Find orphan nodes (no incoming or outgoing edges)
+        orphan_nodes = []
+        node_degrees = {}
+
+        for node_id in self.graph.nodes:
+            outgoing = len(self.get_outgoing_edges(node_id))
+            incoming = len(self.get_incoming_edges(node_id))
+            degree = outgoing + incoming
+            node_degrees[node_id] = degree
+
+            if degree == 0:
+                orphan_nodes.append(node_id)
+
+        # Calculate average degree
+        avg_degree = sum(node_degrees.values()) / max(total_nodes, 1)
+
+        # Find most connected nodes
+        sorted_nodes = sorted(node_degrees.items(), key=lambda x: x[1], reverse=True)
+        top_hubs = sorted_nodes[:10]  # Top 10 most connected
+
+        return {
+            "total_nodes": total_nodes,
+            "total_edges": total_edges,
+            "edge_type_distribution": edge_type_counts,
+            "orphan_nodes": orphan_nodes,
+            "orphan_count": len(orphan_nodes),
+            "average_degree": avg_degree,
+            "top_hubs": [{"node_id": nid, "degree": deg} for nid, deg in top_hubs],
+            "graph_density": (2 * total_edges) / (total_nodes * (total_nodes - 1)) if total_nodes > 1 else 0
+        }
+
+    def find_hubs(self, limit: int = 10) -> list[dict]:
+        """
+        Find hub nodes with highest connectivity.
+
+        Args:
+            limit: Maximum number of hubs to return
+
+        Returns:
+            List of hub nodes with their centrality metrics
+        """
+        node_centralities = []
+
+        for node_id in self.graph.nodes:
+            centrality = self.get_node_centrality(node_id)
+            node = self.get_node(node_id)
+            if node:
+                node_centralities.append({
+                    "node_id": node_id,
+                    "title": node.title,
+                    "permalink": node.permalink,
+                    "degree_centrality": centrality["degree_centrality"],
+                    "in_degree": centrality["in_degree"],
+                    "out_degree": centrality["out_degree"],
+                    "normalized_centrality": centrality["normalized_centrality"]
+                })
+
+        # Sort by degree centrality
+        node_centralities.sort(key=lambda x: x["degree_centrality"], reverse=True)
+
+        return node_centralities[:limit]

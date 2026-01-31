@@ -325,3 +325,284 @@ async def test_set_default_vault(vault_manager: VaultManager) -> None:
     # Should now use readonly_vault as default
     with pytest.raises(VaultReadOnlyError):
         await vault_manager.write_file("test.md", "content")
+
+
+def test_validate_vault_config_valid(vault_manager: VaultManager) -> None:
+    """Test validating a valid vault configuration."""
+    vault = vault_manager.get_vault("test_vault")
+    errors = vault_manager.validate_vault_config(vault)
+    assert len(errors) == 0
+
+
+def test_validate_vault_config_nonexistent_path(temp_dir: Path) -> None:
+    """Test validation fails for non-existent path."""
+    manager = VaultManager(VaultManagerConfig(vaults=[], default_vault=None))
+    vault = VaultConfig(name="invalid", path=temp_dir / "nonexistent")
+    errors = manager.validate_vault_config(vault)
+    assert len(errors) > 0
+    assert any("does not exist" in err for err in errors)
+
+
+def test_validate_vault_config_not_directory(temp_dir: Path) -> None:
+    """Test validation fails when path is not a directory."""
+    manager = VaultManager(VaultManagerConfig(vaults=[], default_vault=None))
+    # Create a file instead of a directory
+    file_path = temp_dir / "not_a_dir.txt"
+    file_path.write_text("not a directory")
+    vault = VaultConfig(name="invalid", path=file_path)
+    errors = manager.validate_vault_config(vault)
+    assert len(errors) > 0
+    assert any("not a directory" in err for err in errors)
+
+
+def test_validate_vault_config_read_only(temp_dir: Path) -> None:
+    """Test validation passes for read-only vault."""
+    manager = VaultManager(VaultManagerConfig(vaults=[], default_vault=None))
+    vault_path = temp_dir / "readonly"
+    vault_path.mkdir()
+    vault = VaultConfig(name="readonly", path=vault_path, read_only=True)
+    errors = manager.validate_vault_config(vault)
+    # Should pass even if not writable (because it's read-only)
+    assert len(errors) == 0
+
+
+def test_validate_vault_config_memory_folder(temp_dir: Path) -> None:
+    """Test validation checks memory folder accessibility."""
+    manager = VaultManager(VaultManagerConfig(vaults=[], default_vault=None))
+    vault_path = temp_dir / "with_memory"
+    vault_path.mkdir()
+    memory_path = vault_path / "_claude-mem"
+    memory_path.mkdir()
+
+    vault = VaultConfig(name="test", path=vault_path, memory_folder="_claude-mem")
+    errors = manager.validate_vault_config(vault)
+    assert len(errors) == 0
+
+
+def test_validate_vault_config_memory_folder_not_dir(temp_dir: Path) -> None:
+    """Test validation fails when memory folder exists but is not a directory."""
+    manager = VaultManager(VaultManagerConfig(vaults=[], default_vault=None))
+    vault_path = temp_dir / "bad_memory"
+    vault_path.mkdir()
+    # Create a file with the memory folder name
+    memory_path = vault_path / "_claude-mem"
+    memory_path.write_text("not a directory")
+
+    vault = VaultConfig(name="test", path=vault_path, memory_folder="_claude-mem")
+    errors = manager.validate_vault_config(vault)
+    assert len(errors) > 0
+    assert any("not a directory" in err for err in errors)
+
+
+def test_validate_all_vaults(vault_manager: VaultManager, temp_dir: Path) -> None:
+    """Test validation of all vaults."""
+    # Create the readonly vault directory so it validates
+    readonly_path = temp_dir / "readonly_vault"
+    readonly_path.mkdir(exist_ok=True)
+
+    validation_results = vault_manager.validate_all_vaults()
+    # Both vaults should be valid (no errors)
+    assert len(validation_results) == 0
+
+
+def test_validate_all_vaults_with_errors(temp_dir: Path) -> None:
+    """Test validation of all vaults with some invalid."""
+    vault_path = temp_dir / "valid_vault"
+    vault_path.mkdir()
+
+    config = VaultManagerConfig(
+        vaults=[
+            VaultConfig(name="valid", path=vault_path),
+            VaultConfig(name="invalid", path=temp_dir / "nonexistent"),
+        ],
+        default_vault="valid",
+    )
+    manager = VaultManager(config)
+
+    validation_results = manager.validate_all_vaults()
+    assert len(validation_results) == 1
+    assert "invalid" in validation_results
+    assert len(validation_results["invalid"]) > 0
+
+
+def test_vault_name_validation() -> None:
+    """Test vault name validation."""
+    # Valid names
+    valid_names = ["test_vault", "my-vault", "vault123", "ABC_XYZ-123"]
+    for name in valid_names:
+        config = VaultConfig(name=name, path=Path("/tmp/test"))
+        assert config.name == name
+
+    # Invalid names
+    invalid_names = ["vault with spaces", "vault@special", "vault/slash", "vault.dot"]
+    for name in invalid_names:
+        with pytest.raises(ValueError):
+            VaultConfig(name=name, path=Path("/tmp/test"))
+
+
+def test_initialize_memory_structure(vault_manager: VaultManager) -> None:
+    """Test initializing memory folder structure."""
+    vault_manager.initialize_memory_structure("test_vault")
+
+    vault = vault_manager.get_vault("test_vault")
+    memory_path = vault.path / vault.memory_folder
+
+    # Check all expected folders exist
+    assert (memory_path / "projects").exists()
+    assert (memory_path / "global" / "patterns").exists()
+    assert (memory_path / "sessions").exists()
+
+
+def test_initialize_memory_structure_read_only(
+    vault_manager: VaultManager,
+) -> None:
+    """Test initializing memory structure fails for read-only vault."""
+    with pytest.raises(VaultReadOnlyError):
+        vault_manager.initialize_memory_structure("readonly_vault")
+
+
+def test_initialize_memory_structure_idempotent(
+    vault_manager: VaultManager,
+) -> None:
+    """Test that initialize_memory_structure is idempotent."""
+    # Initialize twice - should not raise error
+    vault_manager.initialize_memory_structure("test_vault")
+    vault_manager.initialize_memory_structure("test_vault")
+
+    vault = vault_manager.get_vault("test_vault")
+    memory_path = vault.path / vault.memory_folder
+
+    # Check structure still exists
+    assert (memory_path / "projects").exists()
+
+
+def test_ensure_memory_folder(vault_manager: VaultManager) -> None:
+    """Test ensuring memory folder exists."""
+    vault_manager.ensure_memory_folder("test_vault")
+
+    vault = vault_manager.get_vault("test_vault")
+    memory_path = vault.path / vault.memory_folder
+
+    assert memory_path.exists()
+    assert memory_path.is_dir()
+
+
+def test_ensure_memory_folder_idempotent(vault_manager: VaultManager) -> None:
+    """Test that ensure_memory_folder is idempotent."""
+    vault_manager.ensure_memory_folder("test_vault")
+    vault_manager.ensure_memory_folder("test_vault")
+
+    vault = vault_manager.get_vault("test_vault")
+    memory_path = vault.path / vault.memory_folder
+
+    assert memory_path.exists()
+
+
+def test_ensure_memory_folder_read_only(vault_manager: VaultManager) -> None:
+    """Test ensuring memory folder fails for read-only vault without folder."""
+    with pytest.raises(VaultReadOnlyError):
+        vault_manager.ensure_memory_folder("readonly_vault")
+
+
+def test_list_projects_empty(vault_manager: VaultManager) -> None:
+    """Test listing projects when none exist."""
+    projects = vault_manager.list_projects("test_vault")
+    assert projects == []
+
+
+def test_list_projects(vault_manager: VaultManager) -> None:
+    """Test listing projects."""
+    # Initialize memory structure
+    vault_manager.initialize_memory_structure("test_vault")
+
+    # Create some projects
+    vault_manager.create_project("test_vault", "project1")
+    vault_manager.create_project("test_vault", "project2")
+
+    projects = vault_manager.list_projects("test_vault")
+    assert len(projects) == 2
+    assert "project1" in projects
+    assert "project2" in projects
+
+
+def test_list_projects_no_memory_folder(vault_manager: VaultManager) -> None:
+    """Test listing projects when memory folder doesn't exist."""
+    projects = vault_manager.list_projects("test_vault")
+    assert projects == []
+
+
+def test_create_project(vault_manager: VaultManager) -> None:
+    """Test creating a project."""
+    vault_manager.create_project("test_vault", "test-project")
+
+    vault = vault_manager.get_vault("test_vault")
+    project_path = vault.path / vault.memory_folder / "projects" / "test-project"
+
+    # Check all subfolders were created
+    assert (project_path / "decisions").exists()
+    assert (project_path / "errors").exists()
+    assert (project_path / "knowledge").exists()
+    assert (project_path / "patterns").exists()
+    assert (project_path / "sessions").exists()
+
+
+def test_create_project_read_only(vault_manager: VaultManager) -> None:
+    """Test creating project fails in read-only vault."""
+    with pytest.raises(VaultReadOnlyError):
+        vault_manager.create_project("readonly_vault", "test")
+
+
+def test_create_project_invalid_name(vault_manager: VaultManager) -> None:
+    """Test creating project with invalid name fails."""
+    invalid_names = ["project with spaces", "project@special", "project/slash"]
+    for name in invalid_names:
+        with pytest.raises(ValueError, match="Invalid project name"):
+            vault_manager.create_project("test_vault", name)
+
+
+def test_create_project_idempotent(vault_manager: VaultManager) -> None:
+    """Test that create_project is idempotent."""
+    vault_manager.create_project("test_vault", "test-project")
+    vault_manager.create_project("test_vault", "test-project")  # Should not fail
+
+    vault = vault_manager.get_vault("test_vault")
+    project_path = vault.path / vault.memory_folder / "projects" / "test-project"
+
+    assert project_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_get_vault_status(vault_manager: VaultManager) -> None:
+    """Test getting vault status."""
+    vault_status = await vault_manager.get_vault_status("test_vault")
+
+    assert vault_status.name == "test_vault"
+    assert vault_status.is_accessible is True
+    assert vault_status.is_writable is True  # Not read-only
+    assert vault_status.file_count is not None
+    assert vault_status.disk_usage_bytes is not None
+    assert vault_status.memory_folder_exists is False  # Not initialized yet
+    assert len(vault_status.validation_errors) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_vault_status_with_files(vault_manager: VaultManager) -> None:
+    """Test vault status includes file count and disk usage."""
+    # Create some files
+    await vault_manager.write_file("test1.md", "content 1")
+    await vault_manager.write_file("test2.md", "longer content here")
+
+    vault_status = await vault_manager.get_vault_status("test_vault")
+
+    assert vault_status.file_count == 2
+    assert vault_status.disk_usage_bytes > 0
+    assert vault_status.last_modified is not None
+
+
+@pytest.mark.asyncio
+async def test_get_vault_status_read_only(vault_manager: VaultManager) -> None:
+    """Test status for read-only vault."""
+    vault_status = await vault_manager.get_vault_status("readonly_vault")
+
+    assert vault_status.name == "readonly_vault"
+    assert vault_status.is_writable is False  # Read-only

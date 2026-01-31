@@ -1,0 +1,27 @@
+{
+  "name": "obsidian-memory-mcp-server",
+  "version": "1.0.0",
+  "description": "HTTPS MCP server for Obsidian Memory vault operations",
+  "main": "mcp-server.js",
+  "scripts": {
+    "start": "node mcp-server.js",
+    "dev": "nodemon mcp-server.js",
+    "install-deps": "npm install"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  },
+  "keywords": [
+    "mcp",
+    "obsidian",
+    "memory",
+    "server"
+  ],
+  "author": "Jody Fielder",
+  "license": "MIT"
+}

@@ -1,16 +1,16 @@
-"""MCP server proxy endpoint for remote access."""
+"""MCP server proxy endpoint for remote access.
+
+Note: OAuth/authentication is handled by the external OAuth gateway (Traefik ForwardAuth).
+This module only handles MCP protocol proxying to the internal MCP server.
+"""
 
 import os
-from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
-
-# OAuth router at root level for Claude.ai compatibility
-oauth_router = APIRouter(tags=["oauth"])
 
 # MCP server URL (internal Docker network)
 # Use environment variable or default based on environment
@@ -23,8 +23,8 @@ MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-server:3000")
 async def mcp_sse_proxy(request: Request):
     """Proxy SSE connection to MCP server.
 
-    This endpoint allows Claude.ai and other clients to connect to the MCP server
-    via Server-Sent Events through Cloudflare Access authentication.
+    This endpoint allows clients to connect to the MCP server
+    via Server-Sent Events. Authentication is handled by the OAuth gateway.
     """
     # Create headers for upstream request
     upstream_headers = {
@@ -124,209 +124,92 @@ async def mcp_health_proxy():
             )
 
 
-@router.options("/{path:path}")
-async def mcp_options(path: str):
-    """Handle CORS preflight requests."""
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, CF-Access-JWT",
-            "Access-Control-Max-Age": "3600",
+@router.post("")
+@router.post("/")
+async def mcp_streamable_http_proxy(request: Request):
+    """Proxy Streamable HTTP requests to MCP server.
+
+    This handles the MCP 2025-03-26 Streamable HTTP transport.
+    Supports both single JSON-RPC requests and SSE streaming responses.
+    """
+    body = await request.body()
+
+    # Forward headers that matter, including MCP session ID
+    upstream_headers = {
+        "Content-Type": request.headers.get("content-type", "application/json"),
+        **{
+            key: value
+            for key, value in request.headers.items()
+            if key.lower() in ["authorization", "cf-access-jwt", "accept", "mcp-session-id"]
         },
-    )
+    }
 
-
-# =============================================================================
-# OAuth 2.0 Endpoints for Claude.ai MCP Integration
-# =============================================================================
-# These endpoints proxy OAuth requests to Cloudflare Access OIDC provider
-
-# OAuth configuration from environment
-CLOUDFLARE_TEAM_DOMAIN = os.getenv(
-    "CLOUDFLARE_ACCESS_TEAM_DOMAIN", "redleif.cloudflareaccess.com"
-)
-CLOUDFLARE_OAUTH_CLIENT_ID = os.getenv("CLOUDFLARE_OAUTH_CLIENT_ID", "")
-CLOUDFLARE_OAUTH_CLIENT_SECRET = os.getenv("CLOUDFLARE_OAUTH_CLIENT_SECRET", "")
-
-# Derive Cloudflare OIDC endpoints
-CF_AUTH_ENDPOINT = (
-    f"https://{CLOUDFLARE_TEAM_DOMAIN}/cdn-cgi/access/sso/oidc/"
-    f"{CLOUDFLARE_OAUTH_CLIENT_ID}/authorization"
-)
-CF_TOKEN_ENDPOINT = (
-    f"https://{CLOUDFLARE_TEAM_DOMAIN}/cdn-cgi/access/sso/oidc/"
-    f"{CLOUDFLARE_OAUTH_CLIENT_ID}/token"
-)
-CF_USERINFO_ENDPOINT = (
-    f"https://{CLOUDFLARE_TEAM_DOMAIN}/cdn-cgi/access/sso/oidc/"
-    f"{CLOUDFLARE_OAUTH_CLIENT_ID}/userinfo"
-)
-CF_JWKS_URI = f"https://{CLOUDFLARE_TEAM_DOMAIN}/cdn-cgi/access/certs"
-
-
-@oauth_router.get("/authorize")
-async def oauth_authorize(request: Request):
-    """OAuth 2.0 Authorization Endpoint - redirects to Cloudflare Access."""
-    # Build Cloudflare authorization URL with all query params
-    params = dict(request.query_params)
-
-    # Ensure client_id is set
-    if "client_id" not in params and CLOUDFLARE_OAUTH_CLIENT_ID:
-        params["client_id"] = CLOUDFLARE_OAUTH_CLIENT_ID
-
-    cf_auth_url = f"{CF_AUTH_ENDPOINT}?{urlencode(params)}"
-
-    return RedirectResponse(url=cf_auth_url, status_code=302)
-
-
-@oauth_router.post("/token")
-async def oauth_token(request: Request):
-    """OAuth 2.0 Token Endpoint - proxies to Cloudflare Access."""
-    content_type = request.headers.get("content-type", "")
-
-    # Parse request body
-    if "application/x-www-form-urlencoded" in content_type:
-        form_data = await request.form()
-        params = dict(form_data)
-    elif "application/json" in content_type:
-        json_data = await request.json()
-        params = dict(json_data)
-    else:
-        body = await request.body()
-        params = dict(x.split("=") for x in body.decode().split("&") if "=" in x)
-
-    # Add client credentials if not present
-    if "client_id" not in params and CLOUDFLARE_OAUTH_CLIENT_ID:
-        params["client_id"] = CLOUDFLARE_OAUTH_CLIENT_ID
-    if "client_secret" not in params and CLOUDFLARE_OAUTH_CLIENT_SECRET:
-        params["client_secret"] = CLOUDFLARE_OAUTH_CLIENT_SECRET
-
-    # Proxy to Cloudflare token endpoint
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
         try:
             response = await client.post(
-                CF_TOKEN_ENDPOINT,
-                data=params,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                f"{MCP_SERVER_URL}/mcp",
+                content=body,
+                headers=upstream_headers,
             )
+
+            # Check if response is SSE (streaming)
+            content_type = response.headers.get("content-type", "")
+
+            # Build response headers, forwarding MCP session ID
+            response_headers = {
+                "Content-Type": content_type or "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, Mcp-Session-Id",
+                "Access-Control-Expose-Headers": "Mcp-Session-Id",
+            }
+
+            # Forward Mcp-Session-Id from upstream response
+            session_id = response.headers.get("mcp-session-id")
+            if session_id:
+                response_headers["Mcp-Session-Id"] = session_id
+
+            if "text/event-stream" in content_type:
+                # For SSE responses, we need to stream
+                async def stream_response():
+                    async with client.stream(
+                        "POST",
+                        f"{MCP_SERVER_URL}/mcp",
+                        content=body,
+                        headers=upstream_headers,
+                    ) as stream_resp:
+                        async for chunk in stream_resp.aiter_bytes():
+                            yield chunk
+
+                return StreamingResponse(
+                    stream_response(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "Access-Control-Allow-Origin": "*",
+                        "Access-Control-Expose-Headers": "Mcp-Session-Id",
+                        **({"Mcp-Session-Id": session_id} if session_id else {}),
+                    },
+                )
+
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers={
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Origin": "*",
-                },
+                headers=response_headers,
             )
         except httpx.RequestError as e:
-            return Response(
-                content=f'{{"error": "server_error", "error_description": "{str(e)}"}}',
-                status_code=500,
-                headers={"Content-Type": "application/json"},
+            from fastapi import HTTPException, status
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"MCP server unavailable: {str(e)}",
             )
 
 
-@oauth_router.get("/.well-known/oauth-authorization-server")
-async def oauth_metadata(request: Request):
-    """OAuth 2.0 Authorization Server Metadata."""
-    # Determine server URL from request, respecting X-Forwarded-Proto header
-    proto = request.headers.get("X-Forwarded-Proto", "http")
-    host = request.headers.get("Host", request.url.hostname or "localhost")
-    server_url = f"{proto}://{host}"
-
-    metadata = {
-        "issuer": server_url,
-        "authorization_endpoint": f"{server_url}/authorize",
-        "token_endpoint": f"{server_url}/token",
-        "token_endpoint_auth_methods_supported": [
-            "client_secret_post",
-            "client_secret_basic",
-        ],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
-        "response_types_supported": ["code"],
-        "scopes_supported": ["openid", "email", "profile"],
-        "code_challenge_methods_supported": ["S256"],
-        "jwks_uri": CF_JWKS_URI,
-    }
-
-    return Response(
-        content=__import__("json").dumps(metadata, indent=2),
-        status_code=200,
-        headers={
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-        },
-    )
-
-
-@oauth_router.get("/.well-known/openid-configuration")
-async def openid_configuration(request: Request):
-    """OpenID Connect Discovery Endpoint."""
-    # Determine server URL from request, respecting X-Forwarded-Proto header
-    proto = request.headers.get("X-Forwarded-Proto", "http")
-    host = request.headers.get("Host", request.url.hostname or "localhost")
-    server_url = f"{proto}://{host}"
-
-    config = {
-        "issuer": f"https://{CLOUDFLARE_TEAM_DOMAIN}",
-        "authorization_endpoint": f"{server_url}/authorize",
-        "token_endpoint": f"{server_url}/token",
-        "userinfo_endpoint": CF_USERINFO_ENDPOINT,
-        "jwks_uri": CF_JWKS_URI,
-        "response_types_supported": ["code"],
-        "subject_types_supported": ["public"],
-        "id_token_signing_alg_values_supported": ["RS256"],
-        "scopes_supported": ["openid", "email", "profile"],
-        "token_endpoint_auth_methods_supported": [
-            "client_secret_post",
-            "client_secret_basic",
-        ],
-        "claims_supported": ["sub", "email", "name", "preferred_username"],
-        "code_challenge_methods_supported": ["S256"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
-    }
-
-    return Response(
-        content=__import__("json").dumps(config, indent=2),
-        status_code=200,
-        headers={
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-        },
-    )
-
-
-@oauth_router.options("/authorize")
-@oauth_router.options("/token")
-@oauth_router.options("/.well-known/oauth-authorization-server")
-@oauth_router.options("/.well-known/openid-configuration")
-async def oauth_options():
-    """Handle CORS preflight for OAuth endpoints."""
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            "Access-Control-Max-Age": "3600",
-        },
-    )
-
-
-# =============================================================================
-# Root-Level MCP Endpoints for Claude.ai Compatibility
-# =============================================================================
-# Claude.ai expects /sse and /message at root level, not under /mcp prefix
-
-
-@oauth_router.get("/sse")
-@oauth_router.get("/sse/")
-async def root_sse_proxy(request: Request):
-    """Root-level SSE endpoint for Claude.ai MCP compatibility.
-
-    Proxies to internal MCP server. Requires Bearer token authentication.
-    """
+@router.get("")
+@router.get("/")
+async def mcp_streamable_http_get_proxy(request: Request):
+    """Proxy GET requests to MCP server for SSE streaming."""
     upstream_headers = {
         key: value
         for key, value in request.headers.items()
@@ -338,7 +221,7 @@ async def root_sse_proxy(request: Request):
             try:
                 async with client.stream(
                     "GET",
-                    f"{MCP_SERVER_URL}/sse",
+                    f"{MCP_SERVER_URL}/mcp",
                     headers=upstream_headers,
                 ) as response:
                     async for chunk in response.aiter_bytes():
@@ -354,63 +237,50 @@ async def root_sse_proxy(request: Request):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
         },
     )
 
 
-@oauth_router.post("/message")
-@oauth_router.post("/message/")
-async def root_message_proxy(request: Request):
-    """Root-level message endpoint for Claude.ai MCP compatibility.
-
-    Proxies JSON-RPC messages to internal MCP server. Requires Bearer token authentication.
-    """
-    body = await request.body()
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
+@router.delete("")
+@router.delete("/")
+async def mcp_streamable_http_delete_proxy(request: Request):
+    """Proxy DELETE requests to MCP server for session termination."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            response = await client.post(
-                f"{MCP_SERVER_URL}/message",
-                content=body,
+            response = await client.delete(
+                f"{MCP_SERVER_URL}/mcp",
                 headers={
-                    "Content-Type": "application/json",
-                    **{
-                        key: value
-                        for key, value in request.headers.items()
-                        if key.lower() in ["authorization", "cf-access-jwt"]
-                    },
+                    key: value
+                    for key, value in request.headers.items()
+                    if key.lower() in ["authorization", "cf-access-jwt", "mcp-session-id"]
                 },
             )
             return Response(
                 content=response.content,
                 status_code=response.status_code,
                 headers={
-                    "Content-Type": "application/json",
                     "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type, Authorization",
                 },
             )
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             from fastapi import HTTPException, status
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"MCP server unavailable: {str(e)}",
+                detail="MCP server unavailable",
             )
 
 
-@oauth_router.options("/sse")
-@oauth_router.options("/message")
-async def mcp_root_options():
-    """Handle CORS preflight for root-level MCP endpoints."""
+@router.options("")
+@router.options("/")
+@router.options("/{path:path}")
+async def mcp_options(path: str = ""):
+    """Handle CORS preflight requests."""
     return Response(
         status_code=200,
         headers={
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, CF-Access-JWT",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, CF-Access-JWT, Mcp-Session-Id",
             "Access-Control-Max-Age": "3600",
         },
     )
