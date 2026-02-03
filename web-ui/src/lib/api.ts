@@ -2,8 +2,16 @@
  * API client for Obsidian-Memory backend.
  */
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+/**
+ * Get API base URL: localStorage (Settings) overrides env.
+ */
+function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('api_url');
+    if (stored?.trim()) return stored.trim();
+  }
+  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+}
 
 export interface Note {
   id: number | null;
@@ -101,7 +109,8 @@ async function fetchAPI<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint}`;
+  const base = getApiBaseUrl();
+  const url = `${base}${endpoint}`;
   const token = getApiToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -229,6 +238,82 @@ export async function listSessions(params?: {
  */
 export async function getGraph(): Promise<GraphResponse> {
   return fetchAPI<GraphResponse>('/api/graph');
+}
+
+/**
+ * List notes for a project.
+ */
+export interface ProjectNote {
+  note_id: number;
+  title: string;
+  permalink: string | null;
+  note_type: string;
+  updated_at: string | null;
+}
+
+export interface ProjectNotesResponse {
+  notes: ProjectNote[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export async function getProjectNotes(
+  projectName: string,
+  params?: { limit?: number; offset?: number }
+): Promise<ProjectNotesResponse> {
+  const queryParams = new URLSearchParams();
+  if (params?.limit != null)
+    queryParams.append('limit', params.limit.toString());
+  if (params?.offset != null)
+    queryParams.append('offset', params.offset.toString());
+  const query = queryParams.toString();
+  return fetchAPI<ProjectNotesResponse>(
+    `/api/projects/${encodeURIComponent(projectName)}/notes${query ? `?${query}` : ''}`
+  );
+}
+
+/**
+ * Get session context (events, summary).
+ */
+export interface SessionContextRequest {
+  session_id: string;
+  include_events?: boolean;
+  include_summary?: boolean;
+  limit?: number;
+}
+
+export interface SessionContext {
+  session_id: string;
+  project: string | null;
+  started_at: string;
+  ended_at: string | null;
+  status: string;
+  event_count: number;
+  events?: Array<{
+    event_type: string;
+    content: string;
+    timestamp: string;
+    metadata: Record<string, unknown>;
+  }>;
+  summary?: {
+    key_learnings: string[];
+    decisions: string[];
+    errors_encountered: string[];
+    solutions_found: string[];
+    next_steps: string[];
+    summary_text: string;
+    compression_ratio: number;
+  };
+}
+
+export async function getSessionContext(
+  request: SessionContextRequest
+): Promise<SessionContext> {
+  return fetchAPI<SessionContext>('/api/sessions/context', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
 }
 
 /**

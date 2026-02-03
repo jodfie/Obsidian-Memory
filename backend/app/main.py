@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.api.ai import router as ai_router
 from app.api.graph import router as graph_router
 from app.api.mcp import router as mcp_router
 from app.api.notes import router as notes_router
@@ -87,6 +88,7 @@ app.include_router(vaults_router)
 app.include_router(notes_router)
 app.include_router(projects_router)
 app.include_router(sessions_router)
+app.include_router(ai_router)
 app.include_router(graph_router)
 app.include_router(sync_router)
 app.include_router(mcp_router)  # MCP server proxy (OAuth handled by gateway)

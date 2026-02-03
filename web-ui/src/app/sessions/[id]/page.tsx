@@ -3,30 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-
-interface SessionContext {
-  session_id: string;
-  project: string | null;
-  started_at: string;
-  ended_at: string | null;
-  status: string;
-  event_count: number;
-  events?: Array<{
-    event_type: string;
-    content: string;
-    timestamp: string;
-    metadata: Record<string, unknown>;
-  }>;
-  summary?: {
-    key_learnings: string[];
-    decisions: string[];
-    errors_encountered: string[];
-    solutions_found: string[];
-    next_steps: string[];
-    summary_text: string;
-    compression_ratio: number;
-  };
-}
+import { getSessionContext, type SessionContext } from '../../../lib/api';
 
 export default function SessionDetailPage() {
   const params = useParams();
@@ -45,24 +22,12 @@ export default function SessionDetailPage() {
     try {
       setLoading(true);
       setError(null);
-      const API_BASE_URL =
-        process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${API_BASE_URL}/api/sessions/context`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          include_events: true,
-          include_summary: true,
-          limit: 100,
-        }),
+      const data = await getSessionContext({
+        session_id: sessionId,
+        include_events: true,
+        include_summary: true,
+        limit: 100,
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to load session');
-      }
-
-      const data = await response.json();
       setSession(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load session');
@@ -158,7 +123,7 @@ export default function SessionDetailPage() {
               <p className="text-gray-700 dark:text-gray-300 mb-4">
                 {session.summary.summary_text}
               </p>
-              {session.summary.key_learnings.length > 0 && (
+              {session.summary?.key_learnings?.length ? (
                 <div className="mb-4">
                   <h3 className="font-semibold mb-2">Key Learnings</h3>
                   <ul className="list-disc list-inside">
@@ -167,8 +132,8 @@ export default function SessionDetailPage() {
                     ))}
                   </ul>
                 </div>
-              )}
-              {session.summary.decisions.length > 0 && (
+              ) : null}
+              {session.summary?.decisions?.length ? (
                 <div className="mb-4">
                   <h3 className="font-semibold mb-2">Decisions</h3>
                   <ul className="list-disc list-inside">
@@ -177,7 +142,7 @@ export default function SessionDetailPage() {
                     ))}
                   </ul>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         )}

@@ -43,9 +43,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.memory.rule=Host(`memory.redleif.dev`)"
-      - "traefik.http.routers.memory.entrypoints=websecure"
-      - "traefik.http.routers.memory.tls.certresolver=cloudflare"
-      - "traefik.http.routers.memory.tls=true"
+      - "traefik.http.routers.memory.entrypoints=web"
       - "traefik.http.services.memory.loadbalancer.server.port=8765"
       - "traefik.docker.network=proxy"
       - "traefik.http.routers.memory.middlewares=memory-headers"

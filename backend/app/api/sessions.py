@@ -76,22 +76,33 @@ async def observe_event(
 @router.post("/{session_id}/summary")
 async def summarize_session(
     session_id: str,
+    force_incremental: bool = Body(False, embed=True),
+    chunk_size: int = Body(50, embed=True, ge=10, le=200),
     session_manager: SessionManager = Depends(get_session_manager),
     ai_processor: AIProcessor | None = Depends(lambda: AIProcessor()),
 ) -> dict[str, Any]:
     """Generate AI summary for a session.
 
+    Supports incremental summarization for long sessions by chunking events
+    and creating a meta-summary.
+
     Args:
         session_id: Session identifier
+        force_incremental: Force incremental summarization regardless of session size
+        chunk_size: Number of events per chunk (10-200, default 50)
         session_manager: Session manager dependency
         ai_processor: AI processor dependency
 
     Returns:
-        Session summary
+        Session summary with enhanced fields including topics, participants,
+        actionable_items, related_notes, and incremental summarization metadata
     """
     try:
         summary = await session_manager.summarize_session(
-            session_id=session_id, ai_processor=ai_processor
+            session_id=session_id,
+            ai_processor=ai_processor,
+            force_incremental=force_incremental,
+            chunk_size=chunk_size,
         )
         return summary
     except ValueError as e:
@@ -155,24 +166,40 @@ async def get_session(
 @router.post("/{session_id}/end")
 async def end_session(
     session_id: str,
+    auto_summarize: bool = Body(True, embed=True),
     session_manager: SessionManager = Depends(get_session_manager),
+    ai_processor: AIProcessor | None = Depends(lambda: AIProcessor()),
 ) -> dict[str, Any]:
     """End a session.
 
+    Optionally auto-summarizes the session if it has enough events
+    (configurable via SESSION_END_SUMMARIZE_THRESHOLD, default 10).
+
     Args:
         session_id: Session identifier
+        auto_summarize: If True (default), automatically summarize if threshold met
         session_manager: Session manager dependency
+        ai_processor: AI processor for summarization
 
     Returns:
-        Updated session information
+        Updated session information including summary if auto-summarized
     """
     try:
-        session = await session_manager.end_session(session_id)
-        return {
+        session = await session_manager.end_session(
+            session_id,
+            auto_summarize=auto_summarize,
+            ai_processor=ai_processor,
+        )
+        response = {
             "session_id": session.session_id,
             "status": session.status,
             "ended_at": session.ended_at.isoformat() if session.ended_at else None,
+            "event_count": len(session.events),
         }
+        # Include summary if available
+        if session.summary:
+            response["summary"] = session.summary
+        return response
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 

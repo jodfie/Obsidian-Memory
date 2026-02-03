@@ -376,6 +376,34 @@ async def test_resolve_wikilink_permalink(
 
 
 @pytest.mark.asyncio
+async def test_resolve_batch(
+    search_index: SearchIndex, sample_note: IndexedNote
+) -> None:
+    """Test batch resolution returns same results as individual resolution."""
+    note_id = await search_index.index_note(sample_note)
+
+    targets = ["Test Note", "test-note", "NonExistent", "Test Note"]
+    batch_result = await search_index.resolve_batch(targets, "test_vault")
+
+    assert batch_result["Test Note"] == note_id
+    assert batch_result["test-note"] == note_id
+    assert batch_result["NonExistent"] is None
+    assert len(batch_result) == 3  # unique targets only
+
+    # Same as individual
+    for t in ["Test Note", "test-note"]:
+        assert await search_index.resolve_wikilink(t, "test_vault") == batch_result[t]
+    assert await search_index.resolve_wikilink("NonExistent", "test_vault") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_batch_empty(search_index: SearchIndex) -> None:
+    """Test resolve_batch with empty list."""
+    result = await search_index.resolve_batch([], "test_vault")
+    assert result == {}
+
+
+@pytest.mark.asyncio
 async def test_get_backlinks(
     search_index: SearchIndex, sample_note: IndexedNote
 ) -> None:

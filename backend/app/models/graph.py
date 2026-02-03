@@ -42,15 +42,42 @@ class Node(BaseModel):
     updated_at: datetime | None = Field(default=None, description="Updated at")
 
 
+class EdgeSource(str, Enum):
+    """Source of an edge in the knowledge graph."""
+
+    EXPLICIT = "explicit"  # From frontmatter relations
+    WIKILINK = "wikilink"  # From [[wikilinks]]
+    INFERRED = "inferred"  # AI-inferred from content similarity
+
+
 class Edge(BaseModel):
     """An edge in the knowledge graph representing a relationship."""
 
+    edge_id: str | None = Field(default=None, description="Unique edge identifier")
     source_id: int = Field(..., description="Source note ID")
     target_id: int | None = Field(default=None, description="Target note ID (if resolved)")
     target_title: str = Field(..., description="Target note title")
     edge_type: EdgeType = Field(..., description="Type of edge")
     context: str | None = Field(default=None, description="Additional context")
     weight: float = Field(default=1.0, description="Edge weight (for ranking)")
+    # Inferred relation fields
+    source_type: EdgeSource = Field(
+        default=EdgeSource.EXPLICIT, description="How the edge was created"
+    )
+    confidence: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="Confidence score (for inferred edges)"
+    )
+    reasoning: str | None = Field(
+        default=None, description="AI reasoning for inferred relations"
+    )
+    inferred_at: datetime | None = Field(
+        default=None, description="When the edge was inferred"
+    )
+
+    @property
+    def is_inferred(self) -> bool:
+        """Check if this edge was AI-inferred."""
+        return self.source_type == EdgeSource.INFERRED
 
 
 class Graph(BaseModel):

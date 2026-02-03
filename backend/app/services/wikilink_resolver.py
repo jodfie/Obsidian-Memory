@@ -1,5 +1,7 @@
 """Wikilink extraction and resolution service."""
 
+from collections import OrderedDict
+
 from app.models.note import ParsedNote, Wikilink
 from app.models.search import IndexedNote
 from app.services.markdown_parser import MarkdownParser
@@ -20,15 +22,40 @@ class WikilinkResolutionResult:
         self.resolution_method = resolution_method  # 'exact_title', 'permalink', 'case_insensitive', 'path', None
 
 
+class _LRUCache(OrderedDict):
+    """LRU cache with bounded size for permalink resolution."""
+
+    def __init__(self, maxsize: int = 1024, *args: object, **kwargs: object) -> None:
+        self.maxsize = maxsize
+        super().__init__(*args, **kwargs)
+
+    def __getitem__(self, key: object) -> object:
+        value = super().__getitem__(key)
+        self.move_to_end(key)
+        return value
+
+    def __setitem__(self, key: object, value: object) -> None:
+        if key in self:
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        if len(self) > self.maxsize:
+            oldest = next(iter(self))
+            del self[oldest]
+
+
 class WikilinkResolver:
     """Service for extracting and resolving wikilinks."""
 
     def __init__(
-        self, markdown_parser: MarkdownParser, search_index: SearchIndex
+        self,
+        markdown_parser: MarkdownParser,
+        search_index: SearchIndex,
+        resolve_cache_maxsize: int = 1024,
     ) -> None:
         """Initialize with dependencies."""
         self.parser = markdown_parser
         self.search_index = search_index
+        self._resolve_cache: _LRUCache = _LRUCache(maxsize=resolve_cache_maxsize)
 
     async def extract_wikilinks(
         self, content: str
@@ -44,6 +71,9 @@ class WikilinkResolver:
         """
         return self.parser.extract_wikilinks(content)
 
+    def _cache_key(self, target: str, from_vault: str | None) -> tuple[str, str | None]:
+        return (target, from_vault)
+
     async def resolve_wikilink(
         self, wikilink: Wikilink, from_vault: str | None = None
     ) -> WikilinkResolutionResult:
@@ -57,22 +87,19 @@ class WikilinkResolver:
         4. Exact title match in any vault
         5. Case-insensitive title match
 
-        Args:
-            wikilink: Wikilink to resolve
-            from_vault: Vault name for context
-
-        Returns:
-            Resolution result with resolved ID and method
+        Uses an LRU cache for frequently-resolved targets.
         """
         if not self.search_index.db:
             await self.search_index.initialize()
 
+        cache_key = self._cache_key(wikilink.target, from_vault)
+        if cache_key in self._resolve_cache:
+            note_id, method = self._resolve_cache[cache_key]
+            return WikilinkResolutionResult(wikilink, note_id, method)
+
         # Strategy 1: Path-based resolution
         if wikilink.path:
-            # Try to resolve by path + title
-            # This would require a path-to-note mapping, which we don't have yet
-            # For now, fall through to other strategies
-            pass
+            pass  # Fall through; path-to-note mapping not implemented
 
         # Strategy 2: Exact title match in same vault
         if from_vault:
@@ -80,25 +107,36 @@ class WikilinkResolver:
                 wikilink.target, from_vault
             )
             if note_id:
-                return WikilinkResolutionResult(
-                    wikilink, note_id, 'exact_title_same_vault'
-                )
+                method = "exact_title_same_vault"
+                self._resolve_cache[cache_key] = (note_id, method)
+                return WikilinkResolutionResult(wikilink, note_id, method)
 
         # Strategy 3: Exact permalink match
         note_id = await self.search_index.resolve_wikilink(wikilink.target)
         if note_id:
-            # Check if it was resolved by permalink (we can't tell from the current API)
-            # Assume it's permalink if target looks like a slug
             method = (
-                'permalink'
-                if wikilink.target.replace('-', '').replace('_', '').islower()
-                else 'exact_title'
+                "permalink"
+                if wikilink.target.replace("-", "").replace("_", "").islower()
+                else "exact_title"
             )
+            self._resolve_cache[cache_key] = (note_id, method)
             return WikilinkResolutionResult(wikilink, note_id, method)
 
-        # Strategy 4: Case-insensitive title match
-        # The resolve_wikilink already does this, so if we get here, it's unresolved
+        # Strategy 4: Case-insensitive title match handled in resolve_wikilink
+        self._resolve_cache[cache_key] = (None, None)
         return WikilinkResolutionResult(wikilink, None, None)
+
+    def _infer_resolution_method(
+        self, wikilink: Wikilink, note_id: int | None, from_vault: str | None
+    ) -> str | None:
+        """Infer resolution method for batch result (best-effort)."""
+        if note_id is None:
+            return None
+        if from_vault:
+            return "exact_title_same_vault"
+        if wikilink.target.replace("-", "").replace("_", "").islower():
+            return "permalink"
+        return "exact_title"
 
     async def resolve_wikilinks(
         self,
@@ -106,20 +144,34 @@ class WikilinkResolver:
         from_vault: str | None = None,
     ) -> list[WikilinkResolutionResult]:
         """
-        Resolve multiple wikilinks in batch.
+        Resolve multiple wikilinks in batch via a single batch query.
 
-        Args:
-            wikilinks: List of wikilinks to resolve
-            from_vault: Vault name for context
-
-        Returns:
-            List of resolution results
+        Collects unique targets, calls SearchIndex.resolve_batch once, maps
+        results back to each wikilink, and updates the LRU cache.
         """
+        if not wikilinks:
+            return []
+
+        if not self.search_index.db:
+            await self.search_index.initialize()
+
+        unique_targets = list(dict.fromkeys(w.target for w in wikilinks))
+        batch_map = await self.search_index.resolve_batch(unique_targets, from_vault)
+
         results: list[WikilinkResolutionResult] = []
         for wikilink in wikilinks:
-            result = await self.resolve_wikilink(wikilink, from_vault)
-            results.append(result)
+            note_id = batch_map.get(wikilink.target)
+            method = self._infer_resolution_method(wikilink, note_id, from_vault)
+            cache_key = self._cache_key(wikilink.target, from_vault)
+            self._resolve_cache[cache_key] = (note_id, method)
+            results.append(
+                WikilinkResolutionResult(wikilink, note_id, method)
+            )
         return results
+
+    def clear_resolve_cache(self) -> None:
+        """Clear the LRU resolve cache (e.g. after note updates)."""
+        self._resolve_cache.clear()
 
     async def resolve_parsed_note(
         self, parsed_note: ParsedNote, indexed_note: IndexedNote

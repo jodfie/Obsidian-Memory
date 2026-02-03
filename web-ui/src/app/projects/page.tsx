@@ -3,15 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { listProjects, type Project } from '../../lib/api';
-
-interface ProjectNote {
-  note_id: number;
-  title: string;
-  permalink: string | null;
-  note_type: string;
-  updated_at: string | null;
-}
+import {
+  listProjects,
+  getProjectNotes,
+  type Project,
+  type ProjectNote,
+} from '../../lib/api';
 
 export default function ProjectsPage() {
   const searchParams = useSearchParams();
@@ -39,8 +36,9 @@ export default function ProjectsPage() {
       setError(null);
       const response = await listProjects();
       setProjects(response.projects);
-      if (response.projects.length > 0 && !selectedProject) {
-        setSelectedProject(response.projects[0].name);
+      const first = response.projects[0];
+      if (first && !selectedProject) {
+        setSelectedProject(first.name);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load projects');
@@ -52,16 +50,8 @@ export default function ProjectsPage() {
   async function loadProjectNotes(projectName: string) {
     try {
       setError(null);
-      const API_BASE_URL =
-        process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(
-        `${API_BASE_URL}/api/projects/${encodeURIComponent(projectName)}/notes`
-      );
-      if (!response.ok) {
-        throw new Error('Failed to load project notes');
-      }
-      const data = await response.json();
-      setProjectNotes(data.notes);
+      const response = await getProjectNotes(projectName);
+      setProjectNotes(response.notes);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to load project notes'

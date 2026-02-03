@@ -5,7 +5,7 @@ import logging
 import re
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -175,6 +175,129 @@ class SearchIndex:
         )
         await self.db.execute(
             "CREATE INDEX IF NOT EXISTS idx_wikilinks_target ON wikilinks(target_note_id)"
+        )
+
+        # Entities table (AI-extracted)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS entities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+                entity_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                confidence REAL DEFAULT 1.0,
+                extracted_at TEXT NOT NULL
+            )
+        """)
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_entities_note ON entities(note_id)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name)"
+        )
+
+        # Inferred relations table (AI-inferred relationships)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS inferred_relations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                edge_id TEXT UNIQUE NOT NULL,
+                source_note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+                target_note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+                relation_type TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0.5,
+                reasoning TEXT,
+                context TEXT,
+                is_promoted INTEGER DEFAULT 0,
+                inferred_at TEXT NOT NULL,
+                promoted_at TEXT
+            )
+        """)
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inferred_source ON inferred_relations(source_note_id)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inferred_target ON inferred_relations(target_note_id)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inferred_type ON inferred_relations(relation_type)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inferred_confidence ON inferred_relations(confidence)"
+        )
+
+        # Pattern detection: runs (cache keyed by content hash)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS pattern_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_hash TEXT UNIQUE NOT NULL,
+                detected_at TEXT NOT NULL
+            )
+        """)
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pattern_runs_hash ON pattern_runs(content_hash)"
+        )
+
+        # Detected patterns (from AI analysis)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS detected_patterns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL REFERENCES pattern_runs(id) ON DELETE CASCADE,
+                pattern_name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                category TEXT,
+                confidence REAL NOT NULL DEFAULT 0.5,
+                frequency INTEGER NOT NULL DEFAULT 1,
+                detected_at TEXT NOT NULL
+            )
+        """)
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_detected_patterns_run ON detected_patterns(run_id)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_detected_patterns_category ON detected_patterns(category)"
+        )
+
+        # Pattern–note many-to-many
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS pattern_notes (
+                pattern_id INTEGER NOT NULL REFERENCES detected_patterns(id) ON DELETE CASCADE,
+                note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+                PRIMARY KEY (pattern_id, note_id)
+            )
+        """)
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pattern_notes_pattern ON pattern_notes(pattern_id)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pattern_notes_note ON pattern_notes(note_id)"
+        )
+
+        # Deduplication suggestions (AI-suggested duplicate note pairs)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS dedup_suggestions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id_1 INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+                note_id_2 INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+                similarity_score REAL NOT NULL DEFAULT 0,
+                reasoning TEXT NOT NULL DEFAULT '',
+                suggested_action TEXT NOT NULL DEFAULT 'keep_separate',
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                updated_at TEXT,
+                UNIQUE(note_id_1, note_id_2)
+            )
+        """)
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dedup_note1 ON dedup_suggestions(note_id_1)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dedup_note2 ON dedup_suggestions(note_id_2)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dedup_status ON dedup_suggestions(status)"
         )
 
         # FTS triggers for keeping index in sync
@@ -1396,6 +1519,91 @@ class SearchIndex:
 
         return None
 
+    async def resolve_batch(
+        self,
+        targets: list[str],
+        from_vault: str | None = None,
+    ) -> dict[str, int | None]:
+        """
+        Resolve multiple wikilink targets to note IDs in a single batch.
+
+        Uses the same resolution order as resolve_wikilink: same-vault title,
+        permalink, exact title any vault, case-insensitive title. Executes
+        O(1) queries per strategy instead of O(n) individual lookups.
+
+        Args:
+            targets: List of wikilink target strings (titles or permalinks).
+            from_vault: Optional vault name for same-vault preference.
+
+        Returns:
+            Dict mapping each target to note_id or None if unresolved.
+        """
+        if not self.db:
+            raise RuntimeError("Database not initialized")
+
+        unique = list(dict.fromkeys(targets))
+        result: dict[str, int | None] = {t: None for t in unique}
+
+        if not unique:
+            return result
+
+        placeholders = ", ".join("?" for _ in unique)
+
+        # 1. Exact title in same vault
+        if from_vault:
+            cursor = await self.db.execute(
+                f"""
+                SELECT title, id FROM notes
+                WHERE vault_name = ? AND title IN ({placeholders})
+                """,
+                [from_vault] + unique,
+            )
+            async for row in cursor:
+                result[row["title"]] = row["id"]
+
+        # 2. Permalink match
+        remaining = [t for t in unique if result[t] is None]
+        if remaining:
+            ph = ", ".join("?" for _ in remaining)
+            cursor = await self.db.execute(
+                f"SELECT permalink, id FROM notes WHERE permalink IN ({ph})",
+                remaining,
+            )
+            async for row in cursor:
+                result[row["permalink"]] = row["id"]
+
+        # 3. Exact title in any vault (first match per title)
+        remaining = [t for t in unique if result[t] is None]
+        if remaining:
+            ph = ", ".join("?" for _ in remaining)
+            cursor = await self.db.execute(
+                f"SELECT title, id FROM notes WHERE title IN ({ph})",
+                remaining,
+            )
+            async for row in cursor:
+                if result[row["title"]] is None:
+                    result[row["title"]] = row["id"]
+
+        # 4. Case-insensitive title match
+        remaining = [t for t in unique if result[t] is None]
+        if remaining:
+            lower_list = [t.lower() for t in remaining]
+            ph = ", ".join("?" for _ in lower_list)
+            cursor = await self.db.execute(
+                f"""
+                SELECT LOWER(title) AS lower_title, id FROM notes
+                WHERE LOWER(title) IN ({ph})
+                """,
+                lower_list,
+            )
+            lower_to_id: dict[str, int] = {}
+            async for row in cursor:
+                lower_to_id[row["lower_title"]] = row["id"]
+            for t in remaining:
+                result[t] = lower_to_id.get(t.lower())
+
+        return result
+
     # Aggregation Queries
 
     async def list_tags(
@@ -2344,3 +2552,807 @@ class SearchIndex:
                 pass
 
         return suggestions[:limit]
+
+    # -------------------------------------------------------------------------
+    # Entity Storage and Retrieval (AI-extracted entities)
+    # -------------------------------------------------------------------------
+
+    async def store_entities(
+        self,
+        note_id: int,
+        entities: list[dict],
+        replace_existing: bool = True,
+    ) -> int:
+        """
+        Store AI-extracted entities for a note.
+
+        Args:
+            note_id: The note ID to associate entities with
+            entities: List of entity dicts with keys: entity_type, name, description, confidence
+            replace_existing: If True, delete existing entities first
+
+        Returns:
+            Number of entities stored
+        """
+        if replace_existing:
+            await self.delete_entities(note_id)
+
+        if not entities:
+            return 0
+
+        extracted_at = datetime.now(timezone.utc).isoformat()
+        count = 0
+
+        for entity in entities:
+            await self.db.execute(
+                """
+                INSERT INTO entities (note_id, entity_type, name, description, confidence, extracted_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    note_id,
+                    entity.get("entity_type", "UNKNOWN"),
+                    entity.get("name", ""),
+                    entity.get("description"),
+                    entity.get("confidence", 1.0),
+                    extracted_at,
+                ),
+            )
+            count += 1
+
+        await self.db.commit()
+        return count
+
+    async def get_entities(
+        self,
+        note_id: int,
+        entity_type: str | None = None,
+        min_confidence: float = 0.0,
+    ) -> list[dict]:
+        """
+        Retrieve entities for a note.
+
+        Args:
+            note_id: The note ID to get entities for
+            entity_type: Optional filter by entity type
+            min_confidence: Minimum confidence threshold
+
+        Returns:
+            List of entity dicts
+        """
+        if entity_type:
+            cursor = await self.db.execute(
+                """
+                SELECT id, entity_type, name, description, confidence, extracted_at
+                FROM entities
+                WHERE note_id = ? AND entity_type = ? AND confidence >= ?
+                ORDER BY confidence DESC, name ASC
+                """,
+                (note_id, entity_type, min_confidence),
+            )
+        else:
+            cursor = await self.db.execute(
+                """
+                SELECT id, entity_type, name, description, confidence, extracted_at
+                FROM entities
+                WHERE note_id = ? AND confidence >= ?
+                ORDER BY entity_type ASC, confidence DESC, name ASC
+                """,
+                (note_id, min_confidence),
+            )
+
+        entities = []
+        async for row in cursor:
+            entities.append({
+                "id": row["id"],
+                "entity_type": row["entity_type"],
+                "name": row["name"],
+                "description": row["description"],
+                "confidence": row["confidence"],
+                "extracted_at": row["extracted_at"],
+            })
+
+        return entities
+
+    async def delete_entities(self, note_id: int) -> int:
+        """
+        Delete all entities for a note.
+
+        Args:
+            note_id: The note ID to delete entities for
+
+        Returns:
+            Number of entities deleted
+        """
+        cursor = await self.db.execute(
+            "DELETE FROM entities WHERE note_id = ?",
+            (note_id,),
+        )
+        await self.db.commit()
+        return cursor.rowcount
+
+    async def search_by_entity(
+        self,
+        entity_name: str,
+        entity_type: str | None = None,
+        min_confidence: float = 0.0,
+        limit: int = 50,
+    ) -> list[dict]:
+        """
+        Search for notes containing a specific entity.
+
+        Args:
+            entity_name: Entity name to search for (partial match supported)
+            entity_type: Optional filter by entity type
+            min_confidence: Minimum confidence threshold
+            limit: Maximum results
+
+        Returns:
+            List of dicts with note info and matching entities
+        """
+        if entity_type:
+            cursor = await self.db.execute(
+                """
+                SELECT DISTINCT
+                    n.id as note_id,
+                    n.path,
+                    n.title,
+                    e.entity_type,
+                    e.name,
+                    e.description,
+                    e.confidence
+                FROM entities e
+                JOIN notes n ON e.note_id = n.id
+                WHERE e.name LIKE ? AND e.entity_type = ? AND e.confidence >= ?
+                ORDER BY e.confidence DESC, n.title ASC
+                LIMIT ?
+                """,
+                (f"%{entity_name}%", entity_type, min_confidence, limit),
+            )
+        else:
+            cursor = await self.db.execute(
+                """
+                SELECT DISTINCT
+                    n.id as note_id,
+                    n.path,
+                    n.title,
+                    e.entity_type,
+                    e.name,
+                    e.description,
+                    e.confidence
+                FROM entities e
+                JOIN notes n ON e.note_id = n.id
+                WHERE e.name LIKE ? AND e.confidence >= ?
+                ORDER BY e.confidence DESC, n.title ASC
+                LIMIT ?
+                """,
+                (f"%{entity_name}%", min_confidence, limit),
+            )
+
+        results = []
+        async for row in cursor:
+            results.append({
+                "note_id": row["note_id"],
+                "path": row["path"],
+                "title": row["title"],
+                "entity_type": row["entity_type"],
+                "entity_name": row["name"],
+                "entity_description": row["description"],
+                "confidence": row["confidence"],
+            })
+
+        return results
+
+    async def get_all_entities_by_type(
+        self,
+        entity_type: str,
+        min_confidence: float = 0.0,
+        limit: int = 100,
+    ) -> list[dict]:
+        """
+        Get all unique entities of a specific type across the vault.
+
+        Args:
+            entity_type: The entity type to filter by
+            min_confidence: Minimum confidence threshold
+            limit: Maximum results
+
+        Returns:
+            List of unique entities with occurrence counts
+        """
+        cursor = await self.db.execute(
+            """
+            SELECT
+                name,
+                entity_type,
+                COUNT(*) as occurrence_count,
+                AVG(confidence) as avg_confidence,
+                MAX(confidence) as max_confidence
+            FROM entities
+            WHERE entity_type = ? AND confidence >= ?
+            GROUP BY name, entity_type
+            ORDER BY occurrence_count DESC, avg_confidence DESC
+            LIMIT ?
+            """,
+            (entity_type, min_confidence, limit),
+        )
+
+        entities = []
+        async for row in cursor:
+            entities.append({
+                "name": row["name"],
+                "entity_type": row["entity_type"],
+                "occurrence_count": row["occurrence_count"],
+                "avg_confidence": row["avg_confidence"],
+                "max_confidence": row["max_confidence"],
+            })
+
+        return entities
+
+    # -------------------------------------------------------------------------
+    # Inferred Relations Storage and Retrieval
+    # -------------------------------------------------------------------------
+
+    async def store_inferred_relation(
+        self,
+        edge_id: str,
+        source_note_id: int,
+        target_note_id: int,
+        relation_type: str,
+        confidence: float,
+        reasoning: str | None = None,
+        context: str | None = None,
+    ) -> int:
+        """
+        Store an AI-inferred relation.
+
+        Args:
+            edge_id: Unique edge identifier
+            source_note_id: Source note ID
+            target_note_id: Target note ID
+            relation_type: Type of relation (e.g., "related_to", "depends_on")
+            confidence: Confidence score (0-1)
+            reasoning: AI reasoning for the inference
+            context: Additional context
+
+        Returns:
+            Tuple of (row id, inferred_at ISO timestamp)
+        """
+        inferred_at = datetime.now(timezone.utc).isoformat()
+
+        cursor = await self.db.execute(
+            """
+            INSERT OR REPLACE INTO inferred_relations
+            (edge_id, source_note_id, target_note_id, relation_type, confidence, reasoning, context, inferred_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                edge_id,
+                source_note_id,
+                target_note_id,
+                relation_type,
+                confidence,
+                reasoning,
+                context,
+                inferred_at,
+            ),
+        )
+        await self.db.commit()
+        return cursor.lastrowid, inferred_at
+
+    async def get_inferred_relations(
+        self,
+        note_id: int | None = None,
+        relation_type: str | None = None,
+        min_confidence: float = 0.0,
+        include_promoted: bool = False,
+        limit: int = 100,
+    ) -> list[dict]:
+        """
+        Get inferred relations with optional filtering.
+
+        Args:
+            note_id: Optional note ID to filter by (as source or target)
+            relation_type: Optional relation type filter
+            min_confidence: Minimum confidence threshold
+            include_promoted: Whether to include promoted relations
+            limit: Maximum results
+
+        Returns:
+            List of inferred relation dicts
+        """
+        conditions = ["confidence >= ?"]
+        params: list = [min_confidence]
+
+        if not include_promoted:
+            conditions.append("is_promoted = 0")
+
+        if note_id is not None:
+            conditions.append("(source_note_id = ? OR target_note_id = ?)")
+            params.extend([note_id, note_id])
+
+        if relation_type:
+            conditions.append("relation_type = ?")
+            params.append(relation_type)
+
+        params.append(limit)
+
+        query = f"""
+            SELECT
+                ir.id, ir.edge_id, ir.source_note_id, ir.target_note_id,
+                ir.relation_type, ir.confidence, ir.reasoning, ir.context,
+                ir.is_promoted, ir.inferred_at, ir.promoted_at,
+                sn.title as source_title, sn.relative_path as source_path,
+                tn.title as target_title, tn.relative_path as target_path
+            FROM inferred_relations ir
+            JOIN notes sn ON ir.source_note_id = sn.id
+            JOIN notes tn ON ir.target_note_id = tn.id
+            WHERE {' AND '.join(conditions)}
+            ORDER BY confidence DESC
+            LIMIT ?
+        """
+
+        cursor = await self.db.execute(query, params)
+
+        relations = []
+        async for row in cursor:
+            relations.append({
+                "id": row["id"],
+                "edge_id": row["edge_id"],
+                "source_note_id": row["source_note_id"],
+                "target_note_id": row["target_note_id"],
+                "source_title": row["source_title"],
+                "source_path": row["source_path"],
+                "target_title": row["target_title"],
+                "target_path": row["target_path"],
+                "relation_type": row["relation_type"],
+                "confidence": row["confidence"],
+                "reasoning": row["reasoning"],
+                "context": row["context"],
+                "is_promoted": bool(row["is_promoted"]),
+                "inferred_at": row["inferred_at"],
+                "promoted_at": row["promoted_at"],
+            })
+
+        return relations
+
+    async def get_inferred_relation_by_edge_id(self, edge_id: str) -> dict | None:
+        """
+        Get an inferred relation by its edge ID.
+
+        Args:
+            edge_id: Edge identifier
+
+        Returns:
+            Relation dict or None if not found
+        """
+        cursor = await self.db.execute(
+            """
+            SELECT
+                ir.id, ir.edge_id, ir.source_note_id, ir.target_note_id,
+                ir.relation_type, ir.confidence, ir.reasoning, ir.context,
+                ir.is_promoted, ir.inferred_at, ir.promoted_at,
+                sn.title as source_title, tn.title as target_title
+            FROM inferred_relations ir
+            JOIN notes sn ON ir.source_note_id = sn.id
+            JOIN notes tn ON ir.target_note_id = tn.id
+            WHERE ir.edge_id = ?
+            """,
+            (edge_id,),
+        )
+
+        row = await cursor.fetchone()
+        if not row:
+            return None
+
+        return {
+            "id": row["id"],
+            "edge_id": row["edge_id"],
+            "source_note_id": row["source_note_id"],
+            "target_note_id": row["target_note_id"],
+            "source_title": row["source_title"],
+            "target_title": row["target_title"],
+            "relation_type": row["relation_type"],
+            "confidence": row["confidence"],
+            "reasoning": row["reasoning"],
+            "context": row["context"],
+            "is_promoted": bool(row["is_promoted"]),
+            "inferred_at": row["inferred_at"],
+            "promoted_at": row["promoted_at"],
+        }
+
+    async def promote_inferred_relation(self, edge_id: str) -> bool:
+        """
+        Promote an inferred relation to explicit.
+
+        Args:
+            edge_id: Edge identifier to promote
+
+        Returns:
+            True if promoted, False if not found
+        """
+        promoted_at = datetime.now(timezone.utc).isoformat()
+
+        cursor = await self.db.execute(
+            """
+            UPDATE inferred_relations
+            SET is_promoted = 1, promoted_at = ?, confidence = 1.0
+            WHERE edge_id = ? AND is_promoted = 0
+            """,
+            (promoted_at, edge_id),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def delete_inferred_relation(self, edge_id: str) -> bool:
+        """
+        Delete an inferred relation.
+
+        Args:
+            edge_id: Edge identifier to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        cursor = await self.db.execute(
+            "DELETE FROM inferred_relations WHERE edge_id = ?",
+            (edge_id,),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def delete_inferred_relations_for_note(self, note_id: int) -> int:
+        """
+        Delete all inferred relations involving a note.
+
+        Args:
+            note_id: Note ID to clear relations for
+
+        Returns:
+            Number of relations deleted
+        """
+        cursor = await self.db.execute(
+            """
+            DELETE FROM inferred_relations
+            WHERE source_note_id = ? OR target_note_id = ?
+            """,
+            (note_id, note_id),
+        )
+        await self.db.commit()
+        return cursor.rowcount
+
+    # -------------------------------------------------------------------------
+    # Pattern Detection Storage and Retrieval
+    # -------------------------------------------------------------------------
+
+    async def get_pattern_run_by_content_hash(self, content_hash: str) -> int | None:
+        """Get run_id for a content hash if a run exists (cache hit)."""
+        cursor = await self.db.execute(
+            "SELECT id FROM pattern_runs WHERE content_hash = ?",
+            (content_hash,),
+        )
+        row = await cursor.fetchone()
+        return row["id"] if row else None
+
+    async def create_pattern_run(self, content_hash: str) -> int:
+        """Create a pattern run and return its id."""
+        detected_at = datetime.now(timezone.utc).isoformat()
+        cursor = await self.db.execute(
+            "INSERT INTO pattern_runs (content_hash, detected_at) VALUES (?, ?)",
+            (content_hash, detected_at),
+        )
+        await self.db.commit()
+        return cursor.lastrowid
+
+    async def store_pattern(
+        self,
+        run_id: int,
+        pattern_name: str,
+        description: str,
+        category: str | None,
+        confidence: float,
+        frequency: int,
+        note_ids: list[int],
+    ) -> int:
+        """Store a detected pattern and its note associations."""
+        detected_at = datetime.now(timezone.utc).isoformat()
+        cursor = await self.db.execute(
+            """
+            INSERT INTO detected_patterns
+            (run_id, pattern_name, description, category, confidence, frequency, detected_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (run_id, pattern_name, description or "", category, confidence, frequency, detected_at),
+        )
+        await self.db.commit()
+        pattern_id = cursor.lastrowid
+        for note_id in note_ids:
+            await self.db.execute(
+                "INSERT OR IGNORE INTO pattern_notes (pattern_id, note_id) VALUES (?, ?)",
+                (pattern_id, note_id),
+            )
+        await self.db.commit()
+        return pattern_id
+
+    async def get_patterns(
+        self,
+        run_id: int | None = None,
+        category: str | None = None,
+        min_confidence: float = 0.0,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List detected patterns with optional filters."""
+        conditions = ["confidence >= ?"]
+        params: list[Any] = [min_confidence]
+        if run_id is not None:
+            conditions.append("dp.run_id = ?")
+            params.append(run_id)
+        if category is not None:
+            conditions.append("dp.category = ?")
+            params.append(category)
+        params.append(limit)
+        query = f"""
+            SELECT dp.id, dp.run_id, dp.pattern_name, dp.description, dp.category,
+                   dp.confidence, dp.frequency, dp.detected_at
+            FROM detected_patterns dp
+            WHERE {' AND '.join(conditions)}
+            ORDER BY dp.confidence DESC, dp.frequency DESC
+            LIMIT ?
+        """
+        cursor = await self.db.execute(query, params)
+        rows = []
+        async for row in cursor:
+            rows.append({
+                "id": row["id"],
+                "run_id": row["run_id"],
+                "pattern_name": row["pattern_name"],
+                "description": row["description"],
+                "category": row["category"],
+                "confidence": row["confidence"],
+                "frequency": row["frequency"],
+                "detected_at": row["detected_at"],
+            })
+        return rows
+
+    async def get_pattern_by_id(self, pattern_id: int) -> dict[str, Any] | None:
+        """Get a single pattern by id."""
+        cursor = await self.db.execute(
+            """
+            SELECT id, run_id, pattern_name, description, category, confidence, frequency, detected_at
+            FROM detected_patterns WHERE id = ?
+            """,
+            (pattern_id,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "run_id": row["run_id"],
+            "pattern_name": row["pattern_name"],
+            "description": row["description"],
+            "category": row["category"],
+            "confidence": row["confidence"],
+            "frequency": row["frequency"],
+            "detected_at": row["detected_at"],
+        }
+
+    async def get_notes_for_pattern(self, pattern_id: int) -> list[dict[str, Any]]:
+        """Get notes that exhibit a pattern."""
+        cursor = await self.db.execute(
+            """
+            SELECT n.id, n.title, n.permalink, n.vault_name, n.relative_path, n.note_type
+            FROM pattern_notes pn
+            JOIN notes n ON pn.note_id = n.id
+            WHERE pn.pattern_id = ?
+            """,
+            (pattern_id,),
+        )
+        return [dict(row) async for row in cursor]
+
+    async def get_patterns_for_note(self, note_id: int) -> list[dict[str, Any]]:
+        """Get patterns detected in a note."""
+        cursor = await self.db.execute(
+            """
+            SELECT dp.id, dp.pattern_name, dp.description, dp.category, dp.confidence, dp.frequency, dp.detected_at
+            FROM pattern_notes pn
+            JOIN detected_patterns dp ON pn.pattern_id = dp.id
+            WHERE pn.note_id = ?
+            ORDER BY dp.confidence DESC
+            """,
+            (note_id,),
+        )
+        return [dict(row) async for row in cursor]
+
+    # -------------------------------------------------------------------------
+    # Deduplication Suggestions Storage and Retrieval
+    # -------------------------------------------------------------------------
+
+    async def store_dedup_suggestion(
+        self,
+        note_id_1: int,
+        note_id_2: int,
+        similarity_score: float,
+        reasoning: str,
+        suggested_action: str,
+    ) -> int:
+        """Store a deduplication suggestion (note_id_1 < note_id_2)."""
+        n1, n2 = min(note_id_1, note_id_2), max(note_id_1, note_id_2)
+        created_at = datetime.now(timezone.utc).isoformat()
+        cursor = await self.db.execute(
+            """
+            INSERT OR IGNORE INTO dedup_suggestions
+            (note_id_1, note_id_2, similarity_score, reasoning, suggested_action, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?)
+            """,
+            (n1, n2, similarity_score, reasoning or "", suggested_action or "keep_separate", created_at),
+        )
+        await self.db.commit()
+        return cursor.lastrowid if cursor.lastrowid else await self._get_dedup_id_by_pair(n1, n2)
+
+    async def _get_dedup_id_by_pair(self, note_id_1: int, note_id_2: int) -> int:
+        """Get dedup suggestion id by note pair."""
+        cursor = await self.db.execute(
+            "SELECT id FROM dedup_suggestions WHERE note_id_1 = ? AND note_id_2 = ?",
+            (note_id_1, note_id_2),
+        )
+        row = await cursor.fetchone()
+        return row["id"] if row else 0
+
+    async def get_dedup_suggestions(
+        self,
+        status: str | None = "pending",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List deduplication suggestions with optional status filter."""
+        conditions = []
+        params: list[Any] = []
+        if status is not None:
+            conditions.append("ds.status = ?")
+            params.append(status)
+        params.append(limit)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query = f"""
+            SELECT ds.id, ds.note_id_1, ds.note_id_2, ds.similarity_score, ds.reasoning,
+                   ds.suggested_action, ds.status, ds.created_at, ds.updated_at,
+                   n1.title as title_1, n2.title as title_2
+            FROM dedup_suggestions ds
+            JOIN notes n1 ON ds.note_id_1 = n1.id
+            JOIN notes n2 ON ds.note_id_2 = n2.id
+            {where}
+            ORDER BY ds.similarity_score DESC
+            LIMIT ?
+        """
+        cursor = await self.db.execute(query, params)
+        return [dict(row) async for row in cursor]
+
+    async def get_dedup_suggestion_by_id(self, suggestion_id: int) -> dict[str, Any] | None:
+        """Get a single dedup suggestion by id."""
+        cursor = await self.db.execute(
+            """
+            SELECT ds.id, ds.note_id_1, ds.note_id_2, ds.similarity_score, ds.reasoning,
+                   ds.suggested_action, ds.status, ds.created_at, ds.updated_at,
+                   n1.title as title_1, n1.relative_path as path_1, n1.vault_name as vault_1,
+                   n2.title as title_2, n2.relative_path as path_2, n2.vault_name as vault_2
+            FROM dedup_suggestions ds
+            JOIN notes n1 ON ds.note_id_1 = n1.id
+            JOIN notes n2 ON ds.note_id_2 = n2.id
+            WHERE ds.id = ?
+            """,
+            (suggestion_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def update_dedup_suggestion_status(
+        self, suggestion_id: int, status: str
+    ) -> bool:
+        """Update dedup suggestion status (accepted, rejected, merged)."""
+        updated_at = datetime.now(timezone.utc).isoformat()
+        cursor = await self.db.execute(
+            "UPDATE dedup_suggestions SET status = ?, updated_at = ? WHERE id = ? AND status = 'pending'",
+            (status, updated_at, suggestion_id),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def mark_dedup_suggestion_merged_for_pair(
+        self, note_id_1: int, note_id_2: int
+    ) -> int:
+        """Mark pending dedup suggestion for this note pair as merged. Returns count updated."""
+        n1, n2 = min(note_id_1, note_id_2), max(note_id_1, note_id_2)
+        updated_at = datetime.now(timezone.utc).isoformat()
+        cursor = await self.db.execute(
+            "UPDATE dedup_suggestions SET status = 'merged', updated_at = ? WHERE note_id_1 = ? AND note_id_2 = ? AND status = 'pending'",
+            (updated_at, n1, n2),
+        )
+        await self.db.commit()
+        return cursor.rowcount
+
+    async def get_candidate_pairs_for_dedup(
+        self,
+        vault_name: str | None = None,
+        limit: int = 50,
+    ) -> list[tuple[int, int]]:
+        """Get note pairs that might be duplicates (shared tags, not yet suggested)."""
+        vault_cond = "AND n1.vault_name = ? AND n2.vault_name = ?" if vault_name else ""
+        params: list[Any] = []
+        if vault_name:
+            params.extend([vault_name, vault_name])
+        params.append(limit)
+        query = f"""
+            SELECT DISTINCT n1.id as id_1, n2.id as id_2
+            FROM notes n1
+            JOIN notes n2 ON n1.id < n2.id
+            JOIN note_tags t1 ON n1.id = t1.note_id
+            JOIN note_tags t2 ON n2.id = t2.note_id AND t1.tag = t2.tag
+            LEFT JOIN dedup_suggestions ds ON
+                (ds.note_id_1 = n1.id AND ds.note_id_2 = n2.id)
+            WHERE ds.id IS NULL
+            {vault_cond}
+            GROUP BY n1.id, n2.id
+            HAVING COUNT(DISTINCT t1.tag) >= 1
+            ORDER BY COUNT(DISTINCT t1.tag) DESC
+            LIMIT ?
+        """
+        cursor = await self.db.execute(query, params)
+        return [(row["id_1"], row["id_2"]) async for row in cursor]
+
+    async def get_candidate_pairs_for_inference(
+        self,
+        note_ids: list[int] | None = None,
+        limit: int = 100,
+    ) -> list[tuple[int, int]]:
+        """
+        Get candidate note pairs for relation inference.
+
+        Returns pairs of notes that don't already have explicit relations
+        but might be semantically related based on shared tags or content.
+
+        Args:
+            note_ids: Optional list of note IDs to focus on
+            limit: Maximum number of pairs to return
+
+        Returns:
+            List of (source_id, target_id) tuples
+        """
+        if note_ids:
+            # Get pairs involving specified notes
+            placeholders = ",".join("?" * len(note_ids))
+            query = f"""
+                SELECT DISTINCT n1.id as source_id, n2.id as target_id
+                FROM notes n1
+                JOIN notes n2 ON n1.id < n2.id
+                LEFT JOIN inferred_relations ir ON
+                    (ir.source_note_id = n1.id AND ir.target_note_id = n2.id) OR
+                    (ir.source_note_id = n2.id AND ir.target_note_id = n1.id)
+                WHERE n1.id IN ({placeholders}) AND ir.id IS NULL
+                LIMIT ?
+            """
+            params = note_ids + [limit]
+        else:
+            # Get pairs based on shared tags
+            query = """
+                SELECT DISTINCT n1.id as source_id, n2.id as target_id
+                FROM notes n1
+                JOIN notes n2 ON n1.id < n2.id
+                JOIN note_tags t1 ON n1.id = t1.note_id
+                JOIN note_tags t2 ON n2.id = t2.note_id AND t1.tag = t2.tag
+                LEFT JOIN inferred_relations ir ON
+                    (ir.source_note_id = n1.id AND ir.target_note_id = n2.id) OR
+                    (ir.source_note_id = n2.id AND ir.target_note_id = n1.id)
+                WHERE ir.id IS NULL
+                GROUP BY n1.id, n2.id
+                HAVING COUNT(DISTINCT t1.tag) >= 1
+                ORDER BY COUNT(DISTINCT t1.tag) DESC
+                LIMIT ?
+            """
+            params = [limit]
+
+        cursor = await self.db.execute(query, params)
+
+        pairs = []
+        async for row in cursor:
+            pairs.append((row["source_id"], row["target_id"]))
+
+        return pairs

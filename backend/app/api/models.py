@@ -220,3 +220,95 @@ class SessionSummaryResponse(BaseModel):
     patterns: list[str] = Field(
         default_factory=list, description="Patterns identified"
     )
+
+
+class SessionObserveRequest(BaseModel):
+    """Request model for observing/logging an event in a session."""
+
+    session_id: str = Field(..., description="Session ID to add event to")
+    event_type: SessionEventType = Field(..., description="Type of event being logged")
+    content: str = Field(..., description="Content of the event")
+    metadata: dict = Field(default_factory=dict, description="Additional event metadata")
+
+
+# Entity Extraction Models
+
+
+class EntityResponse(BaseModel):
+    """Response model for an extracted entity."""
+
+    id: int | None = Field(default=None, description="Entity ID in database")
+    entity_type: str = Field(..., description="Type of entity (PERSON, TOOL, CONCEPT, etc.)")
+    name: str = Field(..., description="Entity name")
+    description: str | None = Field(default=None, description="Entity description")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Extraction confidence")
+    extracted_at: str | None = Field(default=None, description="When entity was extracted")
+
+
+class ExtractEntitiesRequest(BaseModel):
+    """Request model for extracting entities from a note."""
+
+    force: bool = Field(
+        default=False,
+        description="If true, re-extract even if entities already exist",
+    )
+
+
+class ExtractEntitiesResponse(BaseModel):
+    """Response model for entity extraction."""
+
+    note_id: int = Field(..., description="Note ID that was processed")
+    entities: list[EntityResponse] = Field(..., description="Extracted entities")
+    count: int = Field(..., description="Number of entities extracted")
+    cached: bool = Field(
+        default=False, description="Whether result was from cache (existing entities)"
+    )
+
+
+class EntityListResponse(BaseModel):
+    """Response model for listing entities."""
+
+    note_id: int = Field(..., description="Note ID")
+    entities: list[EntityResponse] = Field(..., description="Entities for the note")
+    total: int = Field(..., description="Total entity count")
+
+
+class EntitySearchRequest(BaseModel):
+    """Request model for searching by entity."""
+
+    entity_name: str = Field(..., min_length=1, description="Entity name to search for")
+    entity_type: str | None = Field(default=None, description="Filter by entity type")
+    min_confidence: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Minimum confidence threshold"
+    )
+    limit: int = Field(default=50, ge=1, le=500, description="Maximum results")
+
+
+class EntitySearchResult(BaseModel):
+    """A single entity search result."""
+
+    note_id: int = Field(..., description="Note ID")
+    path: str = Field(..., description="Note path")
+    title: str = Field(..., description="Note title")
+    entity_type: str = Field(..., description="Entity type")
+    entity_name: str = Field(..., description="Matched entity name")
+    entity_description: str | None = Field(default=None, description="Entity description")
+    confidence: float = Field(..., description="Entity confidence")
+
+
+class EntitySearchResponse(BaseModel):
+    """Response model for entity search."""
+
+    results: list[EntitySearchResult] = Field(..., description="Search results")
+    total: int = Field(..., description="Total results found")
+    query: str = Field(..., description="Original search query")
+
+
+class EntityTypeListResponse(BaseModel):
+    """Response model for listing entities by type."""
+
+    entity_type: str = Field(..., description="The entity type")
+    entities: list[dict] = Field(
+        ..., description="Unique entities with occurrence counts"
+    )
+    total: int = Field(..., description="Total unique entities of this type")

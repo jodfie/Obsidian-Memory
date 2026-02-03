@@ -1,6 +1,7 @@
 """Session management service."""
 
 import json
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,13 @@ from app.models.session import (
 )
 from app.services.ai_processor import AIProcessor
 from app.services.exceptions import AIProcessorUnavailableError
+
+logger = logging.getLogger(__name__)
+
+# Configuration for incremental summarization
+DEFAULT_CHUNK_SIZE = 50  # Events per chunk
+AUTO_SUMMARIZE_THRESHOLD = 100  # Auto-summarize every N events
+SESSION_END_SUMMARIZE_THRESHOLD = 10  # Minimum events to trigger end-of-session summary
 
 
 class SessionManager:
@@ -129,11 +137,18 @@ class SessionManager:
 
         return session
 
-    async def end_session(self, session_id: str) -> Session:
+    async def end_session(
+        self,
+        session_id: str,
+        auto_summarize: bool = True,
+        ai_processor: AIProcessor | None = None,
+    ) -> Session:
         """End a session.
 
         Args:
             session_id: Session identifier
+            auto_summarize: If True, automatically summarize if threshold met
+            ai_processor: Optional AI processor for summarization
 
         Returns:
             Updated session
@@ -148,18 +163,41 @@ class SessionManager:
         session.ended_at = datetime.now()
         session.status = "completed"
         self._sessions[session_id] = session
+
+        # Auto-summarize on session end if enabled and threshold met
+        if auto_summarize and len(session.events) >= SESSION_END_SUMMARIZE_THRESHOLD:
+            try:
+                logger.info(
+                    f"Auto-summarizing session {session_id} on end "
+                    f"({len(session.events)} events)"
+                )
+                await self.summarize_session(session_id, ai_processor)
+                # Reload session to get updated summary
+                session = await self.get_session(session_id)
+            except Exception as e:
+                logger.warning(f"Failed to auto-summarize session on end: {e}")
+
         await self._save_session(session)
 
         return session
 
     async def summarize_session(
-        self, session_id: str, ai_processor: AIProcessor | None = None
+        self,
+        session_id: str,
+        ai_processor: AIProcessor | None = None,
+        force_incremental: bool = False,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
     ) -> dict[str, Any]:
         """Generate AI summary for a session.
+
+        Supports incremental summarization for long sessions by chunking events
+        and creating a meta-summary.
 
         Args:
             session_id: Session identifier
             ai_processor: Optional AI processor (creates one if not provided)
+            force_incremental: Force incremental summarization regardless of size
+            chunk_size: Number of events per chunk for incremental summarization
 
         Returns:
             Session summary dictionary
@@ -168,23 +206,33 @@ class SessionManager:
         if not session:
             raise ValueError(f"Session {session_id} not found")
 
-        # Build session content from events
-        event_lines = []
-        for event in session.events:
-            event_lines.append(
-                f"[{event.event_type.value}] {event.timestamp.isoformat()}: {event.content}"
-            )
-        session_content = "\n".join(event_lines)
-
         # Use AI processor to summarize
         if ai_processor is None:
             ai_processor = AIProcessor()
 
+        # Determine if we should use incremental summarization
+        use_incremental = force_incremental or len(session.events) > chunk_size * 2
+
         try:
-            summary = await ai_processor.summarize_session(session_content)
+            if use_incremental and len(session.events) > chunk_size:
+                summary = await self._summarize_incremental(
+                    session, ai_processor, chunk_size
+                )
+            else:
+                # Build session content from events
+                session_content = self._format_events(session.events)
+                summary = await ai_processor.summarize_session(session_content)
+
             session.summary = summary.model_dump()
+            # Track summarization metadata
+            if session.metadata is None:
+                session.metadata = {}
+            session.metadata["last_summarized_at"] = datetime.now().isoformat()
+            session.metadata["summarized_event_count"] = len(session.events)
+
             await self._save_session(session)
             return session.summary
+
         except AIProcessorUnavailableError:
             # Return basic summary if AI unavailable
             return {
@@ -193,9 +241,108 @@ class SessionManager:
                 "errors_encountered": [],
                 "solutions_found": [],
                 "next_steps": [],
+                "topics": [],
+                "participants": [],
+                "actionable_items": [],
+                "related_notes": [],
                 "summary_text": f"Session with {len(session.events)} events",
                 "compression_ratio": 0.0,
+                "chunk_count": 1,
+                "is_incremental": False,
             }
+
+    async def _summarize_incremental(
+        self,
+        session: Session,
+        ai_processor: AIProcessor,
+        chunk_size: int,
+    ) -> "SessionSummary":
+        """Perform incremental summarization by chunking events.
+
+        Args:
+            session: Session to summarize
+            ai_processor: AI processor instance
+            chunk_size: Number of events per chunk
+
+        Returns:
+            SessionSummary from incremental processing
+        """
+        from app.models.ai import SessionSummary
+
+        # Chunk events
+        event_chunks = []
+        for i in range(0, len(session.events), chunk_size):
+            chunk_events = session.events[i : i + chunk_size]
+            chunk_content = self._format_events(chunk_events)
+            event_chunks.append(chunk_content)
+
+        logger.info(
+            f"Incrementally summarizing session {session.session_id} "
+            f"with {len(event_chunks)} chunks"
+        )
+
+        # Use incremental summarization
+        return await ai_processor.summarize_session_incremental(event_chunks)
+
+    def _format_events(self, events: list[SessionEvent]) -> str:
+        """Format events into a string for summarization.
+
+        Args:
+            events: List of session events
+
+        Returns:
+            Formatted string of events
+        """
+        event_lines = []
+        for event in events:
+            event_lines.append(
+                f"[{event.event_type.value}] {event.timestamp.isoformat()}: {event.content}"
+            )
+        return "\n".join(event_lines)
+
+    async def should_auto_summarize(self, session_id: str) -> bool:
+        """Check if a session should be auto-summarized.
+
+        Auto-summarization is triggered when:
+        - Session has more than AUTO_SUMMARIZE_THRESHOLD events since last summary
+        - Session has never been summarized and has enough events
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            True if auto-summarization should be triggered
+        """
+        session = await self.get_session(session_id)
+        if not session:
+            return False
+
+        # Get last summarized event count
+        last_summarized_count = 0
+        if session.metadata:
+            last_summarized_count = session.metadata.get("summarized_event_count", 0)
+
+        events_since_summary = len(session.events) - last_summarized_count
+        return events_since_summary >= AUTO_SUMMARIZE_THRESHOLD
+
+    async def auto_summarize_if_needed(
+        self,
+        session_id: str,
+        ai_processor: AIProcessor | None = None,
+    ) -> dict[str, Any] | None:
+        """Auto-summarize session if threshold is reached.
+
+        Args:
+            session_id: Session identifier
+            ai_processor: Optional AI processor
+
+        Returns:
+            Session summary if summarization was triggered, None otherwise
+        """
+        if await self.should_auto_summarize(session_id):
+            logger.info(f"Auto-summarizing session {session_id}")
+            return await self.summarize_session(session_id, ai_processor)
+        return None
 
     async def get_session_context(
         self,

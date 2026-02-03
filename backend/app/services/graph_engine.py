@@ -1,10 +1,13 @@
 """Graph engine for computing knowledge graph from markdown notes."""
 
+import uuid
 from collections import deque
+from datetime import datetime, timezone
 from typing import Callable
 
 from app.models.graph import (
     Edge,
+    EdgeSource,
     EdgeType,
     Graph,
     GraphPath,
@@ -63,26 +66,91 @@ class GraphEngine:
         # Create edges from relations
         for relation in parsed_note.relations:
             edge = Edge(
+                edge_id=str(uuid.uuid4()),
                 source_id=note_id,
                 target_id=None,  # Will be resolved later
                 target_title=relation.target,
                 edge_type=EdgeType(relation.relation_type.value),
                 context=relation.context,
                 weight=1.0,
+                source_type=EdgeSource.EXPLICIT,
+                confidence=1.0,
             )
             self.graph.edges.append(edge)
 
         # Create edges from wikilinks
         for wikilink in parsed_note.wikilinks:
             edge = Edge(
+                edge_id=str(uuid.uuid4()),
                 source_id=note_id,
                 target_id=None,  # Will be resolved later
                 target_title=wikilink.target,
                 edge_type=EdgeType.LINKS_TO,
                 context=None,
                 weight=0.5,  # Wikilinks are weaker than explicit relations
+                source_type=EdgeSource.WIKILINK,
+                confidence=1.0,
             )
             self.graph.edges.append(edge)
+
+    def add_inferred_edges_from_records(
+        self, records: list[dict], node_ids: set[int] | None = None
+    ) -> int:
+        """Add edges from stored inferred-relation records.
+
+        Use this to merge DB-backed inferred relations into the in-memory graph.
+        Only adds edges whose source_id and target_id exist in the graph (or in
+        node_ids if provided).
+
+        Args:
+            records: List of dicts from get_inferred_relations (edge_id,
+                source_note_id, target_note_id, relation_type, confidence,
+                reasoning, inferred_at, etc.)
+            node_ids: Optional set of note IDs to allow; if None, only notes
+                already in self.graph.nodes are allowed.
+
+        Returns:
+            Number of edges added.
+        """
+        from datetime import datetime
+
+        allowed = node_ids if node_ids is not None else set(self.graph.nodes)
+        added = 0
+        for rec in records:
+            sid = rec.get("source_note_id")
+            tid = rec.get("target_note_id")
+            if sid is None or tid is None or sid not in allowed or tid not in allowed:
+                continue
+            relation_type = rec.get("relation_type", "related_to")
+            try:
+                edge_type = EdgeType(relation_type)
+            except ValueError:
+                edge_type = EdgeType.RELATED_TO
+            target_title = rec.get("target_title") or ""
+            inferred_at = rec.get("inferred_at")
+            if isinstance(inferred_at, str):
+                try:
+                    inferred_at = datetime.fromisoformat(
+                        inferred_at.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    inferred_at = None
+            edge = Edge(
+                edge_id=rec.get("edge_id"),
+                source_id=sid,
+                target_id=tid,
+                target_title=target_title,
+                edge_type=edge_type,
+                context=rec.get("reasoning") or rec.get("context"),
+                weight=float(rec.get("confidence", 1.0)),
+                source_type=EdgeSource.INFERRED,
+                confidence=float(rec.get("confidence", 1.0)),
+                reasoning=rec.get("reasoning"),
+                inferred_at=inferred_at,
+            )
+            self.graph.edges.append(edge)
+            added += 1
+        return added
 
     def resolve_edges(self) -> None:
         """Resolve target IDs for all edges using title and permalink mappings."""
@@ -638,3 +706,203 @@ class GraphEngine:
         node_centralities.sort(key=lambda x: x["degree_centrality"], reverse=True)
 
         return node_centralities[:limit]
+
+    # -------------------------------------------------------------------------
+    # Inferred Relations Management
+    # -------------------------------------------------------------------------
+
+    def add_inferred_edge(
+        self,
+        source_id: int,
+        target_id: int,
+        edge_type: EdgeType,
+        confidence: float,
+        reasoning: str | None = None,
+        context: str | None = None,
+    ) -> Edge:
+        """
+        Add an AI-inferred edge to the graph.
+
+        Args:
+            source_id: Source note ID
+            target_id: Target note ID
+            edge_type: Type of relation
+            confidence: Confidence score (0-1)
+            reasoning: AI reasoning for the inference
+            context: Additional context
+
+        Returns:
+            The created Edge
+        """
+        # Get target title for the edge
+        target_node = self.get_node(target_id)
+        target_title = target_node.title if target_node else f"Note #{target_id}"
+
+        edge = Edge(
+            edge_id=str(uuid.uuid4()),
+            source_id=source_id,
+            target_id=target_id,
+            target_title=target_title,
+            edge_type=edge_type,
+            context=context,
+            weight=confidence,  # Use confidence as weight for ranking
+            source_type=EdgeSource.INFERRED,
+            confidence=confidence,
+            reasoning=reasoning,
+            inferred_at=datetime.now(timezone.utc),
+        )
+
+        self.graph.edges.append(edge)
+        return edge
+
+    def get_inferred_edges(
+        self,
+        min_confidence: float = 0.0,
+        edge_type: EdgeType | None = None,
+    ) -> list[Edge]:
+        """
+        Get all inferred edges, optionally filtered.
+
+        Args:
+            min_confidence: Minimum confidence threshold
+            edge_type: Optional filter by edge type
+
+        Returns:
+            List of inferred edges
+        """
+        edges = [
+            e for e in self.graph.edges
+            if e.source_type == EdgeSource.INFERRED
+            and e.confidence >= min_confidence
+        ]
+
+        if edge_type:
+            edges = [e for e in edges if e.edge_type == edge_type]
+
+        return sorted(edges, key=lambda e: e.confidence, reverse=True)
+
+    def get_edge_by_id(self, edge_id: str) -> Edge | None:
+        """
+        Get an edge by its ID.
+
+        Args:
+            edge_id: Edge identifier
+
+        Returns:
+            Edge if found, None otherwise
+        """
+        for edge in self.graph.edges:
+            if edge.edge_id == edge_id:
+                return edge
+        return None
+
+    def promote_inferred_edge(self, edge_id: str) -> Edge | None:
+        """
+        Promote an inferred edge to explicit.
+
+        This changes the edge's source_type from INFERRED to EXPLICIT,
+        effectively making it a permanent relationship.
+
+        Args:
+            edge_id: Edge identifier to promote
+
+        Returns:
+            The promoted edge, or None if not found
+        """
+        edge = self.get_edge_by_id(edge_id)
+        if edge and edge.source_type == EdgeSource.INFERRED:
+            edge.source_type = EdgeSource.EXPLICIT
+            edge.confidence = 1.0  # Promoted edges have full confidence
+            return edge
+        return None
+
+    def remove_edge(self, edge_id: str) -> bool:
+        """
+        Remove an edge by ID.
+
+        Args:
+            edge_id: Edge identifier to remove
+
+        Returns:
+            True if edge was removed, False if not found
+        """
+        for i, edge in enumerate(self.graph.edges):
+            if edge.edge_id == edge_id:
+                del self.graph.edges[i]
+                return True
+        return False
+
+    def remove_inferred_edges_for_note(self, note_id: int) -> int:
+        """
+        Remove all inferred edges involving a specific note.
+
+        Useful when re-running inference for a note.
+
+        Args:
+            note_id: Note ID to clear inferred edges for
+
+        Returns:
+            Number of edges removed
+        """
+        original_count = len(self.graph.edges)
+        self.graph.edges = [
+            e for e in self.graph.edges
+            if not (
+                e.source_type == EdgeSource.INFERRED
+                and (e.source_id == note_id or e.target_id == note_id)
+            )
+        ]
+        return original_count - len(self.graph.edges)
+
+    def get_edges_between(
+        self,
+        source_id: int,
+        target_id: int,
+        include_reverse: bool = True,
+    ) -> list[Edge]:
+        """
+        Get all edges between two notes.
+
+        Args:
+            source_id: Source note ID
+            target_id: Target note ID
+            include_reverse: Also include edges in reverse direction
+
+        Returns:
+            List of edges between the notes
+        """
+        edges = [
+            e for e in self.graph.edges
+            if e.source_id == source_id and e.target_id == target_id
+        ]
+
+        if include_reverse:
+            edges.extend([
+                e for e in self.graph.edges
+                if e.source_id == target_id and e.target_id == source_id
+            ])
+
+        return edges
+
+    def has_edge_between(
+        self,
+        source_id: int,
+        target_id: int,
+        edge_type: EdgeType | None = None,
+    ) -> bool:
+        """
+        Check if an edge exists between two notes.
+
+        Args:
+            source_id: Source note ID
+            target_id: Target note ID
+            edge_type: Optional edge type to check for
+
+        Returns:
+            True if edge exists
+        """
+        for edge in self.graph.edges:
+            if edge.source_id == source_id and edge.target_id == target_id:
+                if edge_type is None or edge.edge_type == edge_type:
+                    return True
+        return False

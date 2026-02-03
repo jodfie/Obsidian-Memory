@@ -2,7 +2,7 @@
 
 **Title:** FR-9: Web UI
 
-**Status:** pending
+**Status:** completed
 
 **Dependencies:** 8
 

@@ -363,6 +363,10 @@ Example:
 - Errors encountered (problems, failures)
 - Solutions found (how errors were resolved)
 - Next steps (suggested actions)
+- Topics (main themes/subjects discussed)
+- Participants (people, tools, systems, libraries involved)
+- Actionable items (concrete follow-up tasks)
+- Related notes (suggested references like "debugging-guide", "api-patterns")
 
 Return a JSON object with:
 - key_learnings: array of strings
@@ -370,6 +374,10 @@ Return a JSON object with:
 - errors_encountered: array of strings
 - solutions_found: array of strings
 - next_steps: array of strings
+- topics: array of strings (main themes)
+- participants: array of strings (entities involved)
+- actionable_items: array of strings (follow-up tasks)
+- related_notes: array of strings (suggested note references)
 - summary_text: overall summary (max {max_length} chars)
 - compression_ratio: ratio of summary length to original length
 
@@ -380,6 +388,10 @@ Example:
   "errors_encountered": ["sqlite3.OperationalError: no such column"],
   "solutions_found": ["Use DELETE+INSERT for FTS updates"],
   "next_steps": ["Add content caching", "Implement retry logic"],
+  "topics": ["database", "testing", "async-patterns"],
+  "participants": ["SQLite", "FastAPI", "pytest"],
+  "actionable_items": ["Create FTS update helper function", "Add retry decorator"],
+  "related_notes": ["sqlite-fts-guide", "async-testing-patterns"],
   "summary_text": "Session focused on fixing SQLite FTS5 issues...",
   "compression_ratio": 0.15
 }}""".format(
@@ -404,6 +416,10 @@ Example:
                 errors_encountered=data.get("errors_encountered", []),
                 solutions_found=data.get("solutions_found", []),
                 next_steps=data.get("next_steps", []),
+                topics=data.get("topics", []),
+                participants=data.get("participants", []),
+                actionable_items=data.get("actionable_items", []),
+                related_notes=data.get("related_notes", []),
                 summary_text=summary_text,
                 compression_ratio=compression_ratio,
             )
@@ -430,6 +446,194 @@ Example:
                 summary_text=f"Error: {e}",
                 compression_ratio=0.0,
             )
+
+    async def summarize_session_incremental(
+        self,
+        event_chunks: list[str],
+        max_length: int = 1000,
+    ) -> SessionSummary:
+        """Incrementally summarize a session by processing chunks.
+
+        For long sessions, this method:
+        1. Summarizes each chunk independently
+        2. Creates a meta-summary combining all chunk summaries
+
+        Args:
+            event_chunks: List of event content chunks
+            max_length: Maximum length of final summary text
+
+        Returns:
+            SessionSummary with combined results and chunk_count/is_incremental set
+        """
+        if len(event_chunks) <= 1:
+            # Single chunk - use regular summarization
+            content = event_chunks[0] if event_chunks else ""
+            summary = await self.summarize_session(content, max_length)
+            return summary
+
+        # Summarize each chunk
+        chunk_summaries: list[SessionSummary] = []
+        for i, chunk in enumerate(event_chunks):
+            logger.info(f"Summarizing chunk {i + 1}/{len(event_chunks)}")
+            chunk_summary = await self.summarize_session(chunk, max_length=500)
+            chunk_summaries.append(chunk_summary)
+
+        # Combine chunk summaries into meta-summary
+        return await self._combine_chunk_summaries(
+            chunk_summaries, max_length, len(event_chunks)
+        )
+
+    async def _combine_chunk_summaries(
+        self,
+        chunk_summaries: list[SessionSummary],
+        max_length: int,
+        chunk_count: int,
+    ) -> SessionSummary:
+        """Combine multiple chunk summaries into a final summary.
+
+        Args:
+            chunk_summaries: List of chunk summaries
+            max_length: Maximum length of final summary text
+            chunk_count: Number of original chunks
+
+        Returns:
+            Combined SessionSummary
+        """
+        # Prepare combined content for meta-summarization
+        combined_content = []
+        for i, summary in enumerate(chunk_summaries):
+            combined_content.append(f"=== Chunk {i + 1} Summary ===")
+            combined_content.append(f"Summary: {summary.summary_text}")
+            if summary.key_learnings:
+                combined_content.append(f"Key learnings: {', '.join(summary.key_learnings)}")
+            if summary.decisions:
+                combined_content.append(f"Decisions: {', '.join(summary.decisions)}")
+            if summary.errors_encountered:
+                combined_content.append(f"Errors: {', '.join(summary.errors_encountered)}")
+            if summary.topics:
+                combined_content.append(f"Topics: {', '.join(summary.topics)}")
+            combined_content.append("")
+
+        meta_content = "\n".join(combined_content)
+
+        system_prompt = """You are creating a meta-summary from multiple chunk summaries.
+Combine and deduplicate the information into a cohesive final summary.
+
+Return a JSON object with:
+- key_learnings: array of unique key learnings (deduplicated)
+- decisions: array of unique decisions
+- errors_encountered: array of unique errors
+- solutions_found: array of unique solutions
+- next_steps: array of prioritized next steps
+- topics: array of main topics across all chunks
+- participants: array of all participants mentioned
+- actionable_items: array of actionable items (prioritized)
+- related_notes: array of suggested note references
+- summary_text: cohesive overall summary (max {max_length} chars)
+- compression_ratio: estimated compression ratio
+
+Focus on deduplication and synthesis rather than simple concatenation.""".format(
+            max_length=max_length
+        )
+
+        user_prompt = f"Create a meta-summary from these chunk summaries:\n\n{meta_content}"
+
+        try:
+            response = await self._call_claude(system_prompt, user_prompt, max_tokens=2048)
+            data = self._parse_json_response(response)
+
+            return SessionSummary(
+                key_learnings=data.get("key_learnings", []),
+                decisions=data.get("decisions", []),
+                errors_encountered=data.get("errors_encountered", []),
+                solutions_found=data.get("solutions_found", []),
+                next_steps=data.get("next_steps", []),
+                topics=data.get("topics", []),
+                participants=data.get("participants", []),
+                actionable_items=data.get("actionable_items", []),
+                related_notes=data.get("related_notes", []),
+                summary_text=data.get("summary_text", "")[:max_length],
+                compression_ratio=data.get("compression_ratio", 0.0),
+                chunk_count=chunk_count,
+                is_incremental=True,
+            )
+
+        except Exception as e:
+            logger.error(f"Error creating meta-summary: {e}")
+            # Fallback: combine results manually
+            return self._fallback_combine_summaries(chunk_summaries, chunk_count)
+
+    def _fallback_combine_summaries(
+        self,
+        chunk_summaries: list[SessionSummary],
+        chunk_count: int,
+    ) -> SessionSummary:
+        """Fallback method to combine summaries without AI.
+
+        Simply concatenates and deduplicates lists from all chunks.
+
+        Args:
+            chunk_summaries: List of chunk summaries
+            chunk_count: Number of original chunks
+
+        Returns:
+            Combined SessionSummary
+        """
+        # Helper to deduplicate while preserving order
+        def dedupe(items: list[str]) -> list[str]:
+            seen = set()
+            result = []
+            for item in items:
+                if item not in seen:
+                    seen.add(item)
+                    result.append(item)
+            return result
+
+        # Combine all lists
+        all_learnings = []
+        all_decisions = []
+        all_errors = []
+        all_solutions = []
+        all_next_steps = []
+        all_topics = []
+        all_participants = []
+        all_actionable = []
+        all_related = []
+        summary_parts = []
+
+        for summary in chunk_summaries:
+            all_learnings.extend(summary.key_learnings)
+            all_decisions.extend(summary.decisions)
+            all_errors.extend(summary.errors_encountered)
+            all_solutions.extend(summary.solutions_found)
+            all_next_steps.extend(summary.next_steps)
+            all_topics.extend(summary.topics)
+            all_participants.extend(summary.participants)
+            all_actionable.extend(summary.actionable_items)
+            all_related.extend(summary.related_notes)
+            if summary.summary_text:
+                summary_parts.append(summary.summary_text)
+
+        # Combine summary texts
+        combined_text = " | ".join(summary_parts[:3])  # Limit to avoid overflow
+        if len(summary_parts) > 3:
+            combined_text += f" ... (+{len(summary_parts) - 3} more chunks)"
+
+        return SessionSummary(
+            key_learnings=dedupe(all_learnings)[:10],
+            decisions=dedupe(all_decisions)[:10],
+            errors_encountered=dedupe(all_errors)[:10],
+            solutions_found=dedupe(all_solutions)[:10],
+            next_steps=dedupe(all_next_steps)[:10],
+            topics=dedupe(all_topics)[:10],
+            participants=dedupe(all_participants)[:10],
+            actionable_items=dedupe(all_actionable)[:10],
+            related_notes=dedupe(all_related)[:10],
+            summary_text=combined_text[:1000],
+            compression_ratio=0.0,
+            chunk_count=chunk_count,
+            is_incremental=True,
+        )
 
     async def detect_patterns(
         self,

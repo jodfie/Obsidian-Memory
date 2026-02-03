@@ -1,14 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { listNotes, searchNotes, type Note, type SearchRequest } from '../../lib/api';
 
 export default function NotesBrowser() {
+  const searchParams = useSearchParams();
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(
+    () => searchParams?.get('search') ?? ''
+  );
   const [filterProject, setFilterProject] = useState<string>('');
   const [filterVault, setFilterVault] = useState<string>('');
   const [total, setTotal] = useState(0);

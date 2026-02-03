@@ -78,6 +78,25 @@ class SessionSummary(BaseModel):
     compression_ratio: float = Field(
         ..., description="Ratio of summary length to original length"
     )
+    # Enhanced fields for richer summarization
+    topics: list[str] = Field(
+        default_factory=list, description="Detected topics/themes from session"
+    )
+    participants: list[str] = Field(
+        default_factory=list, description="People, tools, or systems involved"
+    )
+    actionable_items: list[str] = Field(
+        default_factory=list, description="Items requiring follow-up action"
+    )
+    related_notes: list[str] = Field(
+        default_factory=list, description="Suggested note links or references"
+    )
+    chunk_count: int = Field(
+        default=1, description="Number of chunks summarized (for incremental)"
+    )
+    is_incremental: bool = Field(
+        default=False, description="Whether this was incrementally summarized"
+    )
 
 
 class DetectedPattern(BaseModel):

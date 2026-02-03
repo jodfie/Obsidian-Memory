@@ -1,14 +1,29 @@
 """Graph query API endpoints."""
 
+import asyncio
+import logging
+import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+# Chunk size for relation inference to avoid oversized AI payloads; delay between chunks for rate limiting
+INFER_RELATIONS_BATCH_SIZE = 20
+INFER_RELATIONS_DELAY_SECONDS = 1.0
 
-from app.api.dependencies import get_markdown_parser, get_search_index, get_vault_manager
+from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from app.api.dependencies import (
+    get_ai_processor,
+    get_markdown_parser,
+    get_search_index,
+    get_vault_manager,
+)
 from app.models.graph import (
     Graph,
     Node,
     Edge,
+    EdgeSource,
+    EdgeType,
     TraversalQuery,
     BacklinkItem,
     BacklinkResponse,
@@ -16,11 +31,14 @@ from app.models.graph import (
     GraphStats,
     HubNode,
 )
+from app.services.ai_processor import AIProcessor
 from app.services.graph_engine import GraphEngine
 from app.services.markdown_parser import MarkdownParser
 from app.services.search_index import SearchIndex
 from app.services.vault_manager import VaultManager
 from app.utils.cache import get_cache
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 cache = get_cache()
@@ -56,14 +74,15 @@ async def get_graph(
     
     for result in results.results:
         try:
-            # Get note content from vault
-            note_content = await vault_manager.read_file(
-                result.vault_name, result.relative_path
+            # Get note content from vault (path first, vault= second)
+            vault_file = await vault_manager.read_file(
+                result.relative_path, vault=result.vault_name
             )
-            
+            note_content = vault_file.content
+
             # Parse note
             parsed = markdown_parser.parse(note_content)
-            
+
             # Create indexed note structure
             from app.models.search import IndexedNote
             indexed = IndexedNote(
@@ -76,16 +95,24 @@ async def get_graph(
                 tags=result.tags,
                 file_hash="",  # Simplified - would compute hash in production
             )
-            
+
             # Add to graph
             engine.add_note(result.note_id, indexed, parsed)
         except Exception:
             # Skip notes that can't be loaded/parsed
             continue
-    
+
     # Resolve edges
     engine.resolve_edges()
-    
+
+    # Merge inferred relations from DB into the graph
+    inferred = await search_index.get_inferred_relations(
+        include_promoted=True, limit=500
+    )
+    if inferred:
+        node_ids = set(engine.get_graph().nodes)
+        engine.add_inferred_edges_from_records(inferred, node_ids=node_ids)
+
     # Convert to API response format
     graph = engine.get_graph()
     nodes = [
@@ -100,7 +127,7 @@ async def get_graph(
         }
         for node in graph.nodes.values()
     ]
-    
+
     edges = [
         {
             "source": edge.source_id,
@@ -109,6 +136,8 @@ async def get_graph(
             "type": edge.edge_type.value,
             "context": edge.context,
             "weight": edge.weight,
+            "source_type": edge.source_type.value,
+            "confidence": edge.confidence,
         }
         for edge in graph.edges
         if edge.target_id is not None  # Only include resolved edges
@@ -606,3 +635,293 @@ async def get_node_centrality(
     cache.set(cache_key, centrality.model_dump(), ttl=300)
 
     return centrality
+
+
+# -----------------------------------------------------------------------------
+# Relation Inference Endpoints
+# -----------------------------------------------------------------------------
+
+
+class InferRelationsRequest(BaseModel):
+    """Request model for triggering relation inference."""
+
+    note_ids: list[int] | None = Field(
+        default=None,
+        description="Specific note IDs to analyze. If None, uses candidate pairs based on shared tags.",
+    )
+    max_pairs: int = Field(
+        default=50, ge=1, le=200, description="Maximum number of pairs to analyze"
+    )
+    min_confidence: float = Field(
+        default=0.5, ge=0.0, le=1.0, description="Minimum confidence to store"
+    )
+
+
+class InferredRelationResponse(BaseModel):
+    """Response model for an inferred relation."""
+
+    edge_id: str
+    source_note_id: int
+    target_note_id: int
+    source_title: str
+    target_title: str
+    relation_type: str
+    confidence: float
+    reasoning: str | None
+    is_promoted: bool
+    inferred_at: str
+
+
+class InferRelationsResponse(BaseModel):
+    """Response model for relation inference."""
+
+    inferred_count: int
+    relations: list[InferredRelationResponse]
+    pairs_analyzed: int
+
+
+@router.post("/infer-relations", response_model=InferRelationsResponse)
+async def infer_relations(
+    request: InferRelationsRequest,
+    search_index: SearchIndex = Depends(get_search_index),
+    vault_manager: VaultManager = Depends(get_vault_manager),
+    markdown_parser: MarkdownParser = Depends(get_markdown_parser),
+    ai_processor: AIProcessor = Depends(get_ai_processor),
+) -> InferRelationsResponse:
+    """Trigger AI-powered relation inference for notes.
+
+    Analyzes note pairs to discover semantic relationships based on content
+    similarity. Inferred relations are stored separately from explicit relations
+    and can be promoted to explicit status.
+
+    Args:
+        request: Inference parameters including note IDs and thresholds
+
+    Returns:
+        InferRelationsResponse with inferred relations
+    """
+    await search_index.initialize()
+
+    # Get candidate pairs for inference
+    pairs = await search_index.get_candidate_pairs_for_inference(
+        note_ids=request.note_ids, limit=request.max_pairs
+    )
+
+    if not pairs:
+        return InferRelationsResponse(
+            inferred_count=0, relations=[], pairs_analyzed=0
+        )
+
+    # Build note content pairs for AI analysis.
+    # Each tuple is (parsed_source, indexed_source, parsed_target, indexed_target)
+    # so AIProcessor.infer_relations() receives the expected 4-tuple shape.
+    note_pairs: list[tuple] = []
+    for source_id, target_id in pairs:
+        try:
+            source_note = await search_index.get_note_by_id(source_id)
+            target_note = await search_index.get_note_by_id(target_id)
+
+            if not source_note or not target_note:
+                continue
+
+            # Get parsed notes for content
+            source_content = await vault_manager.read_file(
+                source_note.relative_path, vault=source_note.vault_name
+            )
+            target_content = await vault_manager.read_file(
+                target_note.relative_path, vault=target_note.vault_name
+            )
+
+            source_parsed = markdown_parser.parse(source_content.content)
+            target_parsed = markdown_parser.parse(target_content.content)
+
+            note_pairs.append(
+                (source_parsed, source_note, target_parsed, target_note)
+            )
+        except Exception as e:
+            logger.warning(f"Failed to load note pair ({source_id}, {target_id}): {e}")
+            continue
+
+    if not note_pairs:
+        return InferRelationsResponse(
+            inferred_count=0, relations=[], pairs_analyzed=0
+        )
+
+    # Map AI flat indices (0,1 = pair 0; 2,3 = pair 1; ...) to actual note IDs.
+    def flat_idx_to_note_id(flat_idx: int, pairs: list) -> int | None:
+        if flat_idx < 0:
+            return None
+        pair_idx = flat_idx // 2
+        pos = flat_idx % 2
+        if pair_idx >= len(pairs):
+            return None
+        indexed = pairs[pair_idx][1] if pos == 0 else pairs[pair_idx][3]
+        return indexed.note_id
+
+    def resolve_titles(
+        sid: int, tid: int, pairs: list
+    ) -> tuple[str, str]:
+        src = next(
+            (p[1] if p[1].note_id == sid else p[3] for p in pairs if p[1].note_id == sid or p[3].note_id == sid),
+            None,
+        )
+        tgt = next(
+            (p[1] if p[1].note_id == tid else p[3] for p in pairs if p[1].note_id == tid or p[3].note_id == tid),
+            None,
+        )
+        return (src.title if src else "", tgt.title if tgt else "")
+
+    stored_relations: list[InferredRelationResponse] = []
+    pairs_analyzed = 0
+
+    # Process in batches to limit payload size and rate-limit AI calls
+    for offset in range(0, len(note_pairs), INFER_RELATIONS_BATCH_SIZE):
+        chunk = note_pairs[offset : offset + INFER_RELATIONS_BATCH_SIZE]
+        if offset > 0:
+            await asyncio.sleep(INFER_RELATIONS_DELAY_SECONDS)
+
+        try:
+            inferred = await ai_processor.infer_relations(chunk)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"AI inference failed: {e}"
+            ) from e
+
+        pairs_analyzed += len(chunk)
+
+        for relation in inferred.relations:
+            if relation.confidence < request.min_confidence:
+                continue
+
+            source_id = flat_idx_to_note_id(relation.source_note_id, chunk)
+            target_id = flat_idx_to_note_id(relation.target_note_id, chunk)
+            if source_id is None or target_id is None:
+                continue
+
+            edge_id = str(uuid.uuid4())
+            _, inferred_at = await search_index.store_inferred_relation(
+                edge_id=edge_id,
+                source_note_id=source_id,
+                target_note_id=target_id,
+                relation_type=relation.relation_type,
+                confidence=relation.confidence,
+                reasoning=relation.reasoning,
+            )
+
+            source_title, target_title = resolve_titles(source_id, target_id, chunk)
+
+            stored_relations.append(
+                InferredRelationResponse(
+                    edge_id=edge_id,
+                    source_note_id=source_id,
+                    target_note_id=target_id,
+                    source_title=source_title,
+                    target_title=target_title,
+                    relation_type=relation.relation_type,
+                    confidence=relation.confidence,
+                    reasoning=relation.reasoning,
+                    is_promoted=False,
+                    inferred_at=inferred_at,
+                )
+            )
+
+    return InferRelationsResponse(
+        inferred_count=len(stored_relations),
+        relations=stored_relations,
+        pairs_analyzed=pairs_analyzed,
+    )
+
+
+@router.get("/inferred-relations")
+async def get_inferred_relations(
+    note_id: int | None = None,
+    relation_type: str | None = None,
+    min_confidence: float = 0.0,
+    include_promoted: bool = False,
+    limit: int = 100,
+    search_index: SearchIndex = Depends(get_search_index),
+) -> dict[str, Any]:
+    """Get inferred relations with optional filtering.
+
+    Args:
+        note_id: Optional note ID to filter by (as source or target)
+        relation_type: Optional relation type filter
+        min_confidence: Minimum confidence threshold
+        include_promoted: Whether to include promoted relations
+        limit: Maximum results
+
+    Returns:
+        List of inferred relations
+    """
+    await search_index.initialize()
+
+    relations = await search_index.get_inferred_relations(
+        note_id=note_id,
+        relation_type=relation_type,
+        min_confidence=min_confidence,
+        include_promoted=include_promoted,
+        limit=limit,
+    )
+
+    return {"relations": relations, "total": len(relations)}
+
+
+@router.put("/relations/{edge_id}/promote")
+async def promote_relation(
+    edge_id: str,
+    search_index: SearchIndex = Depends(get_search_index),
+) -> dict[str, Any]:
+    """Promote an inferred relation to explicit.
+
+    This marks the relation as user-approved and sets confidence to 1.0.
+
+    Args:
+        edge_id: Edge identifier to promote
+
+    Returns:
+        Promoted relation details
+    """
+    await search_index.initialize()
+
+    # Get the relation first
+    relation = await search_index.get_inferred_relation_by_edge_id(edge_id)
+    if not relation:
+        raise HTTPException(status_code=404, detail="Relation not found")
+
+    if relation["is_promoted"]:
+        raise HTTPException(status_code=400, detail="Relation already promoted")
+
+    # Promote it
+    success = await search_index.promote_inferred_relation(edge_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to promote relation")
+
+    # Get updated relation
+    updated = await search_index.get_inferred_relation_by_edge_id(edge_id)
+
+    return {
+        "message": "Relation promoted successfully",
+        "relation": updated,
+    }
+
+
+@router.delete("/relations/{edge_id}")
+async def delete_relation(
+    edge_id: str,
+    search_index: SearchIndex = Depends(get_search_index),
+) -> dict[str, Any]:
+    """Delete an inferred relation.
+
+    Args:
+        edge_id: Edge identifier to delete
+
+    Returns:
+        Deletion confirmation
+    """
+    await search_index.initialize()
+
+    success = await search_index.delete_inferred_relation(edge_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Relation not found")
+
+    return {"message": "Relation deleted successfully", "edge_id": edge_id}

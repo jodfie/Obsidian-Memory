@@ -333,3 +333,89 @@ async def test_get_broken_links(
 
     assert len(broken) == 1
     assert broken[0].target == "Broken Link"
+
+
+@pytest.mark.asyncio
+async def test_resolve_wikilinks_batch_same_as_individual(
+    wikilink_resolver: WikilinkResolver,
+    search_index: SearchIndex,
+) -> None:
+    """Batch resolution returns same results as resolving one-by-one."""
+    from app.models.note import Frontmatter
+
+    for i, title in enumerate(["A", "B", "C"], start=1):
+        indexed = IndexedNote(
+            vault_name="test_vault",
+            relative_path=f"n{i}.md",
+            permalink=f"n-{i}",
+            title=title,
+            note_type="note",
+            project=None,
+            content="",
+            tags=[],
+            observations=[],
+            relations=[],
+            wikilinks=[],
+            created_at=None,
+            updated_at=None,
+            file_hash=compute_file_hash(f"n{i}"),
+        )
+        await search_index.index_note(indexed)
+
+    wikilinks = [
+        Wikilink(target="A", display_text=None, path=None, line_number=1, column=0),
+        Wikilink(target="B", display_text=None, path=None, line_number=2, column=0),
+        Wikilink(target="Missing", display_text=None, path=None, line_number=3, column=0),
+    ]
+
+    batch_results = await wikilink_resolver.resolve_wikilinks(wikilinks, "test_vault")
+    individual_results = []
+    for w in wikilinks:
+        r = await wikilink_resolver.resolve_wikilink(w, "test_vault")
+        individual_results.append(r)
+
+    assert len(batch_results) == 3
+    for b, i in zip(batch_results, individual_results):
+        assert b.resolved_id == i.resolved_id
+        assert b.wikilink.target == i.wikilink.target
+
+
+@pytest.mark.asyncio
+async def test_resolve_cache_invalidation(
+    wikilink_resolver: WikilinkResolver,
+    search_index: SearchIndex,
+) -> None:
+    """Clear resolve cache and verify next resolve hits DB again."""
+    from app.models.note import Frontmatter
+
+    indexed = IndexedNote(
+        vault_name="test_vault",
+        relative_path="cached.md",
+        permalink="cached",
+        title="Cached Note",
+        note_type="note",
+        project=None,
+        content="",
+        tags=[],
+        observations=[],
+        relations=[],
+        wikilinks=[],
+        created_at=None,
+        updated_at=None,
+        file_hash=compute_file_hash("cached"),
+    )
+    note_id = await search_index.index_note(indexed)
+    wikilink = Wikilink(
+        target="Cached Note",
+        display_text=None,
+        path=None,
+        line_number=1,
+        column=0,
+    )
+
+    r1 = await wikilink_resolver.resolve_wikilink(wikilink, "test_vault")
+    assert r1.resolved_id == note_id
+
+    wikilink_resolver.clear_resolve_cache()
+    r2 = await wikilink_resolver.resolve_wikilink(wikilink, "test_vault")
+    assert r2.resolved_id == note_id
