@@ -139,13 +139,17 @@ async def test_full_session_lifecycle(
     assert len(session.events) == 5  # 1 prompt + 4 tool uses
 
     # 4. PreCompact: Trigger summarization (mock AI)
-    with patch.object(session_manager, "summarize_session") as mock_summarize:
-        mock_summarize.return_value = {
+    with patch.object(
+        session_manager,
+        "summarize_session",
+        new_callable=AsyncMock,
+        return_value={
             "key_learnings": ["JWT implementation patterns"],
             "decisions": ["Use bcrypt for password hashing"],
             "errors_encountered": [],
             "solutions_found": [],
-        }
+        },
+    ):
         summary = await session_manager.summarize_session(session_id)
         assert "key_learnings" in summary
 
