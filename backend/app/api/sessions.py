@@ -23,22 +23,27 @@ def get_session_manager() -> SessionManager:
 @router.post("")
 async def create_session(
     project: str | None = Body(None, embed=True),
+    session_id: str | None = Body(None, embed=True),
     session_manager: SessionManager = Depends(get_session_manager),
 ) -> dict[str, Any]:
     """Create a new session.
 
     Args:
         project: Optional project name
+        session_id: Optional custom session ID (e.g. from Claude Code)
         session_manager: Session manager dependency
 
     Returns:
         Created session information
     """
-    session = await session_manager.create_session(project=project)
+    session = await session_manager.create_session(
+        project=project, session_id=session_id
+    )
     return {
         "session_id": session.session_id,
         "project": session.project,
         "started_at": session.started_at.isoformat(),
+        "ended_at": session.ended_at.isoformat() if session.ended_at else None,
         "status": session.status,
     }
 

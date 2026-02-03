@@ -11,7 +11,9 @@ from app.services.search_index import SearchIndex
 from app.services.vault_manager import VaultManager
 from app.services.markdown_parser import MarkdownParser
 from app.models.vault import VaultConfig, VaultManagerConfig
-from app.models.search import SearchResult
+from app.models.search import SearchQuery, SearchResult
+
+from tests.conftest import index_vault_from_path
 
 
 @pytest.fixture
@@ -154,9 +156,9 @@ type: note
 This note has no connections to other notes.
 """)
 
-        # Index the notes
-        await vault_manager.index_vault("test_vault")
-        search_results = await search_index.search({"query": ""})
+        # Index the notes from vault path
+        await index_vault_from_path(search_index, vault_path, "test_vault")
+        search_results = await search_index.search(SearchQuery(query="*"))
 
         # Mock the search results
         with patch("app.api.graph.cache") as mock_cache:
@@ -245,9 +247,9 @@ type: note
 No connections here.
 """)
 
-        # Index the note
-        await vault_manager.index_vault("test_vault")
-        search_results = await search_index.search({"query": "Isolated"})
+        # Index the note from vault path
+        await index_vault_from_path(search_index, vault_path, "test_vault")
+        search_results = await search_index.search(SearchQuery(query="Isolated"))
 
         if search_results.results:
             node_id = search_results.results[0].note_id
@@ -329,9 +331,9 @@ type: note
 This feature is enabled by [[Knowledge Hub]].
 """)
 
-        # Index all notes
-        await vault_manager.index_vault("test_vault")
-        search_results = await search_index.search({"query": "Knowledge Hub"})
+        # Index all notes from vault path
+        await index_vault_from_path(search_index, vault_path, "test_vault")
+        search_results = await search_index.search(SearchQuery(query="Knowledge Hub"))
 
         if search_results.results:
             hub_id = search_results.results[0].note_id

@@ -59,9 +59,17 @@ async def list_notes(
     search_index: SearchIndex = Depends(get_search_index),
 ) -> NoteListResponse:
     """List notes with optional filtering."""
-    # Enforce maximum limit to prevent performance issues
-    limit = min(limit, 500)
-    
+    if limit < 1 or limit > 500:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="limit must be between 1 and 500",
+        )
+    if offset < 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="offset must be non-negative",
+        )
+
     await _ensure_search_index_initialized(search_index)
 
     # Build search query

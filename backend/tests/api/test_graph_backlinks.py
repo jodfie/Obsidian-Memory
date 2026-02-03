@@ -12,6 +12,9 @@ from app.services.vault_manager import VaultManager
 from app.services.markdown_parser import MarkdownParser
 from app.models.vault import VaultConfig, VaultManagerConfig
 from app.models.graph import EdgeType
+from app.models.search import SearchQuery
+
+from tests.conftest import index_vault_from_path
 
 
 @pytest.fixture
@@ -115,11 +118,11 @@ type: note
 - part_of [[Target Note]]
 """)
 
-        # Index all notes
-        await vault_manager.index_vault("test_vault")
+        # Index all notes from vault path
+        await index_vault_from_path(search_index, vault_path, "test_vault")
 
         # Get target note ID
-        results = await search_index.search({"query": "Target Note"})
+        results = await search_index.search(SearchQuery(query="Target Note"))
         assert results.results
         target_id = results.results[0].note_id
 
@@ -190,11 +193,11 @@ type: note
 See also: [[Wiki Target]]
 """)
 
-        # Index all notes
-        await vault_manager.index_vault("test_vault")
+        # Index all notes from vault path
+        await index_vault_from_path(search_index, vault_path, "test_vault")
 
         # Get target note ID
-        results = await search_index.search({"query": "Wiki Target"})
+        results = await search_index.search(SearchQuery(query="Wiki Target"))
         assert results.results
         target_id = results.results[0].note_id
 
@@ -256,10 +259,10 @@ Also see [[Mixed Target]] for more details.
 """)
 
         # Index notes
-        await vault_manager.index_vault("test_vault")
+        await index_vault_from_path(search_index, vault_path, "test_vault")
 
         # Get target note ID
-        results = await search_index.search({"query": "Mixed Target"})
+        results = await search_index.search(SearchQuery(query="Mixed Target"))
         assert results.results
         target_id = results.results[0].note_id
 
@@ -324,10 +327,10 @@ See [[Weight Target]].
 """)
 
         # Index notes
-        await vault_manager.index_vault("test_vault")
+        await index_vault_from_path(search_index, vault_path, "test_vault")
 
         # Get target note ID
-        results = await search_index.search({"query": "Weight Target"})
+        results = await search_index.search(SearchQuery(query="Weight Target"))
         assert results.results
         target_id = results.results[0].note_id
 
@@ -371,10 +374,10 @@ This note has no incoming links.
 """)
 
         # Index note
-        await vault_manager.index_vault("test_vault")
+        await index_vault_from_path(search_index, vault_path, "test_vault")
 
         # Get note ID
-        results = await search_index.search({"query": "Isolated Note"})
+        results = await search_index.search(SearchQuery(query="Isolated Note"))
         assert results.results
         isolated_id = results.results[0].note_id
 
@@ -421,10 +424,10 @@ This note references itself: [[Self Reference]]
 """)
 
         # Index note
-        await vault_manager.index_vault("test_vault")
+        await index_vault_from_path(search_index, vault_path, "test_vault")
 
         # Get note ID
-        results = await search_index.search({"query": "Self Reference"})
+        results = await search_index.search(SearchQuery(query="Self Reference"))
         assert results.results
         self_id = results.results[0].note_id
 

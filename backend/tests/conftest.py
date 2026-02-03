@@ -1,5 +1,7 @@
 """Pytest fixtures for Obsidian-Memory backend tests."""
 
+from __future__ import annotations
+
 import os
 
 # Disable rate limiting in tests so API tests do not get 429 (all requests from 127.0.0.1)
@@ -8,9 +10,13 @@ os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 import tempfile
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 import pytest_asyncio
+
+if TYPE_CHECKING:
+    from app.services.search_index import SearchIndex
 
 
 @pytest.fixture
@@ -113,3 +119,39 @@ async def db_path(temp_dir: Path) -> AsyncGenerator[Path, None]:
     db_file = temp_dir / "test_index.db"
     yield db_file
     # Cleanup handled by temp_dir fixture
+
+
+async def index_vault_from_path(
+    search_index: SearchIndex,
+    vault_path: Path,
+    vault_name: str,
+) -> None:
+    """Index all .md files in a vault path into the search index (for graph/backlinks tests)."""
+    from app.models.search import IndexedNote
+    from app.services.markdown_parser import MarkdownParser
+    from app.services.search_index import compute_file_hash
+
+    parser = MarkdownParser()
+    notes: list[IndexedNote] = []
+    for f in sorted(vault_path.rglob("*.md")):
+        content = f.read_text()
+        parsed = parser.parse(content)
+        rel_path = str(f.relative_to(vault_path))
+        notes.append(
+            IndexedNote(
+                vault_name=vault_name,
+                relative_path=rel_path,
+                permalink=parsed.frontmatter.permalink,
+                title=parsed.frontmatter.title,
+                note_type=parsed.frontmatter.type.value,
+                project=parsed.frontmatter.project,
+                content=content,
+                tags=parsed.frontmatter.tags,
+                observations=parsed.observations,
+                relations=parsed.relations,
+                wikilinks=parsed.wikilinks,
+                file_hash=compute_file_hash(content),
+            )
+        )
+    if notes:
+        await search_index.index_vault(vault_name, notes)
