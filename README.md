@@ -353,10 +353,27 @@ See [docs/deployment.md](docs/deployment.md) for legacy Docker deployment instru
 
 MIT
 
-## Additional Documentation
+## Documentation
 
-- [API Documentation](docs/api.md)
-- [Deployment Guide](docs/deployment.md)
-- [MCP Server README](mcp-server/README.md)
-- [Hooks README](hooks/README.md)
-- [Secret Management](docs/secret-management-best-practices.md)
+📚 **Comprehensive documentation available in [docs/](docs/)**
+
+### Quick Links
+
+| For... | Start Here |
+|--------|------------|
+| 🚀 **New Users** | [Quick Start Guide](docs/QUICK-START.md) |
+| 🤖 **AI Models** | [AI Reference Card](docs/AI-REFERENCE.md) |
+| 🔗 **Claude.ai Users** | [Claude.ai Integration](docs/CLAUDE-AI-INTEGRATION.md) |
+| 🏗️ **Developers** | [Architecture Guide](docs/ARCHITECTURE.md) |
+| 🔧 **Troubleshooting** | [Problem Solving Guide](docs/TROUBLESHOOTING.md) |
+| 📖 **Full Index** | [Documentation Index](docs/README.md) |
+
+### Additional Resources
+
+- [API Documentation](docs/api.md) - Complete REST API reference
+- [MCP Integration](docs/mcp-integration.md) - Cursor and Claude.ai setup
+- [Authentication](docs/AUTHENTICATION.md) - Auth methods and security
+- [Deployment Guide](docs/deployment.md) - Production deployment
+- [MCP Server README](mcp-server/README.md) - MCP server details
+- [Hooks README](hooks/README.md) - Claude Code hooks
+- [Secret Management](docs/secret-management-best-practices.md) - Security best practices
