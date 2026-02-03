@@ -2,9 +2,9 @@ name: CI/CD
 
 on:
   push:
-    branches: [dev, master]
+    branches: [main, dev]
   pull_request:
-    branches: [dev, master]
+    branches: [main, dev]
 
 env:
   REGISTRY: ghcr.io
@@ -77,9 +77,9 @@ jobs:
           tags: |
             # For dev branch: tag as 'dev'
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
-            # For master branch: tag as 'latest' and 'stable'
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
-            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/master' }}
+            # For main: tag as 'latest' and 'stable'
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
             # Always tag with short SHA
             type=sha,prefix=,format=short
             # Tag with branch name
