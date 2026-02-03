@@ -1,5 +1,10 @@
 """Pytest fixtures for Obsidian-Memory backend tests."""
 
+import os
+
+# Disable rate limiting in tests so API tests do not get 429 (all requests from 127.0.0.1)
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+
 import tempfile
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path

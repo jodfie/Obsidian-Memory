@@ -142,8 +142,8 @@ class TestRequestValidationMiddleware:
         assert response.status_code == 200
 
     def test_blocks_path_traversal_in_url(self, client):
-        """Should block path traversal in URL."""
-        response = client.get("/files/../etc/passwd")
+        """Should block path traversal in URL (URL-encoded so path is not normalized)."""
+        response = client.get("/files/%2e%2e%2fetc%2fpasswd")
         assert response.status_code == 400
         data = response.json()
         assert data["error"] == "path_traversal_detected"

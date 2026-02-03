@@ -43,6 +43,9 @@ class Session(BaseModel):
     )
     summary: dict | None = Field(default=None, description="AI-generated summary")
     status: str = Field(default="active", description="Session status (active, completed)")
+    metadata: dict | None = Field(
+        default=None, description="Optional metadata (e.g. last_summarized_at)"
+    )
 
 
 class SessionObserveRequest(BaseModel):

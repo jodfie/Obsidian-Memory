@@ -48,10 +48,10 @@ class TestBFSTraversal:
         result = chain_graph.traverse_bfs(query)
         assert result.visited_nodes == [1, 2, 3]  # Only reach 2 hops
 
-        # Backward traversal (no incoming edges in chain)
+        # Incoming traversal from end of chain: 5 <- 4 <- 3 <- 2 <- 1
         query = TraversalQuery(start_node_id=5, max_depth=10, direction="incoming")
         result = chain_graph.traverse_bfs(query)
-        assert result.visited_nodes == [5]  # Can't go backward
+        assert result.visited_nodes == [5, 4, 3, 2, 1]
 
     def test_bfs_tree_traversal(self, tree_graph: GraphEngine):
         """Test BFS on tree structure - should visit level by level."""
@@ -253,12 +253,11 @@ class TestDirectionalTraversal:
 
     def test_incoming_traversal(self, chain_graph: GraphEngine):
         """Test traversal following incoming edges only."""
-        # In chain 1->2->3->4->5, starting from 5
+        # In chain 1->2->3->4->5, incoming from 5 follows 5<-4<-3<-2<-1
         query = TraversalQuery(start_node_id=5, max_depth=10, direction="incoming")
         result = chain_graph.traverse_bfs(query)
 
-        # Can't traverse backward in forward-only chain
-        assert result.visited_nodes == [5]
+        assert result.visited_nodes == [5, 4, 3, 2, 1]
 
     def test_outgoing_traversal(self, chain_graph: GraphEngine):
         """Test traversal following outgoing edges only."""

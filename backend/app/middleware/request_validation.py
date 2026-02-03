@@ -20,6 +20,7 @@ PATH_TRAVERSAL_PATTERNS = [
     r"\.\./",  # ../
     r"\.\.\\",  # ..\
     r"%2e%2e/",  # URL-encoded ../
+    r"%2e%2e%2f",  # Fully URL-encoded ../
     r"%2e%2e\\",  # URL-encoded ..\
     r"\.\.%2f",  # Mixed encoding
     r"\.\.%5c",  # Mixed encoding

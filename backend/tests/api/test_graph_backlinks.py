@@ -55,6 +55,8 @@ async def client(vault_config: VaultManagerConfig, search_index: SearchIndex) ->
     async with AsyncClient(transport=transport, base_url="http://test") as test_client:
         yield test_client
 
+    if search_index.db is not None:
+        await search_index.close()
     app.dependency_overrides.clear()
 
 
