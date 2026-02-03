@@ -49,20 +49,20 @@ CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
 ### Add MCP Server to Claude.ai
 
 1. Open Claude.ai
-2. Go to **Settings** → **MCP Servers**
+2. Go to **Settings** → **Integrations** → **MCP Servers**
 3. Click **Add Server**
 4. Configure:
    - **Name**: `Obsidian-Memory`
-   - **Transport**: `SSE (Server-Sent Events)`
-   - **URL**: `https://memory-dev.redleif.dev/mcp/sse`
-   - **Authentication**: 
+   - **Server URL**: `https://memory.redleif.dev/mcp`
+   - **Authentication**:
      - Type: `OAuth 2.0`
-     - Provider: `Cloudflare Access`
-     - Client ID: (from Cloudflare Access application)
-     - Client Secret: (from Cloudflare Access application)
-     - Authorization URL: `https://redleif.cloudflareaccess.com/cdn-cgi/access/login`
+     - Client ID: `996ac4873739812cad6edd18fbd572b150b5e0bea38fa30299b8e3f393fb6a22`
+     - Client Secret: `pkce_no_secret_required`
+     - Authorization URL: `https://redleif.cloudflareaccess.com/cdn-cgi/access/authorize`
      - Token URL: `https://redleif.cloudflareaccess.com/cdn-cgi/access/token`
-5. Save the configuration
+5. Click **Save** and authorize when prompted
+
+**Note**: The server URL is `/mcp` (not `/mcp/sse`). The SSE endpoints are handled automatically by the MCP protocol.
 
 ### Testing in Claude.ai
 
@@ -74,41 +74,49 @@ Once configured, you can use MCP tools in Claude.ai:
 
 ## Cursor Integration
 
-### Add MCP Server to Cursor
+### Quick add (this project)
 
-1. Open Cursor Settings
-2. Navigate to **Features** → **MCP Servers**
-3. Click **Add Server**
-4. Configure:
-   - **Name**: `obsidian-memory`
-   - **Command**: (for local stdio transport)
-     ```json
-     {
-       "command": "bun",
-       "args": ["run", "/path/to/mcp-server/src/index.ts"],
-       "env": {
-         "MCP_TRANSPORT": "stdio",
-         "OBSIDIAN_MEMORY_API_URL": "http://localhost:8765"
-       }
-     }
-     ```
-   - Or for remote SSE transport:
-     ```json
-     {
-       "transport": "sse",
-       "url": "https://memory-dev.redleif.dev/mcp/sse",
-       "auth": {
-         "type": "oauth2",
-         "provider": "cloudflare",
-         "clientId": "...",
-         "clientSecret": "..."
-       }
-     }
-     ```
+This repo includes a Cursor MCP config. Open the project in Cursor and the Obsidian-Memory server is available:
 
-### Cursor Configuration File
+- **Config file**: `.cursor/mcp.json`
+- **URL**: `https://memory.redleif.dev/mcp` (Streamable HTTP; Cursor auto-detects transport)
 
-Add to `~/.cursor/mcp.json` or project `.cursor/mcp.json`:
+If your instance is behind Cloudflare Access, use **Settings → MCP → obsidian-memory → Login** (or `agent mcp login obsidian-memory` in the CLI). For static OAuth, add an `auth` block to `mcp.json` (see below).
+
+### Cursor configuration options
+
+**1. Remote (recommended)** – use the deployed MCP endpoint (already in `.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "obsidian-memory": {
+      "url": "https://memory.redleif.dev/mcp",
+      "headers": {}
+    }
+  }
+}
+```
+
+**2. Remote + static OAuth** (e.g. Cloudflare Access with fixed client credentials):
+
+```json
+{
+  "mcpServers": {
+    "obsidian-memory": {
+      "url": "https://memory.redleif.dev/mcp",
+      "auth": {
+        "CLIENT_ID": "your-oauth-client-id",
+        "CLIENT_SECRET": "your-oauth-client-secret"
+      }
+    }
+  }
+}
+```
+
+Register redirect URI in your OAuth provider: `cursor://anysphere.cursor-mcp/oauth/callback`.
+
+**3. Local stdio** – run MCP server locally and point it at your backend:
 
 ```json
 {
@@ -125,23 +133,19 @@ Add to `~/.cursor/mcp.json` or project `.cursor/mcp.json`:
 }
 ```
 
-For remote access:
+**4. Local remote** – backend + MCP running via Docker, Cursor talks to localhost:
 
 ```json
 {
   "mcpServers": {
     "obsidian-memory": {
-      "transport": "sse",
-      "url": "https://memory-dev.redleif.dev/mcp/sse",
-      "auth": {
-        "type": "oauth2",
-        "provider": "cloudflare",
-        "teamDomain": "redleif.cloudflareaccess.com"
-      }
+      "url": "http://localhost:8765/mcp"
     }
   }
 }
 ```
+
+Config locations: project `.cursor/mcp.json` (project-specific) or global `~/.cursor/mcp.json`.
 
 ## MCP Endpoints
 
