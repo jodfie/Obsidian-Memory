@@ -6,6 +6,7 @@ on:
       - 'v*'
     branches:
       - master
+      - main
 
 env:
   REGISTRY: ghcr.io
@@ -44,6 +45,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push production image
         uses: docker/build-push-action@v5
