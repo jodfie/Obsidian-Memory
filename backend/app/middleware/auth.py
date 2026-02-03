@@ -64,8 +64,26 @@ async def auth_middleware(request: Request, call_next: Callable):
     """
     from fastapi.responses import JSONResponse
 
-    # Skip auth for health check and docs
-    if request.url.path in ["/health", "/docs", "/openapi.json", "/redoc"]:
+    # Skip auth for health check, docs, and OAuth endpoints
+    skip_paths = [
+        "/health",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+        # OAuth endpoints must be public for OAuth flow
+        "/authorize",
+        "/token",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-protected-resource",
+        # MCP OAuth endpoints
+        "/mcp/authorize",
+        "/mcp/token",
+        "/mcp/.well-known/oauth-authorization-server",
+        "/mcp/.well-known/openid-configuration",
+        "/mcp/.well-known/oauth-protected-resource",
+    ]
+    if request.url.path in skip_paths:
         return await call_next(request)
 
     # Extract Bearer token
