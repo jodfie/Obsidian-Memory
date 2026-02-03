@@ -69,9 +69,9 @@ async def get_graph(
     # Get all notes from index (limit to prevent memory issues)
     from app.models.search import SearchQuery, SortOrder
     
-    query = SearchQuery(query="", limit=1000, sort=SortOrder.UPDATED_DESC)
+    query = SearchQuery(query="*", limit=1000, sort=SortOrder.UPDATED_DESC)
     results = await search_index.search(query)
-    
+
     for result in results.results:
         try:
             # Get note content from vault (path first, vault= second)
@@ -267,14 +267,15 @@ async def traverse_graph(
 
     from app.models.search import SearchQuery, SortOrder, IndexedNote
 
-    query = SearchQuery(query="", limit=500, sort=SortOrder.UPDATED_DESC)
+    query = SearchQuery(query="*", limit=500, sort=SortOrder.UPDATED_DESC)
     results = await search_index.search(query)
 
     for result in results.results:
         try:
-            note_content = await vault_manager.read_file(
+            vault_file = await vault_manager.read_file(
                 result.relative_path, vault=result.vault_name
             )
+            note_content = vault_file.content
             parsed = markdown_parser.parse(note_content)
 
             indexed = IndexedNote(
@@ -483,15 +484,16 @@ async def get_graph_stats(
     # Load up to 500 notes for stats
     from app.models.search import SearchQuery, SortOrder
 
-    query = SearchQuery(query="", limit=500, sort=SortOrder.UPDATED_DESC)
+    query = SearchQuery(query="*", limit=500, sort=SortOrder.UPDATED_DESC)
     results = await search_index.search(query)
 
     for result in results.results:
         try:
-            # Get note content
-            note_content = await vault_manager.read_file(
-                result.vault_name, result.relative_path
+            # Get note content from vault (path first, vault= second)
+            vault_file = await vault_manager.read_file(
+                result.relative_path, vault=result.vault_name
             )
+            note_content = vault_file.content
 
             # Parse note
             parsed = markdown_parser.parse(note_content)
@@ -578,15 +580,16 @@ async def get_node_centrality(
     # Load up to 500 notes
     from app.models.search import SearchQuery, SortOrder
 
-    query = SearchQuery(query="", limit=500, sort=SortOrder.UPDATED_DESC)
+    query = SearchQuery(query="*", limit=500, sort=SortOrder.UPDATED_DESC)
     results = await search_index.search(query)
 
     for result in results.results:
         try:
-            # Get note content
-            note_content = await vault_manager.read_file(
-                result.vault_name, result.relative_path
+            # Get note content from vault (path first, vault= second)
+            vault_file = await vault_manager.read_file(
+                result.relative_path, vault=result.vault_name
             )
+            note_content = vault_file.content
 
             # Parse note
             parsed = markdown_parser.parse(note_content)

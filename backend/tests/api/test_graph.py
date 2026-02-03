@@ -284,7 +284,7 @@ class TestSimilarNotes:
             tags=["ml", "ai", "data-science"],
             relations=[
                 Relation(
-                    relation_type=RelationType.RELATES_TO,
+                    relation_type=RelationType.RELATED_TO,
                     target="Neural Networks",
                     context="Foundation for deep learning",
                     line_number=10
@@ -312,7 +312,7 @@ class TestSimilarNotes:
             tags=["ml", "ai", "neural-networks"],  # 2/3 tags overlap
             relations=[
                 Relation(
-                    relation_type=RelationType.RELATES_TO,
+                    relation_type=RelationType.RELATED_TO,
                     target="Neural Networks",  # Same target
                     context="Core concept",
                     line_number=5
@@ -383,7 +383,7 @@ class TestSimilarNotes:
             tags=["react", "javascript", "frontend"],
             relations=[
                 Relation(
-                    relation_type=RelationType.RELATES_TO,
+                    relation_type=RelationType.RELATED_TO,
                     target="React Components",
                     context="Hooks work with functional components",
                     line_number=5
@@ -405,7 +405,7 @@ class TestSimilarNotes:
             tags=["react", "javascript", "state"],  # 2/3 tags overlap
             relations=[
                 Relation(
-                    relation_type=RelationType.RELATES_TO,
+                    relation_type=RelationType.RELATED_TO,
                     target="React Components",  # Same target
                     context="State management patterns",
                     line_number=3
