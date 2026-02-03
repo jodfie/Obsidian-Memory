@@ -2,6 +2,24 @@
 
 Comprehensive architecture guide for Obsidian-Memory.
 
+## Visual Diagrams
+
+For visual learners, see our comprehensive diagram collections:
+
+📊 **[System Architecture Diagrams](diagrams/SYSTEM-ARCHITECTURE.md)** (11 Mermaid diagrams)
+- High-level system architecture
+- Component interactions and data flows
+- Deployment architectures
+- Sequence diagrams for operations
+
+🔐 **[OAuth Flow Diagrams](diagrams/OAUTH-FLOW.md)** (8 Mermaid diagrams)
+- Authentication flows
+- Token lifecycle
+- Multi-client architecture
+- Error handling
+
+All diagrams render natively on GitHub and provide visual understanding of the concepts explained in this document.
+
 ## System Overview
 
 Obsidian-Memory is a multi-tier persistent memory system designed for AI assistants. It combines:
