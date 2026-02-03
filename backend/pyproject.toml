@@ -16,6 +16,7 @@ dependencies = [
     "psutil>=5.9.0",
     "httpx>=0.26.0",
     "pyjwt[cryptography]>=2.8.0",
+    "cryptography>=42.0.0",
     "cloudflare>=3.0.0",
     "python-multipart>=0.0.6",
 ]
