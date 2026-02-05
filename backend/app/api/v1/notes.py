@@ -4,7 +4,7 @@ import hashlib
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.dependencies import (
@@ -400,7 +400,7 @@ async def create_note(
     }
 )
 async def get_note(
-    note_id: int = Field(..., description="Unique identifier of the note"),
+    note_id: int = Path(..., description="Unique identifier of the note"),
     search_index: SearchIndex = Depends(get_search_index),
     vault_manager: VaultManager = Depends(get_vault_manager),
 ) -> NoteResponse:
