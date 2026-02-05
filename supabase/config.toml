@@ -96,6 +96,5 @@ enabled = false
 # ============================================================================
 # Functions Configuration
 # ============================================================================
-[functions]
-# Set verify_jwt to false if you want to allow unauthenticated access to functions
-verify_jwt = true
+# Note: Per-function config goes in [functions.<function_name>]
+# See: https://supabase.com/docs/guides/cli/config

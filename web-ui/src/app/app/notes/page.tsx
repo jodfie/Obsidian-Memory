@@ -23,6 +23,7 @@ import GraphPanel from '@/components/GraphPanel';
 import ConnectionStatus from '@/components/ConnectionStatus';
 import { useRealtimeNotes, useConnectionStatus } from '@/lib/hooks/useRealtimeNotes';
 import { useNote, useCreateNote, useSearchNotes } from '@/lib/hooks/useNotes';
+import { useAuth } from '@/components/AuthProvider';
 import type { Note } from '@/lib/supabase-client';
 
 // ============================================================================
@@ -230,6 +231,7 @@ function CommandPalette({
 export default function NotesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, isLoading: authLoading } = useAuth();
 
   // State
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
@@ -238,8 +240,29 @@ export default function NotesPage() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
-  // For demo purposes - you'd get this from auth context
-  const userId = 'demo-user-id';
+  // Get user ID from auth
+  const userId = user?.id ?? '';
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="h-[calc(100vh-56px)] flex items-center justify-center bg-gray-100 dark:bg-gray-950">
+        <div className="text-gray-500 dark:text-gray-400">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated
+  if (!user) {
+    return null;
+  }
 
   // Hooks
   const connectionStatus = useConnectionStatus(userId);
