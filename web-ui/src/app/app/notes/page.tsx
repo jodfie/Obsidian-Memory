@@ -15,13 +15,13 @@
  * - Mobile responsive (stacked layout)
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import NotesList from '@/components/NotesList';
 import NoteView, { NewNoteView } from '@/components/NoteView';
 import GraphPanel from '@/components/GraphPanel';
 import ConnectionStatus from '@/components/ConnectionStatus';
-import { useRealtimeNotes, useConnectionStatus } from '@/lib/hooks/useRealtimeNotes';
+import { useConnectionStatus } from '@/lib/hooks/useRealtimeNotes';
 import { useNote, useCreateNote, useSearchNotes } from '@/lib/hooks/useNotes';
 import { useAuth } from '@/components/AuthProvider';
 import type { Note } from '@/lib/supabase-client';
@@ -228,7 +228,19 @@ function CommandPalette({
 // Main Page Component
 // ============================================================================
 
-export default function NotesPage() {
+export default function NotesPageWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="h-[calc(100vh-56px)] flex items-center justify-center bg-gray-100 dark:bg-gray-950">
+        <div className="text-gray-500 dark:text-gray-400">Loading...</div>
+      </div>
+    }>
+      <NotesPage />
+    </Suspense>
+  );
+}
+
+function NotesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading: authLoading } = useAuth();

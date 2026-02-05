@@ -25,7 +25,7 @@ import {
   type RelationsSubscriptionCallbacks,
   type SubscriptionHandle,
 } from '../supabase-realtime';
-import type { Note, Relation } from '../supabase-client';
+import type { Note } from '../supabase-client';
 
 // ============================================================================
 // Types

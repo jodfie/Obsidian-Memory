@@ -17,8 +17,7 @@ import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Typography from '@tiptap/extension-typography';
 import { Markdown } from 'tiptap-markdown';
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Mark, mergeAttributes } from '@tiptap/core';
+import { useState, useEffect, useRef } from 'react';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import EditorToolbar from './EditorToolbar';
@@ -26,43 +25,6 @@ import EditorToolbar from './EditorToolbar';
 // ============================================================================
 // Wikilink Extension
 // ============================================================================
-
-/**
- * Custom extension to handle Obsidian-style [[wikilinks]].
- * Renders wikilinks as styled spans that can be clicked to navigate.
- */
-const WikilinkMark = Mark.create({
-  name: 'wikilink',
-  priority: 1000,
-
-  addAttributes() {
-    return {
-      target: {
-        default: null,
-      },
-    };
-  },
-
-  parseHTML() {
-    return [
-      {
-        tag: 'span[data-wikilink]',
-      },
-    ];
-  },
-
-  renderHTML({ HTMLAttributes }) {
-    return [
-      'span',
-      mergeAttributes(HTMLAttributes, {
-        'data-wikilink': HTMLAttributes.target,
-        class:
-          'wikilink bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1 rounded cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors',
-      }),
-      0,
-    ];
-  },
-});
 
 /**
  * Extension that decorates [[wikilinks]] in the editor view.
@@ -256,34 +218,6 @@ export default function TipTapEditor({
     };
   }, []);
 
-  /**
-   * Gets the current content as markdown.
-   * Can be called by parent components via ref or callback.
-   */
-  const getMarkdown = useCallback((): string => {
-    if (!editor) return '';
-    return editor.storage.markdown.getMarkdown();
-  }, [editor]);
-
-  /**
-   * Manually trigger a save.
-   */
-  const save = useCallback(() => {
-    if (!editor || !onAutoSave) return;
-    const markdown = editor.storage.markdown.getMarkdown();
-    setIsSaving(true);
-    onAutoSave(markdown);
-    lastContentRef.current = markdown;
-    setLastSaved(new Date());
-    setIsSaving(false);
-  }, [editor, onAutoSave]);
-
-  /**
-   * Focus the editor.
-   */
-  const focus = useCallback(() => {
-    editor?.commands.focus();
-  }, [editor]);
 
   return (
     <div className={`flex flex-col bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden ${className}`}>

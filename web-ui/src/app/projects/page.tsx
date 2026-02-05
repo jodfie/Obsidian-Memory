@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -10,7 +10,15 @@ import {
   type ProjectNote,
 } from '../../lib/api';
 
-export default function ProjectsPage() {
+export default function ProjectsPageWrapper() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Loading...</div>}>
+      <ProjectsPage />
+    </Suspense>
+  );
+}
+
+function ProjectsPage() {
   const searchParams = useSearchParams();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string | null>(

@@ -146,10 +146,11 @@ export function useBacklinks(
       }
 
       // Find all relations where target_path matches this note's path
+      const typedTargetNote = targetNote as { path: string };
       const { data: relations, error: relError } = await supabase
         .from('relations')
         .select('*')
-        .eq('target_path', targetNote.path);
+        .eq('target_path', typedTargetNote.path);
 
       if (relError) {
         throw new Error(`Failed to fetch backlinks: ${relError.message}`);
@@ -160,7 +161,8 @@ export function useBacklinks(
       }
 
       // Get the source notes for these relations
-      const sourceIds = relations.map((r) => r.source_id);
+      const typedRelations = relations as Relation[];
+      const sourceIds = typedRelations.map((r) => r.source_id);
       const { data: sourceNotes, error: sourcesError } = await supabase
         .from('notes')
         .select('*')
@@ -171,9 +173,10 @@ export function useBacklinks(
       }
 
       // Map relations to their source notes
-      const linkedNotes: LinkedNote[] = relations
+      const typedSourceNotes = (sourceNotes ?? []) as Note[];
+      const linkedNotes: LinkedNote[] = typedRelations
         .map((relation) => {
-          const note = sourceNotes?.find((n) => n.id === relation.source_id);
+          const note = typedSourceNotes.find((n) => n.id === relation.source_id);
           if (!note) return null;
           return { note, relation };
         })
@@ -258,7 +261,8 @@ export function useOutgoingLinks(
       }
 
       // Get unique target paths
-      const targetPaths = [...new Set(relations.map((r) => r.target_path))];
+      const typedRels = relations as Relation[];
+      const targetPaths = [...new Set(typedRels.map((r) => r.target_path))];
 
       // Find the target notes by their paths
       const { data: targetNotes, error: targetsError } = await supabase
@@ -271,13 +275,14 @@ export function useOutgoingLinks(
       }
 
       // Create a map of path -> note for quick lookup
-      const notesByPath = new Map(targetNotes?.map((n) => [n.path, n]) ?? []);
+      const typedTargetNotes = (targetNotes ?? []) as Note[];
+      const notesByPath = new Map(typedTargetNotes.map((n) => [n.path, n]));
 
       // Find broken links (paths without corresponding notes)
       const brokenLinks = targetPaths.filter((path) => !notesByPath.has(path));
 
       // Map relations to their target notes
-      const linkedNotes: LinkedNote[] = relations
+      const linkedNotes: LinkedNote[] = typedRels
         .map((relation) => {
           const note = notesByPath.get(relation.target_path);
           if (!note) return null;

@@ -199,7 +199,7 @@ export function useElectricSync(
         userId,
         (data) => {
           if (mountedRef.current) {
-            setNotes(data);
+            setNotes(data as unknown as ElectricNote[]);
           }
         },
         (err) => {
@@ -217,7 +217,7 @@ export function useElectricSync(
         userId,
         (data) => {
           if (mountedRef.current) {
-            setRelations(data);
+            setRelations(data as unknown as ElectricRelation[]);
           }
         },
         (err) => {
@@ -234,7 +234,7 @@ export function useElectricSync(
       const sessionsSub = manager.subscribeToSessions(
         (data) => {
           if (mountedRef.current) {
-            setSessions(data);
+            setSessions(data as unknown as ElectricSession[]);
           }
         },
         (err) => {

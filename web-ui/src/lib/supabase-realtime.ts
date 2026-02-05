@@ -8,7 +8,7 @@
  */
 
 import { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
-import { getSupabaseBrowserClient, type Note, type Relation, type Database } from './supabase-client';
+import { getSupabaseBrowserClient, type Note, type Relation } from './supabase-client';
 
 // ============================================================================
 // Types

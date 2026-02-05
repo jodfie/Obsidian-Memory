@@ -1,11 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { listNotes, searchNotes, type Note, type SearchRequest } from '../../lib/api';
 
-export default function NotesBrowser() {
+export default function NotesBrowserPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">Loading...</div>}>
+      <NotesBrowser />
+    </Suspense>
+  );
+}
+
+function NotesBrowser() {
   const searchParams = useSearchParams();
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);

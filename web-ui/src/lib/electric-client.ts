@@ -12,11 +12,7 @@ import {
   createNotesShape,
   createRelationsShape,
   createSessionsShape,
-  getElectricUrl,
   isElectricAvailable,
-  type ElectricNote,
-  type ElectricRelation,
-  type ElectricSession,
 } from './electric-shapes';
 
 // ============================================================================
@@ -95,7 +91,6 @@ export interface ShapeManagerOptions {
  * ```
  */
 export class ShapeManager {
-  private electricUrl: string;
   private options: ShapeManagerOptions;
   private connectionState: ConnectionState = 'disconnected';
   private subscriptions: Map<string, Subscription> = new Map();
@@ -110,7 +105,6 @@ export class ShapeManager {
       reconnectDelay: 3000,
       ...options,
     };
-    this.electricUrl = options.electricUrl || getElectricUrl();
   }
 
   // ==========================================================================
@@ -187,12 +181,12 @@ export class ShapeManager {
    */
   subscribeToNotes(
     userId: string,
-    onUpdate: UpdateCallback<ElectricNote>,
+    onUpdate: UpdateCallback<Row>,
     onError?: ErrorCallback
   ): Subscription {
     const shapeKey = `notes:${userId}`;
 
-    return this.subscribeToShape<ElectricNote>(
+    return this.subscribeToShape(
       shapeKey,
       () => createNotesShape(userId, { signal: this.abortController?.signal }),
       onUpdate,
@@ -210,12 +204,12 @@ export class ShapeManager {
    */
   subscribeToRelations(
     userId: string,
-    onUpdate: UpdateCallback<ElectricRelation>,
+    onUpdate: UpdateCallback<Row>,
     onError?: ErrorCallback
   ): Subscription {
     const shapeKey = `relations:${userId}`;
 
-    return this.subscribeToShape<ElectricRelation>(
+    return this.subscribeToShape(
       shapeKey,
       () => createRelationsShape(userId, { signal: this.abortController?.signal }),
       onUpdate,
@@ -231,12 +225,12 @@ export class ShapeManager {
    * @returns Subscription handle for unsubscribing
    */
   subscribeToSessions(
-    onUpdate: UpdateCallback<ElectricSession>,
+    onUpdate: UpdateCallback<Row>,
     onError?: ErrorCallback
   ): Subscription {
     const shapeKey = 'sessions';
 
-    return this.subscribeToShape<ElectricSession>(
+    return this.subscribeToShape(
       shapeKey,
       () => createSessionsShape({ signal: this.abortController?.signal }),
       onUpdate,
@@ -334,18 +328,17 @@ export class ShapeManager {
     messages: Message<T>[]
   ): void {
     const currentData = (this.dataCache.get(shapeKey) || []) as T[];
-    const dataMap = new Map(currentData.map((item) => [(item as { id: string }).id, item]));
+    const dataMap = new Map(currentData.map((item) => [String(item['id']), item]));
 
     for (const message of messages) {
+      if (!('value' in message)) continue;
+      const value = message.value as T;
       if (message.headers.operation === 'insert') {
-        const value = message.value as T;
-        dataMap.set((value as { id: string }).id, value);
+        dataMap.set(String(value['id']), value);
       } else if (message.headers.operation === 'update') {
-        const value = message.value as T;
-        dataMap.set((value as { id: string }).id, value);
+        dataMap.set(String(value['id']), value);
       } else if (message.headers.operation === 'delete') {
-        const value = message.value as T;
-        dataMap.delete((value as { id: string }).id);
+        dataMap.delete(String(value['id']));
       }
     }
 

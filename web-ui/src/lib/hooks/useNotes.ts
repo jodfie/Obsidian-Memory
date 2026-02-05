@@ -132,7 +132,7 @@ export function useNotes(filters?: NotesListFilters) {
       }
 
       return {
-        notes: data ?? [],
+        notes: (data ?? []) as Note[],
         total: count ?? 0,
       };
     },
@@ -179,7 +179,7 @@ export function useNote(id: string | null | undefined) {
         throw new Error(`Failed to fetch note: ${error.message}`);
       }
 
-      return data;
+      return data as Note;
     },
     enabled: !!id, // Only run query if ID is provided
   });
@@ -237,7 +237,7 @@ export function useSearchNotes(
       }
 
       return {
-        notes: data ?? [],
+        notes: (data ?? []) as Note[],
         total: count ?? 0,
         query,
       };
@@ -326,7 +326,7 @@ export function useInfiniteNotes(filters?: Omit<NotesListFilters, 'offset'>) {
       const hasMore = offset + limit < total;
 
       return {
-        notes: data ?? [],
+        notes: (data ?? []) as Note[],
         total,
         nextOffset: hasMore ? offset + limit : null,
       };
@@ -377,7 +377,7 @@ export function useCreateNote() {
         throw new Error(`Failed to create note: ${error.message}`);
       }
 
-      return data;
+      return data as Note;
     },
     onMutate: async (newNote) => {
       // Cancel any outgoing refetches to avoid overwriting our optimistic update
@@ -498,7 +498,7 @@ export function useUpdateNote() {
         throw new Error(`Failed to update note: ${error.message}`);
       }
 
-      return data;
+      return data as Note;
     },
     onMutate: async (updatedNote) => {
       const { id, ...updates } = updatedNote;

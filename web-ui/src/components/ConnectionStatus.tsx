@@ -280,6 +280,7 @@ export function ConnectionStatusAutoHide({
     } else {
       // Show again when not connected
       setVisible(true);
+      return;
     }
   }, [status, hideDelay]);
 

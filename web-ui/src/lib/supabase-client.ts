@@ -50,6 +50,7 @@ export interface Database {
           updated_at?: string;
           user_id?: string;
         };
+        Relationships: [];
       };
       relations: {
         Row: {
@@ -73,6 +74,7 @@ export interface Database {
           relation_type?: string;
           context?: string | null;
         };
+        Relationships: [];
       };
       sessions: {
         Row: {
@@ -99,11 +101,13 @@ export interface Database {
           summary?: string | null;
           events?: unknown[];
         };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
     Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 }
 
@@ -141,8 +145,9 @@ export type SessionUpdate = Database['public']['Tables']['sessions']['Update'];
  * }
  * ```
  */
-export function createBrowserClient(): SupabaseClient<Database> {
-  return createClientComponentClient<Database>();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createBrowserClient(): SupabaseClient<any> {
+  return createClientComponentClient();
 }
 
 // ============================================================================
@@ -168,7 +173,8 @@ export function createBrowserClient(): SupabaseClient<Database> {
  * }
  * ```
  */
-export function createServerClient(): SupabaseClient<Database> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createServerClient(): SupabaseClient<any> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -179,20 +185,22 @@ export function createServerClient(): SupabaseClient<Database> {
     );
   }
 
-  return createClient<Database>(supabaseUrl, supabaseAnonKey);
+  return createClient(supabaseUrl, supabaseAnonKey);
 }
 
 // ============================================================================
 // Singleton Client for Client Components
 // ============================================================================
 
-let browserClient: SupabaseClient<Database> | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let browserClient: SupabaseClient<any> | null = null;
 
 /**
  * Returns a singleton Supabase client for browser use.
  * This avoids creating multiple client instances in the same session.
  */
-export function getSupabaseBrowserClient(): SupabaseClient<Database> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getSupabaseBrowserClient(): SupabaseClient<any> {
   if (!browserClient) {
     browserClient = createBrowserClient();
   }

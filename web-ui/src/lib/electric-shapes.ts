@@ -7,7 +7,7 @@
  * @see https://electric-sql.com/docs/api/clients/typescript#shapestream
  */
 
-import { ShapeStream, type ShapeStreamOptions } from '@electric-sql/client';
+import { ShapeStream, type Row } from '@electric-sql/client';
 
 // ============================================================================
 // Configuration
@@ -90,19 +90,20 @@ export interface ElectricSession {
  */
 export function createNotesShape(
   userId: string,
-  options?: Partial<ShapeStreamOptions<ElectricNote>>
-): ShapeStream<ElectricNote> {
+  options?: { signal?: AbortSignal; headers?: Record<string, string> }
+): ShapeStream<Row> {
   if (!userId) {
     throw new Error('userId is required to create notes shape');
   }
 
-  return new ShapeStream<ElectricNote>({
+  return new ShapeStream<Row>({
     url: SHAPE_API_URL,
     params: {
       table: 'notes',
       where: `user_id = '${userId}'`,
     },
-    ...options,
+    signal: options?.signal,
+    headers: options?.headers,
   });
 }
 
@@ -126,19 +127,20 @@ export function createNotesShape(
  */
 export function createRelationsShape(
   userId: string,
-  options?: Partial<ShapeStreamOptions<ElectricRelation>>
-): ShapeStream<ElectricRelation> {
+  options?: { signal?: AbortSignal; headers?: Record<string, string> }
+): ShapeStream<Row> {
   if (!userId) {
     throw new Error('userId is required to create relations shape');
   }
 
-  return new ShapeStream<ElectricRelation>({
+  return new ShapeStream<Row>({
     url: SHAPE_API_URL,
     params: {
       table: 'relations',
       where: `source_id IN (SELECT id FROM notes WHERE user_id = '${userId}')`,
     },
-    ...options,
+    signal: options?.signal,
+    headers: options?.headers,
   });
 }
 
@@ -161,15 +163,16 @@ export function createRelationsShape(
  * ```
  */
 export function createSessionsShape(
-  options?: Partial<ShapeStreamOptions<ElectricSession>>
-): ShapeStream<ElectricSession> {
-  return new ShapeStream<ElectricSession>({
+  options?: { signal?: AbortSignal; headers?: Record<string, string> }
+): ShapeStream<Row> {
+  return new ShapeStream<Row>({
     url: SHAPE_API_URL,
     params: {
       table: 'sessions',
       where: `started_at > now() - interval '30 days'`,
     },
-    ...options,
+    signal: options?.signal,
+    headers: options?.headers,
   });
 }
 
@@ -209,20 +212,15 @@ export interface ShapeConfig {
  * ```
  */
 export function createUserShapes(userId: string, config?: ShapeConfig) {
-  const baseOptions: Partial<ShapeStreamOptions<unknown>> = {
+  const baseOptions = {
     headers: config?.headers,
     signal: config?.signal,
   };
 
-  // Override URL if provided in config
-  if (config?.electricUrl) {
-    (baseOptions as ShapeStreamOptions<unknown>).url = `${config.electricUrl}/v1/shape`;
-  }
-
   return {
-    notes: createNotesShape(userId, baseOptions as Partial<ShapeStreamOptions<ElectricNote>>),
-    relations: createRelationsShape(userId, baseOptions as Partial<ShapeStreamOptions<ElectricRelation>>),
-    sessions: createSessionsShape(baseOptions as Partial<ShapeStreamOptions<ElectricSession>>),
+    notes: createNotesShape(userId, baseOptions),
+    relations: createRelationsShape(userId, baseOptions),
+    sessions: createSessionsShape(baseOptions),
   };
 }
 
