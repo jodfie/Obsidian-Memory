@@ -36,7 +36,7 @@ services:
       - "traefik.http.routers.memory-dev.tls.certresolver=cloudflare"
       - "traefik.http.routers.memory-dev.tls=true"
       - "traefik.http.services.memory-dev.loadbalancer.server.port=8765"
-      - "traefik.docker.network=proxy"
+      - "traefik.docker.network=reverse_proxy"
       # Cloudflare Access headers - Traefik forwards these automatically
       # CF-Access-JWT and CF-Access-JWT-Assertion are forwarded by default
       - "traefik.http.routers.memory-dev.middlewares=memory-dev-headers"
@@ -44,7 +44,7 @@ services:
       # MCP endpoint routing - routes /mcp/* to FastAPI backend which proxies to MCP server
       # No need for separate router, /mcp is handled by FastAPI
     networks:
-      - proxy
+      - reverse_proxy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
       interval: 30s
@@ -68,7 +68,7 @@ services:
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     networks:
-      - proxy
+      - reverse_proxy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
@@ -78,5 +78,5 @@ services:
     # Note: MCP server is accessed via FastAPI proxy at /mcp, not directly via Traefik
 
 networks:
-  proxy:
+  reverse_proxy:
     external: true

@@ -20,7 +20,7 @@ services:
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     volumes:
-      - /home/redleif/vaults:/vaults:rw
+      - ${VAULT_HOST_PATH:-/home/jodfie/vault}:/vaults:rw
       - memory-data:/data
     deploy:
       resources:
@@ -46,13 +46,13 @@ services:
       - "traefik.http.routers.memory.rule=Host(`memory.redleif.dev`)"
       - "traefik.http.routers.memory.entrypoints=web"
       - "traefik.http.services.memory.loadbalancer.server.port=8765"
-      - "traefik.docker.network=proxy"
+      - "traefik.docker.network=reverse_proxy"
       - "traefik.http.routers.memory.middlewares=memory-headers"
       - "traefik.http.middlewares.memory-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
       # MCP endpoint routing - routes /mcp/* to FastAPI backend which proxies to MCP server
       # No need for separate router, /mcp is handled by FastAPI
     networks:
-      - proxy
+      - reverse_proxy
     restart: unless-stopped
 
   mcp-server:
@@ -84,7 +84,7 @@ services:
           memory: 128M
           cpus: '0.1'
     networks:
-      - proxy
+      - reverse_proxy
     restart: unless-stopped
     logging:
       driver: json-file
@@ -100,7 +100,7 @@ services:
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     networks:
-      - proxy
+      - reverse_proxy
     restart: unless-stopped
     depends_on:
       - memory
@@ -115,5 +115,5 @@ volumes:
     driver: local
 
 networks:
-  proxy:
+  reverse_proxy:
     external: true
