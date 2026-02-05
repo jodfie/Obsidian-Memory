@@ -15,6 +15,7 @@ from app.api.projects import router as projects_router
 from app.api.sessions import router as sessions_router
 from app.api.sync import router as sync_router
 from app.api.vaults import router as vaults_router
+from app.api.v1 import router as v1_router
 from app.config import settings
 from app.middleware.auth import auth_middleware
 from app.middleware.cloudflare_access import cloudflare_access_middleware
@@ -52,6 +53,7 @@ if settings.cors_enabled:
             "CF-Access-JWT",
             "Mcp-Session-Id",
             "X-Request-ID",
+            "X-User-ID",
         ],
         expose_headers=[
             "X-RateLimit-Limit",
@@ -92,6 +94,9 @@ app.include_router(ai_router)
 app.include_router(graph_router)
 app.include_router(sync_router)
 app.include_router(mcp_router)  # MCP server proxy (OAuth handled by gateway)
+
+# Include versioned API routers (v1 with Postgres-backed operations)
+app.include_router(v1_router)
 
 
 @app.get("/")

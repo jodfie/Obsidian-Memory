@@ -1,10 +1,18 @@
 """Application configuration."""
 
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class DatabaseMode(str, Enum):
+    """Database mode for dual SQLite/Postgres support."""
+
+    SQLITE = "sqlite"
+    POSTGRES = "postgres"
 
 
 class Settings(BaseSettings):
@@ -80,6 +88,34 @@ class Settings(BaseSettings):
     )
     device_id: str | None = Field(
         default=None, description="Device identifier for cross-device sync tracking"
+    )
+
+    # Database Configuration (dual-mode SQLite/Postgres)
+    db_mode: DatabaseMode = Field(
+        default=DatabaseMode.SQLITE,
+        description="Database mode: sqlite for local, postgres for Supabase"
+    )
+    database_url: str = Field(
+        default="",
+        description="Database connection URL. For SQLite: sqlite+aiosqlite:///path/to/db.sqlite. For Postgres: postgresql+asyncpg://user:pass@host:port/db"
+    )
+    sqlite_db_path: Path = Field(
+        default=Path.home() / ".obsidian-memory" / "obsidian_memory.db",
+        description="Path to SQLite database file (used when db_mode=sqlite and database_url is empty)"
+    )
+
+    # Supabase Configuration (for Postgres mode)
+    supabase_url: str | None = Field(
+        default=None,
+        description="Supabase project URL (e.g., https://xxx.supabase.co)"
+    )
+    supabase_key: str | None = Field(
+        default=None,
+        description="Supabase anon/service role key for API access"
+    )
+    supabase_jwt_secret: str | None = Field(
+        default=None,
+        description="Supabase JWT secret for token verification"
     )
 
     # Rate Limiting Configuration

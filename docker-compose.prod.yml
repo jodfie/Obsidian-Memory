@@ -4,11 +4,8 @@ version: '3.8'
 
 services:
   memory:
+    image: ghcr.io/jodfie/obsidian-memory:latest
     container_name: memory
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: prod
     depends_on:
       mcp-server:
         condition: service_healthy
@@ -16,11 +13,15 @@ services:
       - ENVIRONMENT=production
       - LOG_LEVEL=INFO
       - DEBUG=false
+      - VAULT_PATH=/vaults
       - CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-true}
       - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
       # OAuth configuration for Claude.ai
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
+    volumes:
+      - /home/redleif/vaults:/vaults:rw
+      - memory-data:/data
     deploy:
       resources:
         limits:
@@ -55,10 +56,8 @@ services:
     restart: unless-stopped
 
   mcp-server:
+    image: ghcr.io/jodfie/obsidian-memory-mcp:latest
     container_name: memory-mcp
-    build:
-      context: ./mcp-server
-      dockerfile: Dockerfile
     environment:
       - MCP_TRANSPORT=sse
       - MCP_SSE_PORT=3000
@@ -110,6 +109,10 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  memory-data:
+    driver: local
 
 networks:
   proxy:

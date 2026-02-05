@@ -88,3 +88,38 @@ class VaultConfigValidationError(VaultError):
     """Raised when vault configuration validation fails."""
 
     pass
+
+
+# Database-backed vault manager exceptions
+
+
+class DatabaseVaultError(Exception):
+    """Base exception for database-backed vault operations."""
+
+    pass
+
+
+class NoteNotFoundError(DatabaseVaultError):
+    """Raised when a note is not found in the database."""
+
+    def __init__(self, identifier: str, by_field: str = "id") -> None:
+        self.identifier = identifier
+        self.by_field = by_field
+        super().__init__(f"Note not found with {by_field}: {identifier}")
+
+
+class DuplicatePathError(DatabaseVaultError):
+    """Raised when attempting to create a note with a path that already exists."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        super().__init__(f"Note already exists at path: {path}")
+
+
+class UnauthorizedError(DatabaseVaultError):
+    """Raised when a user attempts to access a note they don't own."""
+
+    def __init__(self, note_id: str, user_id: str) -> None:
+        self.note_id = note_id
+        self.user_id = user_id
+        super().__init__(f"User {user_id} is not authorized to access note {note_id}")

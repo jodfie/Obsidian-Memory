@@ -19,6 +19,8 @@ dependencies = [
     "cryptography>=42.0.0",
     "cloudflare>=3.0.0",
     "python-multipart>=0.0.6",
+    "asyncpg>=0.29.0",
+    "sqlalchemy[asyncio]>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -84,6 +86,8 @@ module = [
     "aiosqlite.*",
     "aiofiles.*",
     "cloudflare.*",
+    "asyncpg.*",
+    "sqlalchemy.*",
 ]
 ignore_missing_imports = true
 

@@ -69,7 +69,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for Docker
+      - name: Extract metadata for Docker (memory)
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -85,7 +85,7 @@ jobs:
             # Tag with branch name
             type=ref,event=branch
 
-      - name: Build and push Docker image
+      - name: Build and push memory image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -97,7 +97,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Test Docker image
+      - name: Test memory image
         if: github.event_name == 'pull_request'
         run: |
           docker build -t obsidian-memory:test --target prod -f Dockerfile .
@@ -106,37 +106,86 @@ jobs:
           curl -f http://localhost:8765/health || exit 1
           docker stop test-container
 
-  # Summary job that outputs the image URL for easy reference
+  build-and-push-mcp:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker (mcp)
+        id: meta-mcp
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp
+          tags: |
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=stable,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=,format=short
+            type=ref,event=branch
+
+      - name: Build and push MCP image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./mcp-server
+          file: ./mcp-server/Dockerfile
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta-mcp.outputs.tags }}
+          labels: ${{ steps.meta-mcp.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Summary job that outputs the image URLs for easy reference
   deployment-info:
-    needs: build-and-push
+    needs: [build-and-push, build-and-push-mcp]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Output deployment information
         run: |
-          echo "## Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Images Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Your image has been pushed to GitHub Container Registry:" >> $GITHUB_STEP_SUMMARY
+          echo "Both images have been pushed to GitHub Container Registry:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Pull command:**" >> $GITHUB_STEP_SUMMARY
+          echo "**Memory (backend):** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**MCP server:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull commands:**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.ref }}" == "refs/heads/dev" ]; then
             echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp:dev" >> $GITHUB_STEP_SUMMARY
           else
             echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-mcp:latest" >> $GITHUB_STEP_SUMMARY
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**To deploy on your server:**" >> $GITHUB_STEP_SUMMARY
+          echo "**To deploy on your server (with docker-compose.prod.yml):**" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "# Login to GHCR (if not already)" >> $GITHUB_STEP_SUMMARY
           echo "echo \$GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.ref }}" == "refs/heads/dev" ]; then
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev" >> $GITHUB_STEP_SUMMARY
-            echo "docker compose up -d  # using image: ghcr.io/${{ env.IMAGE_NAME }}:dev" >> $GITHUB_STEP_SUMMARY
+            echo "docker compose -f docker-compose.prod.yml pull" >> $GITHUB_STEP_SUMMARY
+            echo "docker compose -f docker-compose.prod.yml up -d" >> $GITHUB_STEP_SUMMARY
           else
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
-            echo "docker compose up -d  # using image: ghcr.io/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+            echo "docker compose -f docker-compose.prod.yml pull" >> $GITHUB_STEP_SUMMARY
+            echo "docker compose -f docker-compose.prod.yml up -d" >> $GITHUB_STEP_SUMMARY
           fi
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

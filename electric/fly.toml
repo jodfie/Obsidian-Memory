@@ -1,0 +1,54 @@
+# Fly.io configuration for ElectricSQL sync service
+# Documentation: https://fly.io/docs/reference/configuration/
+
+app = "obsidian-memory-electric"
+primary_region = "iad"
+
+[build]
+  image = "electricsql/electric:latest"
+
+[env]
+  # Electric configuration
+  ELECTRIC_WRITE_TO_PG_MODE = "direct"
+  PG_PROXY_PORT = "65432"
+
+  # Logging
+  LOG_LEVEL = "info"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/v1/health"
+    timeout = "5s"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 3000
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+# Resource allocation
+[vm]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

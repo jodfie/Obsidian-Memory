@@ -1,0 +1,101 @@
+# ============================================================================
+# Obsidian-Memory: Supabase Configuration
+# ============================================================================
+# This file configures the local Supabase development environment.
+# See: https://supabase.com/docs/guides/cli/config
+# ============================================================================
+
+[api]
+# Port to use for the API URL.
+port = 54321
+# Schemas to expose in your API. Tables, views and stored procedures in this
+# schema will get API endpoints. public and storage are always included.
+schemas = ["public", "storage", "graphql_public"]
+# Extra schemas to add to the search_path of every request.
+extra_search_path = ["public", "extensions"]
+# The maximum number of rows returned from a view, table, or stored procedure.
+max_rows = 1000
+
+[db]
+# Port to use for the local database URL.
+port = 54322
+# The database major version to use. This has to be the same as your remote
+# database's version.
+major_version = 15
+
+[studio]
+# Port to use for Supabase Studio.
+port = 54323
+# External URL of the API server that frontend connects to.
+api_url = "http://localhost"
+
+# Email testing server. Emails sent with the local dev setup are not actually
+# sent - rather, they are monitored, and you can view the emails that would
+# have been sent from the web interface.
+[inbucket]
+# Port to use for the email testing server web interface.
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+[storage]
+# The maximum file size allowed (e.g. "5MB", "500KB").
+file_size_limit = "50MiB"
+
+[auth]
+# The base URL of your website. Used as an allow-list for redirects and for
+# constructing URLs used in emails.
+site_url = "http://localhost:3000"
+# A list of *exact* URLs that auth providers are permitted to redirect to post
+# authentication.
+additional_redirect_urls = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "https://memory.redleif.dev"
+]
+# How long tokens are valid for, in seconds. Defaults to 3600 (1 hour).
+jwt_expiry = 3600
+# Allow/disallow new user signups to your project.
+enable_signup = true
+
+[auth.email]
+# Allow/disallow new user signups via email to your project.
+enable_signup = true
+# If enabled, a user will be required to confirm any email change on both the
+# old, and new email addresses. If disabled, only the new email is required to
+# confirm.
+double_confirm_changes = true
+# If enabled, users need to confirm their email address before signing in.
+enable_confirmations = true
+
+[auth.external.github]
+enabled = true
+client_id = "env(GITHUB_CLIENT_ID)"
+secret = "env(GITHUB_CLIENT_SECRET)"
+# Redirect URI for GitHub OAuth (registered in GitHub OAuth App settings)
+redirect_uri = "http://localhost:54321/auth/v1/callback"
+
+[auth.external.google]
+enabled = false
+client_id = "env(GOOGLE_CLIENT_ID)"
+secret = "env(GOOGLE_CLIENT_SECRET)"
+
+# ============================================================================
+# Realtime Configuration
+# ============================================================================
+[realtime]
+# Enables Realtime multiplayer features
+enabled = true
+
+# ============================================================================
+# Analytics Configuration (disabled for local dev)
+# ============================================================================
+[analytics]
+enabled = false
+
+# ============================================================================
+# Functions Configuration
+# ============================================================================
+[functions]
+# Set verify_jwt to false if you want to allow unauthenticated access to functions
+verify_jwt = true

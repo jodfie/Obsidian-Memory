@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import Nav from '../components/Nav';
+import { Providers } from '../lib/providers';
 
 export const metadata: Metadata = {
   title: 'Obsidian-Memory',
@@ -15,8 +16,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Nav />
-        <main>{children}</main>
+        <Providers>
+          <Nav />
+          <main>{children}</main>
+        </Providers>
       </body>
     </html>
   );
