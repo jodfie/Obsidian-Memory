@@ -44,13 +44,10 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.memory.rule=Host(`memory.redleif.dev`)"
-      - "traefik.http.routers.memory.entrypoints=web"
+      - "traefik.http.routers.memory.entrypoints=websecure"
+      - "traefik.http.routers.memory.tls.certresolver=cloudflare"
       - "traefik.http.services.memory.loadbalancer.server.port=8765"
       - "traefik.docker.network=reverse_proxy"
-      - "traefik.http.routers.memory.middlewares=memory-headers"
-      - "traefik.http.middlewares.memory-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
-      # MCP endpoint routing - routes /mcp/* to FastAPI backend which proxies to MCP server
-      # No need for separate router, /mcp is handled by FastAPI
     networks:
       - reverse_proxy
     restart: unless-stopped
@@ -93,22 +90,7 @@ services:
         max-file: "3"
     # Note: MCP server is accessed via FastAPI proxy at /mcp, not directly via Traefik
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: memory-cloudflared
-    command: tunnel run
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
-    networks:
-      - reverse_proxy
-    restart: unless-stopped
-    depends_on:
-      - memory
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+  # cloudflared tunnel is managed separately (see ~/docker/cloudflared-compose.yml)
 
 volumes:
   memory-data:
