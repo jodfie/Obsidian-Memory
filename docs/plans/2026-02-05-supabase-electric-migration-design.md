@@ -481,12 +481,67 @@ CREATE POLICY "Users can delete own notes" ON notes
 
 ---
 
-## Open Questions
+## Decisions (Resolved)
 
-1. **Supabase region** - Which region for lowest latency?
-2. **Electric hosting** - Cloud (free beta) vs self-hosted on Fly.io?
-3. **IPv4 vs IPv6** - Need Supabase Pro for IPv4 add-on, or configure IPv6?
-4. **Markdown editor upgrade** - Keep simple textarea or add CodeMirror/Monaco?
+| Question | Decision |
+|----------|----------|
+| **Supabase region** | US East / Southeast |
+| **Electric hosting** | Self-hosted on Fly.io |
+| **IPv4 vs IPv6** | IPv6 (free tier) |
+| **Markdown editor** | TipTap (Notion-like WYSIWYG) |
+| **Content storage** | Markdown in DB, convert to/from TipTap JSON on load/save |
+
+---
+
+## TipTap Integration
+
+### Dependencies
+
+```bash
+npm install @tiptap/react @tiptap/starter-kit @tiptap/extension-link \
+  @tiptap/extension-placeholder @tiptap/extension-typography \
+  @tiptap/pm tiptap-markdown
+```
+
+### Content Flow
+
+```
+┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
+│   Supabase      │      │   TipTap        │      │   User          │
+│   (Markdown)    │ ───► │   (JSON DOM)    │ ───► │   (WYSIWYG)     │
+│                 │ load │                 │      │                 │
+│                 │ ◄─── │                 │ ◄─── │                 │
+│                 │ save │                 │      │                 │
+└─────────────────┘      └─────────────────┘      └─────────────────┘
+```
+
+### Example Hook
+
+```typescript
+// lib/hooks/useNoteEditor.ts
+import { useEditor } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import { Markdown } from 'tiptap-markdown'
+
+export function useNoteEditor(initialMarkdown: string) {
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Markdown.configure({
+        transformPastedText: true,
+        transformCopiedText: true,
+      }),
+    ],
+    content: initialMarkdown, // Auto-converts MD → JSON
+  })
+
+  const getMarkdown = () => {
+    return editor?.storage.markdown.getMarkdown() ?? ''
+  }
+
+  return { editor, getMarkdown }
+}
+```
 
 ---
 
