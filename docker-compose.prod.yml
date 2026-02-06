@@ -20,7 +20,7 @@ services:
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     volumes:
-      - ${VAULT_HOST_PATH:-/home/jodfie/vault}:/vaults:rw
+      - /home/redleif/vaults:/vaults:rw
       - memory-data:/data
     deploy:
       resources:
@@ -43,13 +43,15 @@ services:
         max-file: "3"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.memory.rule=Host(`memory.redleif.dev`)"
-      - "traefik.http.routers.memory.entrypoints=websecure"
-      - "traefik.http.routers.memory.tls.certresolver=cloudflare"
-      - "traefik.http.services.memory.loadbalancer.server.port=8765"
-      - "traefik.docker.network=reverse_proxy"
+      - "traefik.http.routers.memory-api.rule=Host(`memory.redleif.dev`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.memory-api.entrypoints=web"
+      - "traefik.http.services.memory-api.loadbalancer.server.port=8765"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.memory-api.middlewares=memory-api-strip,memory-headers"
+      - "traefik.http.middlewares.memory-api-strip.stripprefix.prefixes=/api"
+      - "traefik.http.middlewares.memory-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
     networks:
-      - reverse_proxy
+      - proxy
     restart: unless-stopped
 
   mcp-server:
@@ -80,15 +82,64 @@ services:
         reservations:
           memory: 128M
           cpus: '0.1'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.memory-mcp.rule=Host(`memory.redleif.dev`) && PathPrefix(`/mcp`)"
+      - "traefik.http.routers.memory-mcp.entrypoints=web"
+      - "traefik.http.services.memory-mcp.loadbalancer.server.port=3000"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.memory-mcp.middlewares=memory-headers"
     networks:
-      - reverse_proxy
+      - proxy
     restart: unless-stopped
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-    # Note: MCP server is accessed via FastAPI proxy at /mcp, not directly via Traefik
+
+  web-ui:
+    image: ghcr.io/jodfie/obsidian-memory-web-ui:latest
+    container_name: memory-web-ui
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - NEXT_PUBLIC_API_URL=https://memory.redleif.dev/api
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.memory-web.rule=Host(`memory.redleif.dev`)"
+      - "traefik.http.routers.memory-web.entrypoints=web"
+      - "traefik.http.routers.memory-web.priority=1"
+      - "traefik.http.services.memory-web.loadbalancer.server.port=3000"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.memory-web.middlewares=memory-headers"
+    networks:
+      - proxy
+    restart: unless-stopped
+    depends_on:
+      memory:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # cloudflared tunnel is managed separately (see ~/docker/cloudflared-compose.yml)
 
@@ -97,5 +148,5 @@ volumes:
     driver: local
 
 networks:
-  reverse_proxy:
+  proxy:
     external: true
