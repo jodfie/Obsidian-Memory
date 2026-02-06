@@ -74,6 +74,7 @@ class SearchIndex:
                 title TEXT NOT NULL,
                 note_type TEXT DEFAULT 'note',
                 project TEXT,
+                content TEXT,
                 created_at TEXT,
                 updated_at TEXT,
                 indexed_at TEXT NOT NULL,
@@ -1965,6 +1966,7 @@ class SearchIndex:
                 note.title,
                 note.note_type,
                 note.project,
+                note.content,
                 created_at_str,
                 updated_at_str,
                 indexed_at,
@@ -1976,8 +1978,8 @@ class SearchIndex:
             """
             INSERT INTO notes (
                 vault_name, relative_path, permalink, title, note_type,
-                project, created_at, updated_at, indexed_at, file_hash
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                project, content, created_at, updated_at, indexed_at, file_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             notes_data,
         )
@@ -2024,6 +2026,7 @@ class SearchIndex:
                 note.title,
                 note.note_type,
                 note.project,
+                note.content,
                 created_at_str,
                 updated_at_str,
                 indexed_at,
@@ -2042,6 +2045,7 @@ class SearchIndex:
                     title = ?,
                     note_type = ?,
                     project = ?,
+                    content = ?,
                     created_at = ?,
                     updated_at = ?,
                     indexed_at = ?,
