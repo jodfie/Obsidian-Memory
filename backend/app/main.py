@@ -19,6 +19,7 @@ from app.api.v1 import router as v1_router
 from app.config import settings
 from app.middleware.auth import auth_middleware
 from app.middleware.cloudflare_access import cloudflare_access_middleware
+from app.middleware.supabase_auth import supabase_auth_middleware
 from app.middleware.compression import compression_middleware
 from app.middleware.error_handler import error_handler_middleware
 from app.middleware.logging import logging_middleware
@@ -77,8 +78,11 @@ if settings.rate_limit_enabled:
 # Add request validation middleware
 app.add_middleware(BaseHTTPMiddleware, dispatch=request_validation_middleware)
 
-# Add Cloudflare Access middleware if enabled (runs before Bearer token auth)
-if settings.cloudflare_access_enabled:
+# Add OAuth authentication middleware (Supabase or Cloudflare Access)
+# Supabase auth takes precedence if enabled
+if settings.supabase_auth_enabled:
+    app.add_middleware(BaseHTTPMiddleware, dispatch=supabase_auth_middleware)
+elif settings.cloudflare_access_enabled:
     app.add_middleware(BaseHTTPMiddleware, dispatch=cloudflare_access_middleware)
 
 # Add Bearer token authentication middleware if enabled

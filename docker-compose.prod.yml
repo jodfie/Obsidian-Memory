@@ -14,9 +14,13 @@ services:
       - LOG_LEVEL=INFO
       - DEBUG=false
       - VAULT_PATH=/vaults
-      - CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-true}
+      # Supabase OAuth Authentication (preferred)
+      - SUPABASE_AUTH_ENABLED=${SUPABASE_AUTH_ENABLED:-true}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
+      # Cloudflare Access (fallback if Supabase auth disabled)
+      - CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-false}
       - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
-      # OAuth configuration for Claude.ai
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     volumes:
@@ -64,10 +68,7 @@ services:
       - MCP_SERVER_URL=https://memory.redleif.dev
       - OBSIDIAN_MEMORY_API_URL=http://memory:8765
       - NODE_ENV=production
-      # OAuth configuration for Claude.ai
-      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
-      - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
-      - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
+      # Note: OAuth authentication handled by backend (Supabase), not MCP server
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s

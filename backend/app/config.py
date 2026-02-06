@@ -117,6 +117,11 @@ class Settings(BaseSettings):
         default=None,
         description="Supabase JWT secret for token verification"
     )
+    # Supabase OAuth Authentication
+    supabase_auth_enabled: bool = Field(
+        default=False,
+        description="Enable Supabase OAuth authentication for MCP"
+    )
 
     # Rate Limiting Configuration
     rate_limit_enabled: bool = Field(
