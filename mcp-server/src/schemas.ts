@@ -82,6 +82,10 @@ export const memSearchInputSchema = {
   response_format: responseFormatSchema,
 };
 
+export const memDeleteInputSchema = {
+  id: z.number().int().positive().describe('Note ID to delete'),
+};
+
 // ============================================================================
 // Context Tool Schemas
 // ============================================================================

@@ -550,6 +550,24 @@ export class ApiClient {
   }
 
   /**
+   * Delete a note by ID.
+   */
+  async deleteNote(id: number): Promise<{ id: number; message: string }> {
+    const response = await fetch(`${this.baseUrl}/api/notes/${id}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error(`Note with ID ${id} not found`);
+      }
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
+      throw new Error(`Failed to delete note: ${error.detail || response.statusText}`);
+    }
+    return response.json() as Promise<{ id: number; message: string }>;
+  }
+
+  /**
    * Supersede a note with another note.
    * Creates a bi-directional supersedes relationship.
    */

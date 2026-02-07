@@ -171,6 +171,28 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: 'mem_delete',
+    description:
+      'Permanently delete a note from Obsidian-Memory by ID. This removes the note from the database and deletes the underlying markdown file from the vault. This action cannot be undone.',
+    annotations: {
+      title: 'Delete Memory Note',
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'number',
+          description: 'Note ID to delete',
+        },
+      },
+      required: ['id'],
+    },
+  },
+  {
     name: 'mem_supersede',
     description:
       'Mark a note as superseded by another note. Creates a bi-directional relationship: the old note gets a superseded_by field pointing to the new note, and the new note gets a supersedes field pointing to the old note. Use this when you have updated information that replaces older knowledge.',

@@ -135,6 +135,21 @@ export async function handleMemWrite({
   };
 }
 
+export interface MemDeleteInput {
+  id: number;
+}
+
+export async function handleMemDelete({
+  id,
+}: MemDeleteInput): Promise<ToolResponse> {
+  const result = await apiClient.deleteNote(id);
+
+  return {
+    content: [{ type: 'text', text: result.message || `Note ${id} deleted successfully` }],
+    structuredContent: result,
+  };
+}
+
 export interface MemSearchInput {
   query: string;
   vault?: string;
@@ -521,6 +536,8 @@ export async function dispatchToolCall(
       return handleMemWrite(args as unknown as MemWriteInput);
     case 'mem_search':
       return handleMemSearch(args as unknown as MemSearchInput);
+    case 'mem_delete':
+      return handleMemDelete(args as unknown as MemDeleteInput);
     case 'mem_supersede':
       return handleMemSupersede(args as unknown as MemSupersedeInput);
     case 'build_context':
