@@ -359,7 +359,7 @@ class SearchIndex:
             note.updated_at.isoformat() if note.updated_at else None
         )
 
-        # Check if note exists
+        # Check if note exists by vault_name + relative_path
         cursor = await self.db.execute(
             """
             SELECT id FROM notes
@@ -398,6 +398,32 @@ class SearchIndex:
                 ),
             )
         else:
+            # Resolve permalink conflicts before inserting
+            permalink = note.permalink
+            if permalink:
+                conflict = await self.db.execute(
+                    "SELECT id FROM notes WHERE permalink = ?",
+                    (permalink,),
+                )
+                if await conflict.fetchone():
+                    # Append suffix to make permalink unique
+                    base = permalink
+                    suffix = 1
+                    while True:
+                        permalink = f"{base}-{suffix}"
+                        conflict = await self.db.execute(
+                            "SELECT id FROM notes WHERE permalink = ?",
+                            (permalink,),
+                        )
+                        if not await conflict.fetchone():
+                            break
+                        suffix += 1
+                    logger.warning(
+                        "Permalink conflict for '%s', using '%s' instead",
+                        note.permalink,
+                        permalink,
+                    )
+
             # Insert new note
             cursor = await self.db.execute(
                 """
@@ -409,7 +435,7 @@ class SearchIndex:
                 (
                     note.vault_name,
                     note.relative_path,
-                    note.permalink,
+                    permalink,
                     note.title,
                     note.note_type,
                     note.project,
