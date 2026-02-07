@@ -1,14 +1,12 @@
-version: '3.8'
-
 # Development overrides for Obsidian-Memory
 
 services:
   memory:
-    container_name: memory-dev
     build:
       context: .
       dockerfile: Dockerfile
       target: dev
+    container_name: memory-dev
     depends_on:
       mcp-server:
         condition: service_healthy
@@ -18,33 +16,27 @@ services:
       - DEBUG=true
       - HOT_RELOAD=true
       - WAIT_FOR_HEALTH=true
+      - VAULT_PATH=/vaults
       - CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-true}
       - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
-      # OAuth configuration for Claude.ai
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     ports:
-      - "8766:8765"  # Different port for dev
+      - "8766:8765"
     volumes:
       - memory-data:/data
-      - /home/redleif/vaults:/vaults/jodys-brain:cached  # Jody's unified vault (synced today)
+      - /home/redleif/vaults:/vaults:rw
       - ./backend:/app/backend:cached  # Hot reload mount
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.memory-dev.rule=Host(`memory-dev.redleif.dev`)"
-      - "traefik.http.routers.memory-dev.entrypoints=websecure"
-      - "traefik.http.routers.memory-dev.tls.certresolver=cloudflare"
-      - "traefik.http.routers.memory-dev.tls=true"
+      - "traefik.http.routers.memory-dev.entrypoints=web"
       - "traefik.http.services.memory-dev.loadbalancer.server.port=8765"
-      - "traefik.docker.network=reverse_proxy"
-      # Cloudflare Access headers - Traefik forwards these automatically
-      # CF-Access-JWT and CF-Access-JWT-Assertion are forwarded by default
+      - "traefik.docker.network=proxy"
       - "traefik.http.routers.memory-dev.middlewares=memory-dev-headers"
       - "traefik.http.middlewares.memory-dev-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
-      # MCP endpoint routing - routes /mcp/* to FastAPI backend which proxies to MCP server
-      # No need for separate router, /mcp is handled by FastAPI
     networks:
-      - reverse_proxy
+      - proxy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
       interval: 30s
@@ -53,7 +45,7 @@ services:
       start_period: 10s
 
   mcp-server:
-    container_name: memory-mcp
+    container_name: memory-mcp-dev
     build:
       context: ./mcp-server
       dockerfile: Dockerfile
@@ -61,22 +53,52 @@ services:
       - MCP_TRANSPORT=sse
       - MCP_SSE_PORT=3000
       - MCP_PATH=/mcp
-      - MCP_SERVER_URL=https://mcp.redleif.dev
-      - OBSIDIAN_MEMORY_API_URL=http://memory:8765
-      # OAuth configuration for Claude.ai
+      - MCP_SERVER_URL=https://memory-dev.redleif.dev
+      - OBSIDIAN_MEMORY_API_URL=http://memory-dev:8765
       - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     networks:
-      - reverse_proxy
+      - proxy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    # Note: MCP server is accessed via FastAPI proxy at /mcp, not directly via Traefik
+
+  web-ui:
+    build:
+      context: .
+      dockerfile: web-ui/Dockerfile
+    container_name: memory-web-dev
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - NEXT_PUBLIC_API_URL=http://memory-dev:8765
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.memory-web-dev.rule=Host(`app-dev.memory.redleif.dev`)"
+      - "traefik.http.routers.memory-web-dev.entrypoints=web"
+      - "traefik.http.services.memory-web-dev.loadbalancer.server.port=3000"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.memory-web-dev.middlewares=memory-web-dev-headers"
+      - "traefik.http.middlewares.memory-web-dev-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+    networks:
+      - proxy
+    restart: unless-stopped
+    depends_on:
+      memory:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
 networks:
-  reverse_proxy:
+  proxy:
     external: true

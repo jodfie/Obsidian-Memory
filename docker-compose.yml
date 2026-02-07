@@ -31,7 +31,7 @@ services:
       - memory-data:/data
       - memory-vaults:/vaults
     networks:
-      - reverse_proxy
+      - proxy
     restart: unless-stopped
 
   mcp-server:
@@ -52,7 +52,7 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - reverse_proxy
+      - proxy
     restart: unless-stopped
 
 volumes:
@@ -62,5 +62,5 @@ volumes:
     driver: local
 
 networks:
-  reverse_proxy:
+  proxy:
     external: true

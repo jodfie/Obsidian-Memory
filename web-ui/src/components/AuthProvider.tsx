@@ -14,13 +14,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const SUPABASE_CONFIGURED =
+  !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const supabase = createClientComponentClient<Database>();
+  const [isLoading, setIsLoading] = useState(SUPABASE_CONFIGURED);
+  const supabase = SUPABASE_CONFIGURED ? createClientComponentClient<Database>() : null;
 
   useEffect(() => {
+    if (!supabase) return;
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -38,9 +43,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, [supabase.auth]);
+  }, [supabase]);
 
   const signInWithGoogle = async () => {
+    if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -50,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    if (!supabase) return;
     await supabase.auth.signOut();
   };
 

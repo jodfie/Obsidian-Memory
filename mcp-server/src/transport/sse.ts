@@ -6,7 +6,7 @@
  * - GET /mcp - Open SSE stream for server notifications
  * - DELETE /mcp - Terminate session
  *
- * Authentication is handled externally by the OAuth gateway (Traefik ForwardAuth).
+ * Authentication is handled externally by Hypr MCP Gateway.
  * This transport is a pure MCP protocol handler with no authentication logic.
  */
 
@@ -102,6 +102,8 @@ async function handleMcpRequest(body: JSONRPCRequest): Promise<JSONRPCResponse> 
       }
 
       case 'tools/list': {
+        console.error(`[DEBUG] Returning ${tools.length} tools to client`);
+        console.error(`[DEBUG] Tools: ${tools.map((t: { name: string }) => t.name).join(', ')}`);
         return {
           jsonrpc: '2.0',
           id,
@@ -234,12 +236,18 @@ export async function createSSEServer(
           const sessionId = req.headers.get('mcp-session-id');
 
           // POST - Handle JSON-RPC requests
-          // Note: Authentication is handled by the OAuth gateway (Traefik ForwardAuth)
+          // Note: Authentication is handled by Hypr MCP Gateway
           if (req.method === 'POST') {
             try {
               const body = (await req.json()) as JSONRPCRequest;
 
-              console.error(`MCP Request: ${body.method} (id: ${body.id})`);
+              console.error(`[DEBUG] MCP Request: ${body.method} (id: ${body.id})`);
+              console.error(`[DEBUG] Session ID: ${sessionId || 'NONE'}`);
+              console.error(`[DEBUG] Headers: ${JSON.stringify({
+                authorization: req.headers.get('authorization'),
+                'mcp-session-id': sessionId,
+                origin: req.headers.get('origin'),
+              })}`);
 
               // Handle initialize - create new session
               if (isInitializeRequest(body)) {
@@ -432,7 +440,7 @@ export async function createSSEServer(
     console.error(`MCP Streamable HTTP server listening on http://localhost:${port}${mcpPath}`);
     console.error(`Protocol version: 2025-03-26`);
     console.error(`Health check: http://localhost:${port}/health`);
-    console.error(`Note: Authentication handled externally by OAuth gateway`);
+    console.error(`Authentication: Handled by Hypr MCP Gateway`);
   } else {
     throw new Error(
       'Streamable HTTP transport requires Bun runtime. Use stdio transport for Node.js.'

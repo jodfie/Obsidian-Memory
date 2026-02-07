@@ -14,6 +14,10 @@ services:
       - LOG_LEVEL=INFO
       - DEBUG=false
       - VAULT_PATH=/vaults
+      # Force index to use persistent volume instead of home directory
+      - INDEX_DB_PATH=/data/.obsidian-memory/index.db
+      - CONFIG_FILE=/data/.obsidian-memory/config.json
+      - SYNC_STATE_FILE=/data/.obsidian-memory/sync_state.json
       # Supabase OAuth Authentication (preferred)
       - SUPABASE_AUTH_ENABLED=${SUPABASE_AUTH_ENABLED:-true}
       - SUPABASE_URL=${SUPABASE_URL}
@@ -51,8 +55,7 @@ services:
       - "traefik.http.routers.memory-api.entrypoints=web"
       - "traefik.http.services.memory-api.loadbalancer.server.port=8765"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.memory-api.middlewares=memory-api-strip,memory-headers"
-      - "traefik.http.middlewares.memory-api-strip.stripprefix.prefixes=/api"
+      - "traefik.http.routers.memory-api.middlewares=memory-headers"
       - "traefik.http.middlewares.memory-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
     networks:
       - proxy
@@ -68,7 +71,11 @@ services:
       - MCP_SERVER_URL=https://memory.redleif.dev
       - OBSIDIAN_MEMORY_API_URL=http://memory:8765
       - NODE_ENV=production
-      # Note: OAuth authentication handled by backend (Supabase), not MCP server
+      # Supabase OAuth Authentication
+      - SUPABASE_AUTH_ENABLED=${SUPABASE_AUTH_ENABLED:-true}
+      - SUPABASE_URL=${SUPABASE_URL}
+    ports:
+      - "8738:3000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
