@@ -55,10 +55,15 @@ def get_search_index() -> SearchIndex:
 
     Returns the same SearchIndex across all requests so the file watcher
     and API share one SQLite connection, avoiding WAL contention.
+    Re-creates if the configured DB path has changed (e.g. in tests).
     """
     global _search_index_instance
-    if _search_index_instance is None:
-        _search_index_instance = SearchIndex(settings.index_db_path)
+    current_path = settings.index_db_path
+    if (
+        _search_index_instance is None
+        or _search_index_instance.db_path != current_path
+    ):
+        _search_index_instance = SearchIndex(current_path)
     return _search_index_instance
 
 

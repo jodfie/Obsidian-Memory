@@ -131,12 +131,17 @@ async def start_file_watcher() -> None:
 
 
 @app.on_event("shutdown")
-async def stop_file_watcher() -> None:
-    """Stop the file watcher on shutdown."""
+async def shutdown_cleanup() -> None:
+    """Stop the file watcher and close shared resources on shutdown."""
     global _file_watcher
     if _file_watcher is not None:
         await _file_watcher.stop()
         _file_watcher = None
+
+    # Close the SearchIndex singleton to release the DB connection
+    search_index = get_search_index()
+    if search_index and search_index.db:
+        await search_index.close()
 
 
 @app.get("/")
