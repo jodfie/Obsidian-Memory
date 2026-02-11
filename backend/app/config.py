@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Vault Configuration
     config_file: Path = Path.home() / ".obsidian-memory" / "config.json"
     default_vault: str | None = None
+    vault_path: str | None = Field(
+        default=None, description="Root path containing vault directories (e.g. /vaults)"
+    )
 
     # Search Index Configuration
     index_db_path: Path = Path.home() / ".obsidian-memory" / "index.db"

@@ -195,11 +195,17 @@ async def create_note(
 
     note_id = await search_index.index_note(indexed_note)
 
+    # Read back the resolved permalink from DB (may differ from frontmatter)
+    resolved_permalink = parsed.frontmatter.permalink
+    db_note = await search_index.get_note_by_id(note_id)
+    if db_note and db_note.permalink:
+        resolved_permalink = db_note.permalink
+
     return NoteResponse(
         id=note_id,
         vault_name=vault_name,
         relative_path=request.relative_path,
-        permalink=parsed.frontmatter.permalink,
+        permalink=resolved_permalink,
         title=parsed.frontmatter.title,
         note_type=parsed.frontmatter.type.value,
         project=parsed.frontmatter.project,

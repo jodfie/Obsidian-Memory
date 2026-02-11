@@ -16,6 +16,7 @@ from app.api.sessions import router as sessions_router
 from app.api.sync import router as sync_router
 from app.api.vaults import router as vaults_router
 from app.api.v1 import router as v1_router
+from app.api.dependencies import get_search_index
 from app.config import settings
 from app.middleware.auth import auth_middleware
 from app.middleware.cloudflare_access import cloudflare_access_middleware
@@ -102,6 +103,41 @@ app.include_router(mcp_router)  # MCP server proxy (OAuth handled by gateway)
 # Include versioned API routers (v1 with Postgres-backed operations)
 app.include_router(v1_router)
 
+# File watcher for SilverBullet -> DB sync
+_file_watcher = None
+
+
+@app.on_event("startup")
+async def start_file_watcher() -> None:
+    """Start the file watcher if VAULT_PATH is configured."""
+    global _file_watcher
+    if not settings.vault_path:
+        logger.info("VAULT_PATH not set, file watcher disabled")
+        return
+
+    from app.services.file_watcher import FileWatcherService
+    from app.services.markdown_parser import MarkdownParser
+
+    search_index = get_search_index()
+    if not search_index.db:
+        await search_index.initialize()
+
+    _file_watcher = FileWatcherService(
+        vault_path=settings.vault_path,
+        search_index=search_index,
+        parser=MarkdownParser(),
+    )
+    await _file_watcher.start()
+
+
+@app.on_event("shutdown")
+async def stop_file_watcher() -> None:
+    """Stop the file watcher on shutdown."""
+    global _file_watcher
+    if _file_watcher is not None:
+        await _file_watcher.stop()
+        _file_watcher = None
+
 
 @app.get("/")
 async def root() -> dict[str, str]:
@@ -132,7 +168,7 @@ async def health() -> dict[str, Any]:
                 data = json.load(f)
             config = VaultManagerConfig(**data)
             vault_manager = VaultManager(config)
-            vault_connected = len(vault_manager.vaults) > 0
+            vault_connected = len(vault_manager.list_vaults()) > 0
     except Exception:
         vault_connected = False
     

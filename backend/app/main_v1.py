@@ -390,7 +390,7 @@ async def health() -> dict[str, Any]:
                 data = json.load(f)
             config = VaultManagerConfig(**data)
             vault_manager = VaultManager(config)
-            vault_connected = len(vault_manager.vaults) > 0
+            vault_connected = len(vault_manager.list_vaults()) > 0
     except Exception:
         vault_connected = False
 

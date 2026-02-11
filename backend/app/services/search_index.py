@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import re
+import sqlite3
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -70,7 +71,7 @@ class SearchIndex:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 vault_name TEXT NOT NULL,
                 relative_path TEXT NOT NULL,
-                permalink TEXT UNIQUE,
+                permalink TEXT,
                 title TEXT NOT NULL,
                 note_type TEXT DEFAULT 'note',
                 project TEXT,
@@ -79,7 +80,8 @@ class SearchIndex:
                 updated_at TEXT,
                 indexed_at TEXT NOT NULL,
                 file_hash TEXT NOT NULL,
-                UNIQUE(vault_name, relative_path)
+                UNIQUE(vault_name, relative_path),
+                UNIQUE(vault_name, permalink)
             )
         """)
 
@@ -342,6 +344,44 @@ class SearchIndex:
 
     # Indexing Operations
 
+    async def _resolve_permalink(
+        self, permalink: str, exclude_id: int | None = None
+    ) -> str:
+        """Resolve permalink conflicts by appending a numeric suffix."""
+        if exclude_id is not None:
+            query = "SELECT id FROM notes WHERE permalink = ? AND id != ?"
+            params: tuple = (permalink, exclude_id)
+        else:
+            query = "SELECT id FROM notes WHERE permalink = ?"
+            params = (permalink,)
+
+        conflict = await self.db.execute(query, params)
+        if not await conflict.fetchone():
+            return permalink
+
+        base = permalink
+        suffix = 1
+        while True:
+            candidate = f"{base}-{suffix}"
+            if exclude_id is not None:
+                conflict = await self.db.execute(
+                    "SELECT id FROM notes WHERE permalink = ? AND id != ?",
+                    (candidate, exclude_id),
+                )
+            else:
+                conflict = await self.db.execute(
+                    "SELECT id FROM notes WHERE permalink = ?",
+                    (candidate,),
+                )
+            if not await conflict.fetchone():
+                logger.warning(
+                    "Permalink conflict for '%s', using '%s' instead",
+                    permalink,
+                    candidate,
+                )
+                return candidate
+            suffix += 1
+
     async def index_note(self, note: IndexedNote) -> int:
         """
         Index or update a note.
@@ -359,93 +399,75 @@ class SearchIndex:
             note.updated_at.isoformat() if note.updated_at else None
         )
 
-        # Check if note exists by vault_name + relative_path
+        # Check if note already exists (for permalink conflict resolution)
         cursor = await self.db.execute(
-            """
-            SELECT id FROM notes
-            WHERE vault_name = ? AND relative_path = ?
-            """,
+            "SELECT id FROM notes WHERE vault_name = ? AND relative_path = ?",
             (note.vault_name, note.relative_path),
         )
-        row = await cursor.fetchone()
+        existing = await cursor.fetchone()
+        existing_id = existing['id'] if existing else None
 
-        if row:
-            # Update existing note
-            note_id = row['id']
-            await self.db.execute(
-                """
-                UPDATE notes SET
-                    permalink = ?,
-                    title = ?,
-                    note_type = ?,
-                    project = ?,
-                    created_at = ?,
-                    updated_at = ?,
-                    indexed_at = ?,
-                    file_hash = ?
-                WHERE id = ?
-                """,
-                (
-                    note.permalink,
-                    note.title,
-                    note.note_type,
-                    note.project,
-                    created_at_str,
-                    updated_at_str,
-                    indexed_at,
-                    note.file_hash,
-                    note_id,
-                ),
-            )
-        else:
-            # Resolve permalink conflicts before inserting
+        # Upsert with permalink conflict resolution and retry
+        for attempt in range(3):
+            # Resolve permalink conflicts (exclude self if updating)
             permalink = note.permalink
             if permalink:
-                conflict = await self.db.execute(
-                    "SELECT id FROM notes WHERE permalink = ?",
-                    (permalink,),
+                permalink = await self._resolve_permalink(
+                    permalink, exclude_id=existing_id
                 )
-                if await conflict.fetchone():
-                    # Append suffix to make permalink unique
-                    base = permalink
-                    suffix = 1
-                    while True:
-                        permalink = f"{base}-{suffix}"
-                        conflict = await self.db.execute(
-                            "SELECT id FROM notes WHERE permalink = ?",
-                            (permalink,),
-                        )
-                        if not await conflict.fetchone():
-                            break
-                        suffix += 1
-                    logger.warning(
-                        "Permalink conflict for '%s', using '%s' instead",
-                        note.permalink,
-                        permalink,
-                    )
 
-            # Insert new note
-            cursor = await self.db.execute(
-                """
-                INSERT INTO notes (
-                    vault_name, relative_path, permalink, title, note_type,
-                    project, created_at, updated_at, indexed_at, file_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    note.vault_name,
-                    note.relative_path,
-                    permalink,
-                    note.title,
-                    note.note_type,
-                    note.project,
-                    created_at_str,
-                    updated_at_str,
-                    indexed_at,
-                    note.file_hash,
-                ),
-            )
+            try:
+                cursor = await self.db.execute(
+                    """
+                    INSERT INTO notes (
+                        vault_name, relative_path, permalink, title, note_type,
+                        project, created_at, updated_at, indexed_at, file_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(vault_name, relative_path) DO UPDATE SET
+                        permalink = excluded.permalink,
+                        title = excluded.title,
+                        note_type = excluded.note_type,
+                        project = excluded.project,
+                        created_at = excluded.created_at,
+                        updated_at = excluded.updated_at,
+                        indexed_at = excluded.indexed_at,
+                        file_hash = excluded.file_hash
+                    """,
+                    (
+                        note.vault_name,
+                        note.relative_path,
+                        permalink,
+                        note.title,
+                        note.note_type,
+                        note.project,
+                        created_at_str,
+                        updated_at_str,
+                        indexed_at,
+                        note.file_hash,
+                    ),
+                )
+                break
+            except sqlite3.IntegrityError as e:
+                if "permalink" in str(e) and attempt < 2:
+                    logger.warning(
+                        "Permalink race conflict (attempt %d), retrying",
+                        attempt + 1,
+                    )
+                    continue
+                raise
+
+        # Get the note ID
+        if cursor.lastrowid:
             note_id = cursor.lastrowid
+        elif existing_id:
+            note_id = existing_id
+        else:
+            cursor = await self.db.execute(
+                "SELECT id FROM notes WHERE vault_name = ? AND relative_path = ?",
+                (note.vault_name, note.relative_path),
+            )
+            row = await cursor.fetchone()
+            note_id = row['id']
 
         # Update FTS index
         tags_str = ' '.join(note.tags)

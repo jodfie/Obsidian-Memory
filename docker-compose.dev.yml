@@ -67,33 +67,19 @@ services:
       retries: 3
       start_period: 10s
 
-  web-ui:
-    build:
-      context: .
-      dockerfile: web-ui/Dockerfile
-    container_name: memory-web-dev
+  silverbullet:
+    image: ghcr.io/silverbulletmd/silverbullet:latest
+    container_name: memory-silverbullet-dev
     environment:
-      - NODE_ENV=production
-      - NEXT_TELEMETRY_DISABLED=1
-      - NEXT_PUBLIC_API_URL=http://memory-dev:8765
-      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.memory-web-dev.rule=Host(`app-dev.memory.redleif.dev`)"
-      - "traefik.http.routers.memory-web-dev.entrypoints=web"
-      - "traefik.http.services.memory-web-dev.loadbalancer.server.port=3000"
-      - "traefik.docker.network=proxy"
-      - "traefik.http.routers.memory-web-dev.middlewares=memory-web-dev-headers"
-      - "traefik.http.middlewares.memory-web-dev-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
-    networks:
-      - proxy
+      - SB_SHELL_BACKEND=off
+      - SB_SPACE_IGNORE=.obsidian,.smart-env,.stfolder,.Trash,.backups,.vscode,.gitignore,.stignore
+    volumes:
+      - /home/redleif/vaults:/space:rw
+    ports:
+      - "3001:3000"
     restart: unless-stopped
-    depends_on:
-      memory:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3

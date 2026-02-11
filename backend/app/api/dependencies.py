@@ -15,8 +15,9 @@ from app.services.search_index import SearchIndex
 from app.services.session_manager import SessionManager
 from app.services.vault_manager import VaultManager, VaultManagerConfig
 
-# Module-level cache for AIProcessor singleton
+# Module-level singletons
 _ai_processor_instance: AIProcessor | None = None
+_search_index_instance: SearchIndex | None = None
 
 
 def get_ai_processor() -> AIProcessor:
@@ -50,9 +51,15 @@ def get_markdown_parser() -> MarkdownParser:
 
 
 def get_search_index() -> SearchIndex:
-    """Get SearchIndex instance."""
-    db_path = settings.index_db_path
-    return SearchIndex(db_path)
+    """Get SearchIndex singleton instance.
+
+    Returns the same SearchIndex across all requests so the file watcher
+    and API share one SQLite connection, avoiding WAL contention.
+    """
+    global _search_index_instance
+    if _search_index_instance is None:
+        _search_index_instance = SearchIndex(settings.index_db_path)
+    return _search_index_instance
 
 
 def get_config_manager() -> ConfigurationManager:
