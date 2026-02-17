@@ -95,3 +95,26 @@ out/
 
 # Session data
 /sessions/
+
+# WIP docs and design files
+BRAIN_API.md
+CLAUDE_AI_CONNECTOR.md
+COORDINATION.md
+/docs/wip/
+
+# Embedded git repos / external projects
+/brain/Skill_Seekers/
+/brain/TheManCave/
+/brain/social-media-osint/
+/oauth-gateway/
+
+# Brain skills (managed separately)
+/brain/skills/
+
+# WIP tests not yet ready for commit
+backend/tests/api/test_recall_api.py
+backend/tests/services/test_backfill.py
+backend/tests/services/test_recall_search.py
+
+# Task Master PRD docs (reference only, not shipped)
+.taskmaster/docs/memory-decay-scoring-prd.md
