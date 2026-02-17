@@ -5,7 +5,14 @@
  * All handlers use the singleton apiClient and shared formatters.
  */
 
-import { apiClient, type NoteResponse, type ProfileResponse, ProfileNotFoundError } from './client.js';
+import {
+  apiClient,
+  type NoteResponse,
+  type ProfileResponse,
+  type RecallMemory,
+  type RecallResponse,
+  ProfileNotFoundError,
+} from './client.js';
 import { DEFAULT_LIMIT, type ResponseFormat } from './constants.js';
 import {
   formatNote,
@@ -601,6 +608,179 @@ function formatProfile(profile: ProfileResponse): string {
 }
 
 // ============================================================================
+// Recall Tool Handlers
+// ============================================================================
+
+/**
+ * Session-level dedup tracker for recall results.
+ * Tracks which note IDs have been returned recently to avoid
+ * injecting the same memories repeatedly across turns.
+ */
+class RecallDedupTracker {
+  private seen = new Map<number, number>(); // noteId -> timestamp
+  private readonly ttlMs: number;
+
+  constructor(ttlMs = 5 * 60 * 1000) {
+    this.ttlMs = ttlMs;
+  }
+
+  /** Filter out recently-seen IDs. Returns only new IDs. */
+  filterNew(noteIds: number[]): Set<number> {
+    this.prune();
+    const newIds = new Set<number>();
+    for (const id of noteIds) {
+      if (!this.seen.has(id)) {
+        newIds.add(id);
+      }
+    }
+    return newIds;
+  }
+
+  /** Mark IDs as seen. */
+  markSeen(noteIds: number[]): void {
+    const now = Date.now();
+    for (const id of noteIds) {
+      this.seen.set(id, now);
+    }
+  }
+
+  /** Remove expired entries. */
+  private prune(): void {
+    const cutoff = Date.now() - this.ttlMs;
+    for (const [id, ts] of this.seen) {
+      if (ts < cutoff) {
+        this.seen.delete(id);
+      }
+    }
+  }
+}
+
+const recallDedup = new RecallDedupTracker();
+
+export interface RecallInput {
+  query: string;
+  containerTag?: string;
+  includeProfile?: boolean;
+}
+
+export async function handleRecall({
+  query,
+  containerTag,
+  includeProfile = true,
+}: RecallInput): Promise<ToolResponse> {
+  // Map containerTag to project (strip sm_project_ prefix if present)
+  const project = containerTag
+    ? containerTag.replace(/^sm_project_/, '')
+    : undefined;
+
+  // Fetch recall results (and optionally profile) in parallel
+  const recallPromise = apiClient.recallSearch({
+    query,
+    project: project || null,
+  });
+
+  const profilePromise =
+    includeProfile && project
+      ? apiClient.getProfile(project).catch(() => null)
+      : Promise.resolve(null);
+
+  const [recallResponse, profile] = await Promise.all([
+    recallPromise,
+    profilePromise,
+  ]);
+
+  // Dedup: filter out recently-returned memories
+  const allIds = recallResponse.memories.map((m) => m.id);
+  const newIds = recallDedup.filterNew(allIds);
+  const dedupedMemories = recallResponse.memories.filter((m) =>
+    newIds.has(m.id)
+  );
+
+  // Mark returned IDs as seen
+  recallDedup.markSeen(dedupedMemories.map((m) => m.id));
+
+  const dedupedResponse = {
+    ...recallResponse,
+    memories: dedupedMemories,
+    total_found: dedupedMemories.length,
+  };
+
+  const text = formatRecallContext(dedupedResponse, profile, query);
+
+  return {
+    content: [{ type: 'text', text }],
+    structuredContent: dedupedResponse,
+  };
+}
+
+/**
+ * Format recall results as a structured context block for AI injection.
+ *
+ * Produces XML-like sections that LLMs can parse:
+ * - <user-profile> with static facts and patterns
+ * - <relevant-memories> with scored results
+ */
+function formatRecallContext(
+  recall: RecallResponse,
+  profile: ProfileResponse | null,
+  query: string
+): string {
+  const lines: string[] = [];
+
+  // Profile section (if available)
+  if (profile) {
+    lines.push('<user-profile>');
+    if (profile.static_facts.length > 0) {
+      lines.push('## User Profile');
+      for (const fact of profile.static_facts) {
+        lines.push(`- ${fact}`);
+      }
+    }
+    if (profile.dynamic_patterns.length > 0) {
+      lines.push('## Recent Patterns');
+      for (const pattern of profile.dynamic_patterns) {
+        lines.push(`- ${pattern}`);
+      }
+    }
+    if (Object.keys(profile.key_entities).length > 0) {
+      lines.push('## Key Entities');
+      for (const [category, entities] of Object.entries(
+        profile.key_entities
+      )) {
+        lines.push(`- **${category}**: ${entities.join(', ')}`);
+      }
+    }
+    lines.push('</user-profile>');
+    lines.push('');
+  }
+
+  // Memories section
+  if (recall.memories.length > 0) {
+    lines.push('<relevant-memories>');
+    for (const mem of recall.memories) {
+      lines.push(formatMemoryItem(mem));
+    }
+    lines.push('</relevant-memories>');
+  } else {
+    lines.push(`No relevant memories found for: "${query}"`);
+  }
+
+  return lines.join('\n');
+}
+
+function formatMemoryItem(mem: RecallMemory): string {
+  const parts: string[] = [];
+  parts.push(`### ${mem.title}`);
+  parts.push(`*${mem.note_type}${mem.project ? ` | ${mem.project}` : ''} | score: ${mem.score}*`);
+  if (mem.tags.length > 0) {
+    parts.push(`Tags: ${mem.tags.join(', ')}`);
+  }
+  parts.push(mem.snippet);
+  parts.push('');
+  return parts.join('\n');
+}
+
+// ============================================================================
 // Tool Dispatcher
 // ============================================================================
 
@@ -644,6 +824,8 @@ export async function dispatchToolCall(
       return handleSessionContext(args as unknown as SessionContextInput);
     case 'get_profile':
       return handleGetProfile(args as unknown as GetProfileInput);
+    case 'recall':
+      return handleRecall(args as unknown as RecallInput);
     default:
       throw new Error(`Unknown tool: ${toolName}`);
   }

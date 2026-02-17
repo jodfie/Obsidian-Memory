@@ -644,6 +644,45 @@ export class ApiClient {
     }
     return response.json() as Promise<{ status: string; message: string; project: string }>;
   }
+
+  /**
+   * Get recall configuration.
+   */
+  async getRecallConfig(): Promise<RecallConfig> {
+    const response = await fetch(`${this.baseUrl}/api/recall/config`, {
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to get recall config: ${response.statusText}`);
+    }
+    return response.json() as Promise<RecallConfig>;
+  }
+
+  /**
+   * Perform lightweight recall search.
+   */
+  async recallSearch(params: {
+    query: string;
+    project?: string | null;
+    limit?: number;
+    threshold?: number;
+  }): Promise<RecallResponse> {
+    const response = await fetch(`${this.baseUrl}/api/recall/search`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({
+        query: params.query,
+        project: params.project || null,
+        limit: params.limit,
+        threshold: params.threshold,
+      }),
+    });
+    if (!response.ok) {
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
+      throw new Error(`Failed to recall search: ${error.detail || response.statusText}`);
+    }
+    return response.json() as Promise<RecallResponse>;
+  }
 }
 
 export interface ProfileResponse {
@@ -661,6 +700,31 @@ export class ProfileNotFoundError extends Error {
     super(`No profile synthesized yet for project: ${project}`);
     this.name = 'ProfileNotFoundError';
   }
+}
+
+export interface RecallConfig {
+  enabled: boolean;
+  max_results: number;
+  min_relevance: number;
+  include_profile: boolean;
+  max_snippet_length: number;
+}
+
+export interface RecallMemory {
+  id: number;
+  title: string;
+  snippet: string;
+  note_type: string;
+  project: string | null;
+  score: number;
+  tags: string[];
+}
+
+export interface RecallResponse {
+  memories: RecallMemory[];
+  query: string;
+  total_found: number;
+  latency_ms: number;
 }
 
 /**

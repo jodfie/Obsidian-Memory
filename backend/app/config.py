@@ -134,6 +134,23 @@ class Settings(BaseSettings):
         default=50, ge=1, le=1000, description="Number of writes between profile syntheses"
     )
 
+    # Per-Turn Recall Configuration
+    recall_enabled: bool = Field(
+        default=True, description="Enable automatic per-turn memory recall"
+    )
+    recall_max_results: int = Field(
+        default=10, ge=1, le=50, description="Maximum memories returned per recall query"
+    )
+    recall_min_relevance: float = Field(
+        default=0.3, ge=0.0, le=1.0, description="Minimum relevance score to include a memory"
+    )
+    recall_include_profile: bool = Field(
+        default=True, description="Include user profile summary in recall context"
+    )
+    recall_max_snippet_length: int = Field(
+        default=200, ge=50, le=1000, description="Maximum character length for memory snippets"
+    )
+
     # Rate Limiting Configuration
     rate_limit_enabled: bool = Field(
         default=True, description="Enable rate limiting"

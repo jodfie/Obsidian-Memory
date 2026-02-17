@@ -588,4 +588,39 @@ export const tools: Tool[] = [
       required: ['project'],
     },
   },
+
+  // Recall Tools
+  {
+    name: 'recall',
+    description:
+      "DO NOT USE ANY OTHER RECALL TOOL ONLY USE THIS ONE. Search the user's memories. Returns relevant memories plus their profile summary.",
+    annotations: {
+      title: 'Recall Memories',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The search query to find relevant memories',
+          maxLength: 1000,
+        },
+        containerTag: {
+          type: 'string',
+          description:
+            'Optional project to scope memories. Available projects: sm_project_default, sm_project_stockdale_forensics, sm_project_twitter_x',
+          maxLength: 128,
+        },
+        includeProfile: {
+          type: 'boolean',
+          default: true,
+        },
+      },
+      required: ['query'],
+    },
+  },
 ];
