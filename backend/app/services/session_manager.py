@@ -18,6 +18,7 @@ from app.models.session import (
 )
 from app.services.ai_processor import AIProcessor
 from app.services.exceptions import AIProcessorUnavailableError
+from app.utils.context_stripping import strip_injected_context, MIN_CONTENT_LENGTH
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +146,26 @@ class SessionManager:
         session = await self.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
+
+        # Strip injected context blocks to prevent feedback loops
+        cleaned = strip_injected_context(content)
+        if cleaned != content:
+            logger.debug(
+                "Stripped context blocks from session %s event", session_id
+            )
+
+        # Skip if remaining content is too short after stripping
+        if len(cleaned) < MIN_CONTENT_LENGTH:
+            logger.info(
+                "Skipping session %s event: content too short after "
+                "stripping (%d < %d chars)",
+                session_id,
+                len(cleaned),
+                MIN_CONTENT_LENGTH,
+            )
+            return session
+
+        content = cleaned
 
         if custom_id is not None:
             # Upsert: find existing event with matching custom_id

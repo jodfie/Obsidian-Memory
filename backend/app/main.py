@@ -8,10 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.ai import router as ai_router
+from app.api.decay import router as decay_router
+from app.api.decisions import router as decisions_router
 from app.api.graph import router as graph_router
 from app.api.mcp import router as mcp_router
 from app.api.notes import router as notes_router
 from app.api.profile import router as profile_router
+from app.api.recall import router as recall_router
 from app.api.projects import router as projects_router
 from app.api.sessions import router as sessions_router
 from app.api.sync import router as sync_router
@@ -98,8 +101,11 @@ app.include_router(projects_router)
 app.include_router(sessions_router)
 app.include_router(ai_router)
 app.include_router(profile_router)
+app.include_router(recall_router)
 app.include_router(graph_router)
 app.include_router(sync_router)
+app.include_router(decay_router)
+app.include_router(decisions_router)
 app.include_router(mcp_router)  # MCP server proxy (OAuth handled by gateway)
 
 # Include versioned API routers (v1 with Postgres-backed operations)

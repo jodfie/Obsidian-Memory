@@ -3,8 +3,9 @@
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from anthropic import Anthropic, APIError, RateLimitError
 
@@ -26,6 +27,35 @@ from app.models.search import IndexedNote
 from app.services.exceptions import AIProcessorError, AIProcessorUnavailableError
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ExtractedDecision:
+    """A decision extracted by AI analysis."""
+
+    content: str
+    rationale: str | None
+    confidence: float
+    decision_type: Literal['decision', 'convention', 'preference']
+    entities: list[str] = field(default_factory=list)
+
+
+def ai_decision_to_observation(
+    decision: ExtractedDecision,
+    line_number: int = 0,
+) -> "Observation":
+    """Convert an AI-extracted decision to an Observation model."""
+    from app.models.note import Observation, ObservationCategory
+
+    return Observation(
+        category=ObservationCategory.DECISION,
+        content=decision.content,
+        tags=[],
+        context=decision.rationale,
+        line_number=line_number,
+        auto_extracted=True,
+        decay_override='permanent',
+    )
 
 
 class AIProcessor:
@@ -905,3 +935,69 @@ Rules:
                 last_synthesized=datetime.now(timezone.utc),
                 synthesis_note_count=len(results),
             )
+
+    async def extract_decisions(
+        self,
+        content: str,
+        note_title: str | None = None,
+    ) -> list[ExtractedDecision]:
+        """Extract decisions, conventions, and preferences using Claude AI.
+
+        Finds implicit decisions that regex patterns miss.
+        Cost: ~500-1000 tokens per note (~$0.002/note with Sonnet).
+
+        Args:
+            content: Note content to analyze.
+            note_title: Optional title for context.
+
+        Returns:
+            List of extracted decisions (empty on error or AI unavailable).
+        """
+        system_prompt = """You are analyzing a technical note for decisions, conventions, and architectural choices.
+
+Extract each decision as a JSON object:
+- "content": The full decision statement (1-2 sentences)
+- "rationale": Why this decision was made (null if not stated)
+- "confidence": How firm the decision seems (0.0-1.0)
+- "type": "decision" | "convention" | "preference"
+- "entities": List of technologies/concepts involved
+
+Only extract genuine decisions, not observations or descriptions. A decision implies a choice was made between alternatives.
+
+Return JSON: {"decisions": [...]}"""
+
+        user_prompt = (
+            f"Analyze this note for decisions and conventions:\n\n"
+            f"Title: {note_title or 'Untitled'}\n\n"
+            f"Content:\n{content[:4000]}"
+        )
+
+        try:
+            response = await self._call_claude(
+                system_prompt, user_prompt, max_tokens=1024
+            )
+            data = self._parse_json_response(response)
+
+            decisions = []
+            for item in data.get("decisions", []):
+                try:
+                    decisions.append(
+                        ExtractedDecision(
+                            content=item.get("content", ""),
+                            rationale=item.get("rationale"),
+                            confidence=min(1.0, max(0.0, item.get("confidence", 0.8))),
+                            decision_type=item.get("type", "decision"),
+                            entities=item.get("entities", []),
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to parse decision: {item}, error: {e}")
+
+            return decisions
+
+        except AIProcessorUnavailableError:
+            logger.info("AI processing unavailable, skipping decision extraction")
+            return []
+        except Exception as e:
+            logger.error(f"Error extracting decisions: {e}")
+            return []

@@ -602,7 +602,7 @@
         "dependencies": [
           "25"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -610,9 +610,10 @@
             "description": "Create the ExtractedDecision dataclass with fields: content (str), rationale (str | None), confidence (float), decision_type (Literal['decision', 'convention', 'preference']), and entities (list[str]). This data structure will hold AI-extracted decisions before conversion to Observation objects.",
             "dependencies": [],
             "details": "Add the dataclass import and define ExtractedDecision at the top of ai_processor.py, after the existing imports but before the AIProcessor class. Use the @dataclass decorator. The decision_type field should use Literal type hint from typing module. Confidence should be a float between 0.0-1.0, though validation happens in the extraction method. This follows the same pattern as existing Pydantic models in app/models/ai.py but uses dataclass for simpler internal data structure.\n<info added on 2026-02-14T20:43:48.351Z>\nI'll analyze the codebase to understand the current implementation and then provide the reference documentation context for this subtask.Based on the design document (Feature 2: Decision Extraction - AI Extraction) and implementation plan (Phase 7: AI Decision Extraction), the ExtractedDecision dataclass should align with the AI extraction system prompt specification.\n\nDesign doc specifies that AI extraction should return JSON objects with fields: content, rationale, confidence (0.0-1.0), decision_type (decision/convention/preference), and entities (list of technologies/concepts). The implementation plan describes these as an ExtractedDecision dataclass that gets converted to Observation rows.\n\nThe subtask update should reference these specific design and implementation documents to ensure the dataclass structure matches the AI extraction contract.\n\nDesign document location: docs/wip/memory-decay-scoring/design.md (Feature 2: Decision Extraction - AI Extraction, lines 103-126). Implementation plan location: docs/wip/memory-decay-scoring/implementation.md (Phase 7: AI Decision Extraction, lines 360-398). The ExtractedDecision dataclass must match the AI extraction system prompt specification with five fields: content (str), rationale (str | None), confidence (float 0.0-1.0), decision_type (Literal['decision', 'convention', 'preference']), and entities (list[str]). These fields align with the JSON structure returned by Claude API and will be converted to Observation rows with category='decision', auto_extracted=1, decay_override='permanent' by the API endpoint in Phase 6.\n</info added on 2026-02-14T20:43:48.351Z>",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test: instantiate ExtractedDecision with all fields and verify field access. Test with None rationale. Test with empty entities list. Verify type hints are correct using mypy or runtime type checking if available.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:36:29.097Z"
           },
           {
             "id": 2,
@@ -622,9 +623,10 @@
               1
             ],
             "details": "Add the method to AIProcessor class in backend/app/services/ai_processor.py. Use the existing _call_claude() helper method with max_tokens=1024. Content should be truncated to 4000 chars for cost control. System prompt should instruct Claude to find decisions, conventions, and architectural choices, extracting each as JSON with content, rationale, confidence (0.0-1.0), type (decision|convention|preference), and entities. User prompt format: 'Analyze this note for decisions:\\n\\nTitle: {title}\\n\\nContent:\\n{content[:4000]}'. Parse response with _parse_json_response(). Extract 'decisions' array from parsed JSON. For each item, create ExtractedDecision with bounds-checked confidence (min 0.0, max 1.0). Handle AIProcessorUnavailableError by returning empty list. Log warnings for unparseable decisions. Catch general exceptions and return empty list with error logging.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Mock _call_claude to return JSON with sample decisions, verify ExtractedDecision objects created correctly. 2. Test confidence clamping: mock response with confidence >1.0 and <0.0, verify bounded to [0.0, 1.0]. 3. Test AIProcessorUnavailableError handling: mock to raise exception, verify returns empty list. 4. Test malformed JSON: mock invalid response, verify returns empty list and logs error. 5. Test content truncation: pass >4000 char content, verify only first 4000 chars sent to API (inspect _call_claude call args). 6. Test with null note_title, verify method works.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:36:29.111Z"
           },
           {
             "id": 3,
@@ -634,9 +636,10 @@
               1
             ],
             "details": "Add this function in ai_processor.py as a module-level function (not a method of AIProcessor). It should be placed after the ExtractedDecision dataclass definition and before the AIProcessor class. Import Observation and ObservationCategory from app.models.note. The function creates an Observation with: category=ObservationCategory.DECISION, content=decision.content, tags=[] (empty, as AI doesn't extract inline tags), context=decision.rationale (rationale goes in context field), line_number=line_number (defaults to 0 for AI-extracted), auto_extracted=True, decay_override='permanent'. Return the constructed Observation object.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test: create sample ExtractedDecision, call helper, verify Observation fields match. Test with None rationale -> context should be None. Test with custom line_number. Verify category is DECISION. Verify auto_extracted=True and decay_override='permanent'. Test that entities are not included (not part of Observation model).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:36:29.126Z"
           },
           {
             "id": 4,
@@ -646,9 +649,10 @@
               2
             ],
             "details": "Add tests to backend/tests/services/test_ai_processor.py following existing test patterns. Use @pytest.mark.asyncio for async tests. Mock _call_claude using unittest.mock.patch or AsyncMock. Test cases: (1) test_extract_decisions_implicit_patterns: mock Claude response with implicit decisions (no trigger words like 'decided'), verify ExtractedDecision objects created; (2) test_extract_decisions_confidence_bounds: mock response with confidence values <0, >1, and in range, verify clamped to [0.0, 1.0]; (3) test_extract_decisions_api_unavailable: mock _call_claude to raise AIProcessorUnavailableError, verify returns empty list and logs appropriately; (4) test_extract_decisions_content_truncation: pass note with >4000 chars, verify _call_claude receives truncated content; (5) test_extract_decisions_malformed_response: mock invalid JSON response, verify returns empty list; (6) test_extract_decisions_empty_note: pass empty content, verify handles gracefully; (7) test_extract_decisions_multiple_types: mock response with decision/convention/preference types, verify all parsed correctly.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run pytest on test_ai_processor.py. All new tests should pass. Use pytest-cov to verify coverage of extract_decisions() method reaches >90%. Check that error paths are tested (exception handling). Verify mocks are properly set up and _call_claude is actually called with expected args.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:36:29.139Z"
           },
           {
             "id": 5,
@@ -660,11 +664,13 @@
               4
             ],
             "details": "Add integration test to backend/tests/services/test_ai_processor.py (or test_integration.py if that's the pattern). Test should: (1) Create sample note content with implicit decisions; (2) Mock _call_claude to return realistic decision extraction JSON; (3) Call extract_decisions() on the content; (4) For each ExtractedDecision, call _ai_decision_to_observation() helper; (5) Verify Observation objects have correct fields: category=DECISION, auto_extracted=True, decay_override='permanent', content matches decision.content, context matches decision.rationale; (6) Verify that the Observation objects would be acceptable to the index_note method (basic validation). This ensures the AI extraction workflow integrates properly with existing observation handling code. Test both cases: decisions with rationale and without.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run pytest on integration test. Verify it exercises both extract_decisions() and _ai_decision_to_observation(). Check that Observation objects match expected schema. Optionally: actually pass the observations to a test SearchIndex instance to verify they can be indexed (requires test database fixture). Use assertions to validate all critical fields.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:36:29.148Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-02-17T22:36:29.148Z"
       },
       {
         "id": "31",
@@ -676,7 +682,7 @@
         "dependencies": [
           "28"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -684,9 +690,10 @@
             "description": "Create backend/app/api/decay.py with router setup and three Pydantic response models: DecayRunResponse (decayed/protected/expired/message), DecayStats (by_class/expired_count/low_confidence_count/decision_protected_count/average_confidence), and DecayOverrideRequest (decay_class/confidence fields).",
             "dependencies": [],
             "details": "Create the file at backend/app/api/decay.py following the existing router pattern from notes.py. Import FastAPI components (APIRouter, Depends, HTTPException, status), Pydantic (BaseModel, Field), and dependencies (get_search_index). Define router with prefix='/api/notes/decay' and tags=['decay']. Create three Pydantic models matching the types specified in design.md: DecayRunResponse with int fields for counts and str message, DecayStats with dict[str, int] for by_class breakdown and float for average_confidence, DecayOverrideRequest with optional DecayClass enum and bounded confidence (0.0-1.0) using Field validators.\n<info added on 2026-02-14T20:44:23.988Z>\nI'll analyze the codebase to provide accurate, implementation-specific guidance for this subtask.Now I'll check the existing API structure and read the dependencies file to understand the routing pattern:Based on my analysis of the codebase and the reference documents, I can provide a specific implementation-aware update for this subtask. The key files to reference are:\n\n1. **Design.md section**: \"New API Endpoints\" table (lines 197-204) specifying the decay.py router structure\n2. **Implementation.md Phase 6**: \"New API Endpoints\" section (lines 295-356) with detailed implementation guidance\n3. **Existing pattern**: backend/app/api/notes.py (lines 1-42) showing the router structure with FastAPI, Pydantic, and dependencies\n\nCreate decay router file backend/app/api/decay.py with FastAPI router configuration (prefix='/api/notes/decay', tags=['decay']). Define three Pydantic response models matching design.md specification: DecayRunResponse (fields: decayed, protected, expired, message as integers/string), DecayStats (fields: by_class as dict[str,int], expired_count, low_confidence_count, decision_protected_count, average_confidence), DecayOverrideRequest (fields: optional decay_class as Literal enum, confidence as float with Field(ge=0.0, le=1.0) validator). Import pattern from notes.py: APIRouter, Depends, HTTPException, status from fastapi; BaseModel, Field from pydantic; get_search_index from dependencies. Router will be registered in main.py following pattern at lines 94-102. Reference implementation.md Phase 6 lines 307-323 for endpoint implementation details.\n</info added on 2026-02-14T20:44:23.988Z>",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify file creates without import errors. Test Pydantic models validate correctly: DecayOverrideRequest should reject confidence values outside 0.0-1.0 range (test with -0.1 and 1.5). Confirm router object instantiates with correct prefix and tags attributes.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:39:16.321Z"
           },
           {
             "id": 2,
@@ -696,9 +703,10 @@
               1
             ],
             "details": "In backend/app/api/decay.py, implement @router.post('/run', response_model=DecayRunResponse) async function. Use Depends(get_search_index) for dependency injection. Check if search_index.db is initialized (if not, call await search_index.initialize()). Call await search_index.decay_confidence() to get stats dict with keys 'decayed', 'protected', 'expired'. Return DecayRunResponse with these values plus a formatted message string. Follow the pattern from notes.py:44-50 for index initialization. Handle any exceptions and convert to HTTPException with appropriate status codes.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test endpoint returns 200 with valid DecayRunResponse structure. Mock search_index.decay_confidence() to return test stats {'decayed': 5, 'protected': 3, 'expired': 2}. Verify response.decayed=5, response.protected=3, response.expired=2, response.message contains all three counts. Test behavior when SearchIndex not initialized (should auto-initialize). Test error handling when decay_confidence() raises exception.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:39:16.330Z"
           },
           {
             "id": 3,
@@ -708,9 +716,10 @@
               1
             ],
             "details": "In backend/app/api/decay.py, implement @router.get('/stats', response_model=DecayStats) async function. Use search_index.db.execute() for five SQL queries: 1) GROUP BY decay_class to get by_class counts dict, 2) COUNT notes WHERE expires_at < datetime('now') for expired_count, 3) COUNT notes WHERE confidence < 0.5 for low_confidence_count, 4) COUNT DISTINCT note_id FROM observations WHERE decay_override = 'permanent' for decision_protected_count, 5) AVG(confidence) FROM notes for average_confidence (default to 1.0 if NULL). Follow the async cursor pattern: cursor = await search_index.db.execute(sql), then await cursor.fetchone()/fetchall(). Round average_confidence to 4 decimal places. Return DecayStats with all fields populated.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test endpoint returns 200 with valid DecayStats structure. Populate test database with notes in different decay_class values (permanent=2, stable=5, active=3), some expired notes (3), some with confidence<0.5 (4), and observations with decay_override='permanent' (2 unique note_ids). Verify response.by_class={'permanent': 2, 'stable': 5, 'active': 3}, response.expired_count=3, response.low_confidence_count=4, response.decision_protected_count=2, response.average_confidence is float rounded to 4 places. Test empty database returns sensible defaults (average_confidence=1.0).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:39:16.338Z"
           },
           {
             "id": 4,
@@ -720,9 +729,10 @@
               1
             ],
             "details": "In backend/app/api/decay.py, implement @router.put('/{note_id}', response_model=dict) async function with note_id: int path parameter and DecayOverrideRequest body. Validate note exists with SELECT query. If request.decay_class is provided, calculate new expires_at using TTL rules from design.md (permanent=NULL, stable=90 days, active=14 days, session=24h, checkpoint=4h). If request.confidence is provided, validate 0.0 <= confidence <= 1.0 (already enforced by Pydantic Field). Build UPDATE statement: 'UPDATE notes SET decay_class=?, confidence=?, expires_at=? WHERE id=?' with only non-None fields. Return dict with updated note_id, decay_class, confidence, expires_at. Raise HTTPException 404 if note_id doesn't exist, 422 if invalid decay_class value.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test successful override: PUT /api/notes/1/decay with {decay_class: 'active', confidence: 0.8} returns updated values. Verify database UPDATE occurred: SELECT decay_class, confidence, expires_at FROM notes WHERE id=1 shows new values. Test expires_at calculation: setting decay_class='active' should set expires_at to now+14 days, 'stable' to now+90 days, 'permanent' to NULL. Test 404 error for non-existent note_id. Test 422 error for invalid decay_class='invalid'. Test confidence bounds: reject confidence=1.5, accept confidence=0.0 and confidence=1.0. Test partial update: only decay_class without confidence, and vice versa.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:39:16.348Z"
           },
           {
             "id": 5,
@@ -734,11 +744,13 @@
               4
             ],
             "details": "In backend/app/main.py, add import statement at top of file: 'from app.api.decay import router as decay_router' (insert after existing router imports around line 10-18). Add router registration line after the existing include_router calls (after line 101, before v1_router registration): 'app.include_router(decay_router)'. Follow the exact pattern of existing router registrations - single line with no additional arguments (prefix and tags already defined in the router object). Maintain alphabetical ordering preference if present, otherwise add after mcp_router. No other changes needed - FastAPI will automatically discover all endpoints defined in the decay router.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Start FastAPI application and verify decay endpoints are registered: check FastAPI interactive docs at /docs shows three new endpoints under 'decay' tag: POST /api/notes/decay/run, GET /api/notes/decay/stats, PUT /api/notes/{note_id}/decay. Test each endpoint is callable: POST /decay/run returns DecayRunResponse, GET /decay/stats returns DecayStats, PUT /decay/1 with valid body returns updated note. Verify endpoints respect existing middleware (auth, CORS, rate limiting). Test application starts without import errors or router registration conflicts.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:39:16.356Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-02-17T22:39:16.356Z"
       },
       {
         "id": "32",
@@ -751,7 +763,7 @@
           "29",
           "30"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -759,9 +771,10 @@
             "description": "Create ExtractDecisionsRequest, ExtractDecisionsResponse, BulkExtractRequest, and BulkExtractResponse models in backend/app/api/models.py following existing patterns.",
             "dependencies": [],
             "details": "Add the following models to backend/app/api/models.py:\n\n1. ExtractDecisionsRequest(BaseModel):\n   - method: Literal['regex', 'ai', 'both'] = 'regex'\n   - dry_run: bool = False\n\n2. ExtractDecisionsResponse(BaseModel):\n   - extracted: int (number of decisions extracted)\n   - decisions: list[dict] (preview of extracted decisions, limited to 10)\n   - dry_run: bool\n\n3. BulkExtractRequest(BaseModel):\n   - method: Literal['regex', 'ai', 'both'] = 'regex'\n   - vault: str | None = None\n   - project: str | None = None\n   - dry_run: bool = False\n   - reprocess: bool = False (re-extract even if already processed)\n\n4. BulkExtractResponse(BaseModel):\n   - notes_scanned: int\n   - extracted: int\n   - decisions: list[dict] (preview limited to 10)\n   - dry_run: bool\n\nFollow the same structure and style as existing models like ExtractEntitiesRequest/Response (lines 729-835 in notes.py). Use Field(...) for required fields and Field(default=X) for optional fields with descriptive documentation.\n<info added on 2026-02-14T20:45:01.403Z>\nI'll analyze the codebase to understand the current API structure and then provide the appropriate update for the subtask.Let me use alternative tools to read the design documents:Based on the design document and implementation plan, I need to reference the specific API endpoint details. Let me check the implementation plan's Phase 6 section more carefully:\n\nFrom the design.md (lines 196-212) and implementation.md (lines 295-356), I can see the complete specification for the new API endpoints for decision extraction:\n\n**New API Endpoints for Decision Extraction:**\n- `POST /api/notes/{note_id}/extract-decisions` - Extract decisions from single note\n- `POST /api/notes/extract-decisions` - Bulk decision extraction with filters\n\nThe implementation plan Phase 6 (lines 324-336) provides the specific details for these endpoints including request parameters and response structure.\n\nDesign document table \"New API Endpoints\" (lines 196-204) and \"Modified Existing Endpoints\" (lines 206-212) provide the complete API contract.\n\nHere is the new text content that should be appended to the subtask details:\n\nAPI Endpoint Specifications (from design.md lines 196-212 and implementation.md lines 324-336):\n\nSingle note extraction endpoint:\nPOST /api/notes/{note_id}/extract-decisions\nQuery params: method=regex|ai|both (default: regex), dry_run=false\nReturns: ExtractDecisionsResponse with extracted count and decisions preview\n\nBulk extraction endpoint:\nPOST /api/notes/extract-decisions\nQuery params: vault, project, method, dry_run, reprocess (re-extract even if already processed)\nReturns: BulkExtractResponse with notes_scanned, extracted count, and decisions preview\n\nImplementation requirements (from implementation.md Phase 6):\n- Add endpoints to existing api/notes.py or create new api/decisions.py router\n- Reads note content, runs extraction method(s), stores new observations\n- Supports regex, AI, or both methods\n- Dry run mode returns decisions without persisting\n- Iteration over matching notes for bulk operation\n- Returns preview list limited to 10 decisions\n- Integration with modified search endpoint to pass include_expired and return score_breakdown\n</info added on 2026-02-14T20:45:01.403Z>",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Import models in test file and instantiate with valid data\n2. Test default values (method='regex', dry_run=False, reprocess=False)\n3. Test validation: method must be one of regex/ai/both\n4. Test optional fields can be None (vault, project)\n5. Verify Field descriptions are present",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:46:27.752Z"
           },
           {
             "id": 2,
@@ -771,9 +784,10 @@
               1
             ],
             "details": "In backend/app/services/markdown_parser.py, add a new method `extract_decisions_from_prose(content: str, existing_observations: list) -> list[Observation]`:\n\n1. Define regex patterns for decision language:\n   - 'decided/chose/picked/selected X because/since/for/due to Y'\n   - 'use/chose/prefer X over/instead of Y (because Z)'\n   - 'always/never/must/should always/should never X'\n   - 'went with/sticking with X for/due to Y'\n\n2. Get code block ranges using existing _get_code_block_ranges() method to skip code\n3. Skip existing observation lines (lines matching OBSERVATION_PATTERN)\n4. For each match:\n   - Extract the full sentence containing the decision\n   - Create Observation with category='decision', auto_extracted=True\n   - Check for duplicates against existing_observations by content similarity\n5. Return list of unique Observation objects\n\nReference existing extract_observations() method (lines 84, 31-34) for code structure patterns. Use the OBSERVATION_PATTERN regex at line 31-34 to skip existing observation lines.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Test with sample text containing 'decided to use X because Y'\n2. Test skipping code blocks containing decision keywords\n3. Test skipping existing observation lines\n4. Test deduplication against existing observations\n5. Test multiple patterns in one text\n6. Verify Observation objects have category='decision' and auto_extracted=True",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:46:27.763Z"
           },
           {
             "id": 3,
@@ -783,9 +797,10 @@
               1
             ],
             "details": "In backend/app/services/ai_processor.py, add method `async def extract_decisions(content: str, title: str) -> list[dict]`:\n\n1. Create system prompt:\n   - \"You are analyzing technical notes to extract decisions. Identify explicit and implicit decisions made.\"\n   - \"For each decision: extract the decision text, rationale (why it was made), and confidence (0.0-1.0).\"\n   - \"Return JSON array: [{\"content\": \"decision text\", \"rationale\": \"reason\", \"confidence\": 0.9}, ...]\"\n\n2. Build user prompt with note title and content\n3. Call _call_claude() with system_prompt, user_prompt, max_tokens=2048\n4. Parse JSON response into list of decision dicts\n5. Validate each dict has content, rationale, confidence fields\n6. Handle API errors and return empty list on failure\n\nReference extract_entities() method (lines 796-802 in notes.py) for similar AI extraction pattern. Use existing _call_claude() infrastructure (lines 65-100 in ai_processor.py).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Test with note containing explicit decision ('decided to use X')\n2. Test with note containing implicit decision (pattern without trigger words)\n3. Test confidence scoring (0.0-1.0 range)\n4. Test rationale extraction from context\n5. Test JSON parsing error handling\n6. Test AI unavailable scenario (returns empty list)\n7. Mock _call_claude to avoid API costs in tests",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:46:27.773Z"
           },
           {
             "id": 4,
@@ -797,9 +812,10 @@
               3
             ],
             "details": "Add endpoint to backend/app/api/notes.py after the entity extraction endpoints (after line 977):\n\n```python\n@router.post(\"/{note_id}/extract-decisions\", response_model=ExtractDecisionsResponse)\nasync def extract_decisions_single(\n    note_id: int,\n    request: ExtractDecisionsRequest,\n    search_index: SearchIndex = Depends(get_search_index),\n    parser: MarkdownParser = Depends(get_markdown_parser),\n    ai_processor: AIProcessor = Depends(get_ai_processor),\n    vault_manager: VaultManager = Depends(get_vault_manager),\n) -> ExtractDecisionsResponse:\n```\n\n1. Get note by ID, raise 404 if not found\n2. Get full content from vault_manager\n3. Get existing observations from search_index (need to check if method exists)\n4. Extract decisions based on method:\n   - 'regex': call parser.extract_decisions_from_prose()\n   - 'ai': call ai_processor.extract_decisions()\n   - 'both': combine results from both methods\n5. Format decisions as list[dict] with content, method, rationale (if AI), confidence\n6. If not dry_run: store in observations table with category='decision', auto_extracted=1, decay_override='permanent'\n7. Return ExtractDecisionsResponse with count, preview (first 10), dry_run flag\n\nReference extract_entities() endpoint (lines 729-835) for similar structure.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Test POST with method='regex' extracts decisions\n2. Test POST with method='ai' uses AI extraction\n3. Test POST with method='both' combines results\n4. Test dry_run=true doesn't persist to database\n5. Test dry_run=false persists observations\n6. Test 404 for invalid note_id\n7. Test decision preview limited to 10 items\n8. Test stored observations have decay_override='permanent'",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:46:27.786Z"
           },
           {
             "id": 5,
@@ -812,11 +828,13 @@
               4
             ],
             "details": "Add bulk endpoint to backend/app/api/notes.py after the single-note endpoint:\n\n```python\n@router.post(\"/extract-decisions\", response_model=BulkExtractResponse)\nasync def extract_decisions_bulk(\n    request: BulkExtractRequest,\n    search_index: SearchIndex = Depends(get_search_index),\n    parser: MarkdownParser = Depends(get_markdown_parser),\n    ai_processor: AIProcessor = Depends(get_ai_processor),\n    vault_manager: VaultManager = Depends(get_vault_manager),\n) -> BulkExtractResponse:\n```\n\n1. Build SearchQuery with vault/project filters, query='*' to match all\n2. Call search_index.search() to get filtered notes\n3. For each note:\n   - Skip if already processed and reprocess=False (check for auto_extracted decisions)\n   - Get full content from vault_manager\n   - Get existing observations\n   - Extract decisions using specified method (regex/ai/both)\n   - If not dry_run: persist to observations table\n   - Accumulate counts and preview decisions (limit to 10 total)\n4. Return BulkExtractResponse with notes_scanned, extracted count, decisions preview, dry_run flag\n\nReference list_notes() endpoint (lines 52-116) for query building pattern. Use similar error handling as search_notes() (lines 552-606).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Test bulk extraction with vault filter\n2. Test bulk extraction with project filter\n3. Test bulk extraction with both filters\n4. Test reprocess=false skips already-processed notes\n5. Test reprocess=true re-extracts from all notes\n6. Test dry_run=true doesn't persist\n7. Test notes_scanned count matches query results\n8. Test extracted count reflects actual extractions\n9. Test decision preview limited to 10 across all notes\n10. Test empty result set (no matching notes)",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:46:27.795Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-02-17T22:46:27.795Z"
       },
       {
         "id": "33",
@@ -829,7 +847,7 @@
           "26",
           "29"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -837,9 +855,10 @@
             "description": "Add logic to detect if backfill has already completed by checking for non-default decay_class values or non-null last_accessed_at timestamps in the notes table.",
             "dependencies": [],
             "details": "Create the backfill guard query that checks if any notes have been classified (decay_class != 'stable' OR last_accessed_at IS NOT NULL). If count > 0, log 'Decay backfill already completed, skipping' and return early. This ensures idempotency - the backfill only runs once after the schema migration, never on subsequent startups. The guard should execute before any expensive operations to minimize overhead on normal startups.\n<info added on 2026-02-14T20:45:37.719Z>\nI'll analyze the codebase to understand the current implementation and the referenced design documents.Based on my analysis of the codebase and the referenced design documents, here is the new text that should be appended to subtask 33.1:\n\n**Implementation Location**: Add to `backend/app/services/search_index.py` in the `_backfill_decay_and_decisions()` method (Phase 8 of implementation plan). The guard check should execute BEFORE the main backfill loops that classify notes and extract decisions.\n\n**Guard Query Design** (per design.md line 228 and implementation.md lines 413-428): Query for any notes where `decay_class != 'stable'` OR `last_accessed_at IS NOT NULL`. Default values after schema migration are `decay_class='stable'` (schema default) and `last_accessed_at=NULL`. Any deviation indicates backfill has already run or users have manually classified notes.\n\n**SQL Implementation**:\n```python\ncursor = await self.db.execute(\n    \"SELECT COUNT(*) FROM notes WHERE decay_class != 'stable' OR last_accessed_at IS NOT NULL\"\n)\ncount = (await cursor.fetchone())[0]\nif count > 0:\n    logger.info(f\"Decay backfill already completed ({count} notes classified), skipping\")\n    return\n```\n\n**Performance Consideration**: This guard query uses indexed columns (`idx_notes_decay_class`, `idx_notes_last_accessed` added in Phase 1) and executes in <1ms even for 10,000+ notes, ensuring minimal overhead on normal application startups.\n\n**Integration Point**: Call site is in `initialize()` method after `_create_schema()` completes and decay columns exist. The backfill method should be wrapped in a try/except to prevent startup failures if backfill encounters errors on legacy data.\n</info added on 2026-02-14T20:45:37.719Z>",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with fresh database (backfill runs), then restart (backfill skipped). Verify log messages. Test with partially backfilled database (some notes have decay_class set) to ensure guard works correctly.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:31:24.923Z"
           },
           {
             "id": 2,
@@ -849,9 +868,10 @@
               1
             ],
             "details": "Execute SQL query: SELECT n.id, n.note_type, n.content, n.indexed_at, GROUP_CONCAT(t.tag) as tags FROM notes n LEFT JOIN note_tags t ON n.id = t.note_id GROUP BY n.id. Process results in batches of 100 to balance memory usage and commit frequency. For each note, split the comma-separated tags string into a list (or empty list if NULL). Store the indexed_at timestamp for later use as last_accessed_at. This step prepares all data needed for decay classification without making individual queries per note.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with 0 notes, 1 note, 50 notes, and 1000+ notes. Verify batching works correctly. Test notes with 0 tags, 1 tag, and multiple tags. Measure performance - should handle 1000 notes in <5 seconds.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:31:24.940Z"
           },
           {
             "id": 3,
@@ -861,9 +881,10 @@
               2
             ],
             "details": "Import classify_decay and calculate_expiry from Task 26's implementation. For each note: decay_class = classify_decay(note['note_type'] or 'note', tags, {}, content). Then: expires_at = calculate_expiry(decay_class). Set last_accessed_at = note['indexed_at'] (the original indexing timestamp). Execute UPDATE notes SET decay_class=?, expires_at=?, last_accessed_at=? WHERE id=? for each note. Since classify_decay() hasn't been implemented yet, this subtask depends on Task 26 completion. The empty frontmatter dict {} is used because existing notes don't have decay_class in frontmatter - that's a new feature.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test classify_decay with various note_types and tags. Test calculate_expiry for all decay classes. Test UPDATE SQL with sample note IDs. Verify expires_at is NULL for permanent, valid timestamps for others. Verify last_accessed_at equals indexed_at.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:31:24.949Z"
           },
           {
             "id": 4,
@@ -873,9 +894,10 @@
               2
             ],
             "details": "Create _extract_decisions_simple(self, content: str, existing: set) -> list[str] method. Split content into lines. For each line, test against DECISION_PATTERNS (from Task 26). If pattern matches and line.lower() not in existing set, append line.strip() to decisions list. Before processing notes, pre-fetch existing decision observations: SELECT note_id, content FROM observations WHERE category='decision', then build a dict mapping note_id -> set of lowercased content strings. This deduplication prevents creating duplicate observations for decisions that might already exist (from manual entry or previous runs). The simple regex approach avoids AI overhead during backfill.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test regex patterns against sample decision text from design.md. Test deduplication with existing decisions. Test with notes containing no decisions, 1 decision, multiple decisions. Verify code blocks are NOT scanned for decisions.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:31:24.957Z"
           },
           {
             "id": 5,
@@ -886,11 +908,13 @@
               4
             ],
             "details": "For each decision string returned by _extract_decisions_simple(), execute: INSERT INTO observations(note_id, category, content, auto_extracted, decay_override) VALUES (?, 'decision', ?, 1, 'permanent'). Track total_decisions counter. After processing each batch of 100 notes, call await self.db.commit() to persist changes. At the end, log: 'Backfill complete: {len(notes)} notes classified, {total_decisions} decisions extracted in {elapsed:.2f}s'. Call this method from initialize() after _migrate_decay_schema() completes. Pass MarkdownParser() instance for potential future use (even though current implementation doesn't need it).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test INSERT SQL with sample decisions. Test commit batching. Test total performance: 781 notes should complete in <10 seconds. Test logging output. Integration test: verify decisions appear in observations table with correct flags. Verify _backfill_decay_and_decisions is called from initialize().",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:31:24.966Z"
           }
-        ]
+        ],
+        "updatedAt": "2026-02-17T22:31:24.966Z"
       },
       {
         "id": "34",
@@ -902,7 +926,7 @@
         "dependencies": [
           "29"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -910,9 +934,10 @@
             "description": "Create configuration schema for per-turn context injection with sensible defaults (auto_recall, max_recall_results, min_relevance_threshold, include_profile, recall_categories)",
             "dependencies": [],
             "details": "Add recall configuration to backend/app/config.py Settings class using pydantic:\n- auto_recall: bool (default: true) - enable/disable automatic recall\n- max_recall_results: int (default: 10) - max memories per query\n- min_relevance_threshold: float (default: 0.3) - minimum score to include\n- include_profile: bool (default: true) - include user profile section\n- recall_categories: list[str] (default: all note types) - which note types to search\n\nExport settings via backend API endpoint GET /api/v1/config/recall so MCP server can fetch configuration dynamically. Add corresponding TypeScript interface in mcp-server/src/client.ts for type safety.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Unit test: Verify Settings.recall_config loads defaults correctly\n2. Unit test: Verify custom .env values override defaults\n3. Integration test: GET /api/v1/config/recall returns valid JSON schema\n4. Type test: Verify TypeScript RecallConfig interface matches Python schema",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:20:01.141Z"
           },
           {
             "id": 2,
@@ -922,9 +947,10 @@
               1
             ],
             "details": "Implement performance optimizations in SearchIndex.search():\n1. Add LRU cache (functools.lru_cache) for repeated queries with TTL of 60 seconds\n2. Add query result size limit parameter (default: 10 results) to reduce result processing overhead\n3. Optimize FTS5 snippet generation - use _manual_snippet() only when necessary, prefer database-level snippet()\n4. Add query execution timing logging to identify slow queries (>200ms threshold)\n5. Implement early termination for similarity searches when min_relevance_threshold not met\n6. Create new lightweight search_for_recall() method that returns minimal fields (id, title, content snippet, score) instead of full note objects\n\nExpose search_for_recall() via new API endpoint POST /api/v1/search/recall with request body {query: string, limit: int, threshold: float}.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Performance test: Measure search_for_recall() latency with 10k indexed notes - must be <200ms p95\n2. Unit test: Verify LRU cache hit rate >80% for repeated queries\n3. Unit test: Verify early termination when no results meet threshold\n4. Load test: 100 concurrent recall requests should maintain <200ms p95\n5. Integration test: Verify /api/v1/search/recall returns only required fields",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:29:15.365Z"
           },
           {
             "id": 3,
@@ -935,9 +961,10 @@
               2
             ],
             "details": "Create mcp-server/src/formatters/recall.ts with buildRecallContext() function:\n\n```typescript\ninterface RecallResult {\n  memories: Array<{id: number, title: string, snippet: string, score: number}>;\n  profile?: {facts: string[], preferences: string[]};\n  session_context?: string;\n}\n\nfunction buildRecallContext(result: RecallResult): string {\n  // Build structured block:\n  // <!-- memory-context-start -->\n  // ## User Profile\n  // [Static facts and preferences from profile note]\n  // \n  // ## Relevant Memories\n  // - [note title] (relevance: 0.85): snippet...\n  // - [note title] (relevance: 0.72): snippet...\n  // \n  // ## Recent Session Context  \n  // [Current session observations]\n  // <!-- memory-context-end -->\n}\n```\n\nSupport both XML-style comment markers (for HTML/markdown injection) and plain markdown section headers. Include metadata: total_memories, search_query, timestamp.\n\nAdd unit tests in mcp-server/tests/recall-formatter.test.ts.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Unit test: buildRecallContext() with no memories returns empty context block\n2. Unit test: buildRecallContext() with 5 memories formats correctly with scores\n3. Unit test: buildRecallContext() includes profile section when profile provided\n4. Unit test: buildRecallContext() truncates long snippets to 150 chars\n5. Unit test: buildRecallContext() escapes XML special characters in content\n6. Snapshot test: Verify context block format matches SuperMemory reference format",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:29:15.378Z"
           },
           {
             "id": 4,
@@ -948,9 +975,10 @@
               3
             ],
             "details": "Create mcp-server/src/hooks/recall.ts with UserPromptSubmit hook handler:\n\n1. Register new hook in MCP server lifecycle (mcp-server/src/index.ts):\n   - Hook into message interception before tool dispatch\n   - Extract user prompt text from request\n   \n2. Implement recallAndInject() function:\n   - Call POST /api/v1/search/recall with user prompt as query\n   - Fetch recall config from GET /api/v1/config/recall\n   - Filter results by min_relevance_threshold\n   - Format results using buildRecallContext()\n   - Prepend context block to user message\n   \n3. Handle errors gracefully:\n   - If search fails, log error but don't block user prompt\n   - If search times out (>500ms), return empty context\n   - Rate limit: max 1 recall per 2 seconds per session\n\n4. Add hook registration in mcp-server/src/index.ts createServer():\n```typescript\nserver.onUserPromptSubmit(async (prompt, sessionId) => {\n  const context = await recallAndInject(prompt, sessionId);\n  return context ? `${context}\\n\\n${prompt}` : prompt;\n});\n```\n\nNote: MCP SDK may not have built-in UserPromptSubmit hook - may need to implement via message interception or transport-layer middleware.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Integration test: Submit prompt, verify search API called with correct query\n2. Integration test: Verify context block prepended to prompt\n3. Unit test: recallAndInject() respects min_relevance_threshold filter\n4. Unit test: recallAndInject() returns empty context on search timeout\n5. Integration test: Rate limiter prevents >1 recall per 2 seconds\n6. Error test: Search API failure doesn't block prompt submission",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:29:15.387Z"
           },
           {
             "id": 5,
@@ -960,12 +988,13 @@
               4
             ],
             "details": "Implement deduplication in mcp-server/src/hooks/recall.ts:\n\n1. Create SessionRecallState class:\n```typescript\nclass SessionRecallState {\n  private injectedMemoryIds: Map<string, Set<number>> = new Map();\n  \n  hasInjected(sessionId: string, memoryId: number): boolean\n  markInjected(sessionId: string, memoryId: number): void\n  clearSession(sessionId: string): void\n  pruneStale(): void // Remove sessions older than 24 hours\n}\n```\n\n2. Integrate with recallAndInject():\n   - Before formatting context, filter out memories already injected in this session\n   - After injecting context, mark all included memory IDs as injected\n   - Log deduplication statistics (e.g., \"Filtered 3/10 memories already shown\")\n\n3. Add session lifecycle management:\n   - Clear injected IDs when session ends (session_context tool with status=ended)\n   - Periodically prune stale sessions (>24 hours old) every hour\n   - Store in-memory only (no persistence needed - sessions are ephemeral)\n\n4. Add optional reset_recall_history parameter to build_context tool to force re-injection\n\n5. Expose deduplication stats via new tool recall_stats returning {session_id, total_injections, unique_memories, deduplication_rate}",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Unit test: SessionRecallState tracks injected IDs per session correctly\n2. Unit test: hasInjected() returns true for previously injected memory\n3. Integration test: Same memory not injected twice in same session\n4. Integration test: Memory CAN be injected in different sessions\n5. Unit test: pruneStale() removes sessions older than 24 hours\n6. Integration test: recall_stats tool returns accurate deduplication metrics\n7. Performance test: Deduplication check completes in <10ms with 1000 tracked memories",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:29:15.393Z"
           }
         ],
-        "updatedAt": "2026-02-17T18:58:01.808696+00:00"
+        "updatedAt": "2026-02-17T22:29:15.393Z"
       },
       {
         "id": "35",
@@ -1130,7 +1159,7 @@
         "dependencies": [
           "34"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -1138,9 +1167,10 @@
             "description": "Establish the HTML comment markers that will wrap injected memory context blocks in AI conversation content, ensuring they're easily identifiable and strippable.",
             "dependencies": [],
             "details": "Create constants for context block markers:\n- Opening marker: `<!-- memory-context-start -->`\n- Closing marker: `<!-- memory-context-end -->`\n\nThese markers will be used by task 34 (Per-Turn Context Injection) to wrap injected memory blocks. The format follows SuperMemory's pattern of using HTML comments which are:\n1. Language-agnostic (work in markdown, HTML, plain text)\n2. Non-intrusive (don't appear in rendered output)\n3. Regex-friendly (clear delimiters for pattern matching)\n\nDocument the format in a constant or configuration file (e.g., `backend/app/config.py` or create `backend/app/utils/context_markers.py`) so both the injection system (task 34) and stripping system use the same markers.\n\nExample of wrapped content:\n```\n<!-- memory-context-start -->\nRelevant Memory 1: User prefers dark mode\nRelevant Memory 2: Last discussed authentication on 2025-01-15\n<!-- memory-context-end -->\n```",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Unit test: Verify constants are defined and accessible\n2. Unit test: Verify markers are valid HTML comments (won't break markdown rendering)\n3. Documentation check: Ensure markers are documented for future reference",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:41:14.757Z"
           },
           {
             "id": 2,
@@ -1150,9 +1180,10 @@
               1
             ],
             "details": "Create `backend/app/utils/context_stripping.py` with the following implementation:\n\n```python\nimport re\nfrom typing import Pattern\n\n# Compile regex pattern at module level for performance\nCONTEXT_BLOCK_PATTERN: Pattern[str] = re.compile(\n    r'<!-- memory-context-start -->.*?<!-- memory-context-end -->',\n    re.DOTALL  # Allow . to match newlines for multi-line blocks\n)\n\ndef strip_injected_context(content: str) -> str:\n    \"\"\"Remove all injected memory context blocks from content.\n    \n    Args:\n        content: Raw content that may contain injected context blocks\n        \n    Returns:\n        Content with all context blocks removed and whitespace normalized\n        \n    Examples:\n        >>> strip_injected_context(\"Text <!-- memory-context-start -->context<!-- memory-context-end --> more\")\n        \"Text  more\"\n    \"\"\"\n    if not content:\n        return content\n    \n    # Remove all context blocks\n    stripped = CONTEXT_BLOCK_PATTERN.sub('', content)\n    \n    # Clean up excessive whitespace left by removal\n    # Replace 3+ consecutive newlines with exactly 2 newlines\n    stripped = re.sub(r'\\n{3,}', '\\n\\n', stripped)\n    \n    # Strip leading/trailing whitespace\n    return stripped.strip()\n```\n\nThe regex uses non-greedy matching (`.*?`) to handle multiple blocks correctly. The `re.DOTALL` flag ensures blocks spanning multiple lines are captured.\n\nReference: SuperMemory's `hooks/capture.ts` strips `<supermemory-context>` tags before storing.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Unit test: Single context block removal\n2. Unit test: Multiple context blocks in one message\n3. Unit test: Nested blocks (inner block should be removed)\n4. Unit test: Malformed tags (missing end tag) - graceful handling without crashes\n5. Unit test: Content with no blocks (passthrough unchanged)\n6. Unit test: Context blocks with special regex characters inside (e.g., $, *, +)\n7. Unit test: Empty content string handling\n8. Unit test: Whitespace normalization (3+ newlines become 2)",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:41:15.380Z"
           },
           {
             "id": 3,
@@ -1162,9 +1193,10 @@
               2
             ],
             "details": "Update `backend/app/services/session_manager.py`:\n\n1. Import the stripping utility:\n```python\nfrom app.utils.context_stripping import strip_injected_context\n```\n\n2. Modify `observe_event()` method (around line 102-138) to strip content before creating the event:\n```python\nasync def observe_event(\n    self,\n    session_id: str,\n    event_type: SessionEventType,\n    content: str,\n    metadata: dict[str, Any] | None = None,\n) -> Session:\n    \"\"\"Add an observation/event to a session.\n    \n    Args:\n        session_id: Session identifier\n        event_type: Type of event\n        content: Event content (will be stripped of injected context)\n        metadata: Optional metadata\n        \n    Returns:\n        Updated session\n        \n    Raises:\n        ValueError: If session not found\n    \"\"\"\n    session = await self.get_session(session_id)\n    if not session:\n        raise ValueError(f\"Session {session_id} not found\")\n    \n    # Strip injected context to prevent feedback loops\n    cleaned_content = strip_injected_context(content)\n    \n    event = SessionEvent(\n        event_type=event_type,\n        content=cleaned_content,  # Use stripped content\n        timestamp=datetime.now(),\n        metadata=metadata or {},\n    )\n    \n    session.events.append(event)\n    self._sessions[session_id] = session\n    await self._save_session(session)\n    \n    return session\n```\n\n3. Add logging for debugging:\n```python\nif content != cleaned_content:\n    logger.debug(f\"Stripped context blocks from session {session_id} event\")\n```\n\nThis ensures any session observations (manual or automatic) are cleaned before storage.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Integration test: Create session, observe event with context blocks, verify stored content is stripped\n2. Integration test: Observe event without context blocks, verify content unchanged\n3. Integration test: Observe multiple events with mixed content (some with blocks, some without)\n4. Unit test: Mock strip_injected_context to verify it's called for every observe_event\n5. Test logging output when stripping occurs",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:41:32.383Z"
           },
           {
             "id": 4,
@@ -1174,9 +1206,10 @@
               3
             ],
             "details": "Enhance the `observe_event()` method in `backend/app/services/session_manager.py` to check content length after stripping:\n\n```python\nasync def observe_event(\n    self,\n    session_id: str,\n    event_type: SessionEventType,\n    content: str,\n    metadata: dict[str, Any] | None = None,\n) -> Session:\n    \"\"\"Add an observation/event to a session.\n    \n    Args:\n        session_id: Session identifier\n        event_type: Type of event\n        content: Event content (will be stripped of injected context)\n        metadata: Optional metadata\n        \n    Returns:\n        Updated session (unchanged if content too short after stripping)\n        \n    Raises:\n        ValueError: If session not found\n    \"\"\"\n    session = await self.get_session(session_id)\n    if not session:\n        raise ValueError(f\"Session {session_id} not found\")\n    \n    # Strip injected context to prevent feedback loops\n    cleaned_content = strip_injected_context(content)\n    \n    # Skip if remaining content is too short (threshold: 10 characters)\n    MIN_CONTENT_LENGTH = 10\n    if len(cleaned_content) < MIN_CONTENT_LENGTH:\n        logger.info(\n            f\"Skipping session {session_id} event: content too short after \"\n            f\"stripping context blocks ({len(cleaned_content)} < {MIN_CONTENT_LENGTH} chars)\"\n        )\n        return session  # Return unchanged session\n    \n    event = SessionEvent(\n        event_type=event_type,\n        content=cleaned_content,\n        timestamp=datetime.now(),\n        metadata=metadata or {},\n    )\n    \n    session.events.append(event)\n    self._sessions[session_id] = session\n    await self._save_session(session)\n    \n    return session\n```\n\nThe 10-character threshold follows SuperMemory's pattern and prevents storing essentially empty observations that were just echoes of injected context.\n\nConsider making `MIN_CONTENT_LENGTH` configurable in `app/config.py` if different projects need different thresholds.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "1. Unit test: Content with 9 chars after stripping - verify event NOT added to session\n2. Unit test: Content with 10 chars after stripping - verify event IS added\n3. Unit test: Content with 50 chars after stripping - verify event IS added\n4. Integration test: Observe event that's 100% context blocks - verify session unchanged\n5. Integration test: Observe event with \"Hi <!-- context --> there friend\" - verify stored correctly\n6. Test logging output when content is skipped due to length",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:41:33.019Z"
           },
           {
             "id": 5,
@@ -1186,19 +1219,20 @@
               2
             ],
             "details": "Create `backend/tests/utils/test_context_stripping.py` with comprehensive test coverage:\n\n```python\n\"\"\"Tests for context stripping utility.\"\"\"\n\nimport pytest\nfrom app.utils.context_stripping import strip_injected_context, CONTEXT_BLOCK_PATTERN\n\n\nclass TestStripInjectedContext:\n    \"\"\"Tests for strip_injected_context function.\"\"\"\n\n    def test_single_block_removal(self):\n        \"\"\"Test removing a single context block.\"\"\"\n        content = \"Before <!-- memory-context-start -->injected<!-- memory-context-end --> after\"\n        result = strip_injected_context(content)\n        assert result == \"Before  after\"\n        assert \"injected\" not in result\n\n    def test_multiple_blocks_removal(self):\n        \"\"\"Test removing multiple context blocks.\"\"\"\n        content = (\n            \"Text1 <!-- memory-context-start -->ctx1<!-- memory-context-end --> \"\n            \"Text2 <!-- memory-context-start -->ctx2<!-- memory-context-end --> Text3\"\n        )\n        result = strip_injected_context(content)\n        assert \"ctx1\" not in result\n        assert \"ctx2\" not in result\n        assert \"Text1\" in result and \"Text2\" in result and \"Text3\" in result\n\n    def test_nested_blocks(self):\n        \"\"\"Test handling nested context blocks (inner removed).\"\"\"\n        content = (\n            \"<!-- memory-context-start -->outer <!-- memory-context-start -->inner\"\n            \"<!-- memory-context-end --> still outer<!-- memory-context-end -->\"\n        )\n        result = strip_injected_context(content)\n        # Non-greedy regex should handle this correctly\n        assert \"inner\" not in result\n        assert \"outer\" not in result\n\n    def test_malformed_missing_end_tag(self):\n        \"\"\"Test graceful handling of malformed blocks (missing end tag).\"\"\"\n        content = \"Text <!-- memory-context-start -->unclosed block remains\"\n        result = strip_injected_context(content)\n        # Should not crash, unclosed blocks are left as-is\n        assert \"Text\" in result\n\n    def test_no_blocks_passthrough(self):\n        \"\"\"Test content without blocks passes through unchanged.\"\"\"\n        content = \"This is normal content with no context blocks.\"\n        result = strip_injected_context(content)\n        assert result == content\n\n    def test_special_regex_chars_in_blocks(self):\n        \"\"\"Test blocks containing special regex characters.\"\"\"\n        content = \"Text <!-- memory-context-start -->$100 *.txt foo+bar<!-- memory-context-end --> after\"\n        result = strip_injected_context(content)\n        assert \"$100\" not in result\n        assert \"*.txt\" not in result\n        assert \"foo+bar\" not in result\n        assert \"after\" in result\n\n    def test_empty_content(self):\n        \"\"\"Test handling of empty content.\"\"\"\n        assert strip_injected_context(\"\") == \"\"\n        assert strip_injected_context(None) == None  # Should handle None gracefully\n\n    def test_whitespace_normalization(self):\n        \"\"\"Test excessive newline normalization.\"\"\"\n        content = \"Line1\\n\\n\\n\\n\\nLine2\"  # 5 newlines\n        result = strip_injected_context(content)\n        assert result == \"Line1\\n\\nLine2\"  # Normalized to 2 newlines\n\n    def test_multiline_block(self):\n        \"\"\"Test blocks spanning multiple lines.\"\"\"\n        content = (\n            \"Before\\n<!-- memory-context-start -->\\n\"\n            \"Line 1 of context\\nLine 2 of context\\n\"\n            \"<!-- memory-context-end -->\\nAfter\"\n        )\n        result = strip_injected_context(content)\n        assert \"Line 1 of context\" not in result\n        assert \"Line 2 of context\" not in result\n        assert \"Before\" in result\n        assert \"After\" in result\n\n    def test_only_context_block(self):\n        \"\"\"Test content that is 100% context block.\"\"\"\n        content = \"<!-- memory-context-start -->only context<!-- memory-context-end -->\"\n        result = strip_injected_context(content)\n        assert result == \"\"  # Empty after stripping\n\n    def test_pattern_compiled_once(self):\n        \"\"\"Test that regex pattern is pre-compiled for performance.\"\"\"\n        import re\n        assert isinstance(CONTEXT_BLOCK_PATTERN, re.Pattern)\n```\n\nAlso add integration tests in `backend/tests/services/test_session_manager.py` to verify the full pipeline works correctly with real session operations.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "All tests are the testing strategy. Run with:\n```bash\npytest backend/tests/utils/test_context_stripping.py -v\npytest backend/tests/services/test_session_manager.py::test_observe_event_strips_context -v\n```\n\nEnsure 100% code coverage for context_stripping.py module. Use pytest-cov to verify:\n```bash\npytest backend/tests/utils/test_context_stripping.py --cov=app.utils.context_stripping --cov-report=term-missing\n```\n\nTarget: >95% coverage for robustness.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:42:34.463Z"
           }
         ],
-        "updatedAt": "2026-02-17T18:58:01.808696+00:00"
+        "updatedAt": "2026-02-17T22:42:34.463Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-02-17T22:12:38.078Z",
+      "lastModified": "2026-02-17T22:46:27.796Z",
       "taskCount": 28,
-      "completedCount": 22,
+      "completedCount": 28,
       "tags": [
         "master"
       ]

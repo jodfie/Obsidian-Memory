@@ -350,3 +350,258 @@ class TestRetryLogic:
         # Should return empty result after max retries
         result = await ai_processor.extract_entities("Test")
         assert len(result.entities) == 0
+
+
+class TestExtractDecisions:
+    """Test AI decision extraction."""
+
+    @pytest.mark.asyncio
+    async def test_extract_decisions_success(self, ai_processor, mock_anthropic_client):
+        """Test successful decision extraction."""
+        mock_response = MagicMock()
+        mock_response.content = [
+            MagicMock(
+                type="text",
+                text='{"decisions": [{"content": "Use FastAPI for the backend", "rationale": "Async support and type hints", "confidence": 0.95, "type": "decision", "entities": ["FastAPI", "Python"]}]}',
+            )
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        result = await ai_processor.extract_decisions(
+            "We went with FastAPI for the backend because of async support.",
+            note_title="Architecture Choices",
+        )
+
+        assert len(result) == 1
+        assert result[0].content == "Use FastAPI for the backend"
+        assert result[0].rationale == "Async support and type hints"
+        assert result[0].confidence == 0.95
+        assert result[0].decision_type == "decision"
+        assert "FastAPI" in result[0].entities
+
+    @pytest.mark.asyncio
+    async def test_extract_decisions_implicit_patterns(self, ai_processor, mock_anthropic_client):
+        """Test extraction of implicit decisions without trigger words."""
+        mock_response = MagicMock()
+        mock_response.content = [
+            MagicMock(
+                type="text",
+                text='{"decisions": [{"content": "All API responses use JSON format", "rationale": null, "confidence": 0.7, "type": "convention", "entities": ["API", "JSON"]}]}',
+            )
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        result = await ai_processor.extract_decisions(
+            "The API endpoints return JSON. Each response includes a status field."
+        )
+
+        assert len(result) == 1
+        assert result[0].decision_type == "convention"
+        assert result[0].rationale is None
+
+    @pytest.mark.asyncio
+    async def test_extract_decisions_confidence_bounds(self, ai_processor, mock_anthropic_client):
+        """Test confidence values are clamped to [0.0, 1.0]."""
+        mock_response = MagicMock()
+        mock_response.content = [
+            MagicMock(
+                type="text",
+                text='{"decisions": [{"content": "Too high", "rationale": null, "confidence": 1.5, "type": "decision", "entities": []}, {"content": "Too low", "rationale": null, "confidence": -0.3, "type": "decision", "entities": []}, {"content": "Normal", "rationale": null, "confidence": 0.5, "type": "decision", "entities": []}]}',
+            )
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        result = await ai_processor.extract_decisions("Some content")
+
+        assert len(result) == 3
+        assert result[0].confidence == 1.0  # clamped from 1.5
+        assert result[1].confidence == 0.0  # clamped from -0.3
+        assert result[2].confidence == 0.5  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_extract_decisions_api_unavailable(self, ai_processor_disabled):
+        """Test graceful degradation when AI is unavailable."""
+        result = await ai_processor_disabled.extract_decisions("Some content")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_extract_decisions_content_truncation(self, ai_processor, mock_anthropic_client):
+        """Test that content is truncated to 4000 chars."""
+        mock_response = MagicMock()
+        mock_response.content = [
+            MagicMock(type="text", text='{"decisions": []}')
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        long_content = "x" * 8000
+        await ai_processor.extract_decisions(long_content)
+
+        # Verify the user prompt sent to Claude has truncated content
+        call_args = mock_anthropic_client.messages.create.call_args
+        user_msg = call_args[1]["messages"][0]["content"]
+        # The user prompt includes title and headers, but content portion is truncated
+        assert len(user_msg) < 8000 + 200  # content truncated + prompt overhead
+
+    @pytest.mark.asyncio
+    async def test_extract_decisions_malformed_response(self, ai_processor, mock_anthropic_client):
+        """Test handling of malformed AI response."""
+        mock_response = MagicMock()
+        mock_response.content = [
+            MagicMock(type="text", text="This is not JSON at all")
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        result = await ai_processor.extract_decisions("Some content")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_extract_decisions_empty_decisions_list(self, ai_processor, mock_anthropic_client):
+        """Test handling of empty decisions array."""
+        mock_response = MagicMock()
+        mock_response.content = [
+            MagicMock(type="text", text='{"decisions": []}')
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        result = await ai_processor.extract_decisions("Just a plain note.")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_extract_decisions_multiple_types(self, ai_processor, mock_anthropic_client):
+        """Test extraction of mixed decision types."""
+        mock_response = MagicMock()
+        mock_response.content = [
+            MagicMock(
+                type="text",
+                text='{"decisions": [{"content": "Use Docker for deployment", "rationale": "Consistency", "confidence": 0.9, "type": "decision", "entities": ["Docker"]}, {"content": "Always use snake_case", "rationale": null, "confidence": 0.8, "type": "convention", "entities": []}, {"content": "Prefer SQLite over Postgres for dev", "rationale": "Simpler setup", "confidence": 0.6, "type": "preference", "entities": ["SQLite", "Postgres"]}]}',
+            )
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        result = await ai_processor.extract_decisions("Complex note")
+
+        assert len(result) == 3
+        assert result[0].decision_type == "decision"
+        assert result[1].decision_type == "convention"
+        assert result[2].decision_type == "preference"
+
+    @pytest.mark.asyncio
+    async def test_extract_decisions_api_error(self, ai_processor, mock_anthropic_client):
+        """Test handling of API error during extraction."""
+        from anthropic import APIError
+        import httpx
+
+        mock_request = MagicMock(spec=httpx.Request)
+        mock_anthropic_client.messages.create.side_effect = APIError(
+            message="API error", request=mock_request, body=None
+        )
+
+        result = await ai_processor.extract_decisions("Some content")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_extract_decisions_default_confidence(self, ai_processor, mock_anthropic_client):
+        """Test default confidence when not provided."""
+        mock_response = MagicMock()
+        mock_response.content = [
+            MagicMock(
+                type="text",
+                text='{"decisions": [{"content": "Use Redis", "type": "decision"}]}',
+            )
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        result = await ai_processor.extract_decisions("Some content")
+
+        assert len(result) == 1
+        assert result[0].confidence == 0.8  # default
+        assert result[0].rationale is None
+        assert result[0].entities == []
+
+
+class TestAIDecisionToObservation:
+    """Test conversion of AI decisions to Observations."""
+
+    def test_basic_conversion(self):
+        """Test basic decision-to-observation conversion."""
+        from app.services.ai_processor import ExtractedDecision, ai_decision_to_observation
+        from app.models.note import ObservationCategory
+
+        decision = ExtractedDecision(
+            content="Use FastAPI for the backend",
+            rationale="Async support",
+            confidence=0.9,
+            decision_type="decision",
+            entities=["FastAPI"],
+        )
+
+        obs = ai_decision_to_observation(decision)
+
+        assert obs.category == ObservationCategory.DECISION
+        assert obs.content == "Use FastAPI for the backend"
+        assert obs.context == "Async support"
+        assert obs.auto_extracted is True
+        assert obs.decay_override == "permanent"
+        assert obs.tags == []
+        assert obs.line_number == 0
+
+    def test_none_rationale(self):
+        """Test conversion with None rationale."""
+        from app.services.ai_processor import ExtractedDecision, ai_decision_to_observation
+
+        decision = ExtractedDecision(
+            content="Always use snake_case",
+            rationale=None,
+            confidence=0.8,
+            decision_type="convention",
+        )
+
+        obs = ai_decision_to_observation(decision)
+        assert obs.context is None
+
+    def test_custom_line_number(self):
+        """Test conversion with custom line number."""
+        from app.services.ai_processor import ExtractedDecision, ai_decision_to_observation
+
+        decision = ExtractedDecision(
+            content="Use Docker",
+            rationale=None,
+            confidence=0.7,
+            decision_type="decision",
+        )
+
+        obs = ai_decision_to_observation(decision, line_number=42)
+        assert obs.line_number == 42
+
+    @pytest.mark.asyncio
+    async def test_integration_extract_and_convert(self, ai_processor, mock_anthropic_client):
+        """Integration: extract decisions then convert to observations."""
+        from app.services.ai_processor import ai_decision_to_observation
+        from app.models.note import ObservationCategory
+
+        mock_response = MagicMock()
+        mock_response.content = [
+            MagicMock(
+                type="text",
+                text='{"decisions": [{"content": "Use SQLite for simplicity", "rationale": "No need for a full RDBMS", "confidence": 0.85, "type": "decision", "entities": ["SQLite"]}, {"content": "Always validate input at API boundary", "rationale": null, "confidence": 0.9, "type": "convention", "entities": []}]}',
+            )
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_response
+
+        decisions = await ai_processor.extract_decisions(
+            "We use SQLite because we don't need a full RDBMS. All input is validated at API boundaries.",
+            note_title="Design Principles",
+        )
+
+        observations = [ai_decision_to_observation(d) for d in decisions]
+
+        assert len(observations) == 2
+
+        assert observations[0].category == ObservationCategory.DECISION
+        assert observations[0].content == "Use SQLite for simplicity"
+        assert observations[0].context == "No need for a full RDBMS"
+        assert observations[0].auto_extracted is True
+        assert observations[0].decay_override == "permanent"
+
+        assert observations[1].content == "Always validate input at API boundary"
+        assert observations[1].context is None
