@@ -569,6 +569,7 @@ async def search_notes(
         sort=request.sort,
         limit=request.limit,
         offset=request.offset,
+        include_expired=request.include_expired,
     )
 
     results = await search_index.search(query)

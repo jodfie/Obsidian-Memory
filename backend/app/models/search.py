@@ -5,7 +5,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from app.models.note import Observation, Relation, Wikilink
+from app.models.note import DecayClass, Observation, Relation, Wikilink
 
 
 class SortOrder(str, Enum):
@@ -82,13 +82,17 @@ class SearchQuery(BaseModel):
     )
     recency_boost: bool = Field(
         default=False,
-        description="Apply recency boost to recent notes"
+        description="DEPRECATED: Ignored. Replaced by always-on freshness component in composite scoring."
     )
     recency_decay: float = Field(
         default=0.5,
         ge=0.0,
         le=2.0,
-        description="Recency decay rate (higher = stronger boost for recent notes)"
+        description="DEPRECATED: Ignored. Replaced by always-on freshness component in composite scoring."
+    )
+    include_expired: bool = Field(
+        default=False,
+        description="Include expired and low-confidence notes in results"
     )
 
     # Snippet generation parameters
@@ -133,7 +137,12 @@ class SearchResult(BaseModel):
     note_type: str = Field(..., description="Note type")
     project: str | None = Field(default=None, description="Project")
     snippet: str = Field(..., description="Highlighted excerpt")
-    score: float = Field(..., description="Relevance score")
+    score: float = Field(..., description="Composite relevance score")
+    score_breakdown: dict[str, float] | None = Field(
+        default=None, description="Breakdown of composite score components"
+    )
+    decay_class: str | None = Field(default=None, description="Decay classification")
+    confidence: float | None = Field(default=None, description="Note confidence (0.0-1.0)")
     created_at: datetime | None = Field(default=None, description="Created at")
     updated_at: datetime | None = Field(default=None, description="Updated at")
     tags: list[str] = Field(default_factory=list, description="Tags")
@@ -173,3 +182,7 @@ class IndexedNote(BaseModel):
     created_at: datetime | None = Field(default=None, description="Created at")
     updated_at: datetime | None = Field(default=None, description="Updated at")
     file_hash: str = Field(..., description="File hash for change detection")
+    decay_class: DecayClass = Field(default='stable', description="Decay tier classification")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Decay confidence score")
+    expires_at: datetime | None = Field(default=None, description="Expiration timestamp")
+    last_accessed_at: datetime | None = Field(default=None, description="Last search access time")

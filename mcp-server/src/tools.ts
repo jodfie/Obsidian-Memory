@@ -160,6 +160,11 @@ export const tools: Tool[] = [
           type: 'number',
           description: 'Result offset for pagination',
         },
+        include_expired: {
+          type: 'boolean',
+          default: false,
+          description: 'Include expired and low-confidence notes in results',
+        },
         response_format: {
           type: 'string',
           enum: ['json', 'markdown'],
@@ -451,7 +456,7 @@ export const tools: Tool[] = [
       title: 'Observe Session Event',
       readOnlyHint: false,
       destructiveHint: true,
-      idempotentHint: false,
+      idempotentHint: true,
       openWorldHint: false,
     },
     inputSchema: {
@@ -473,6 +478,10 @@ export const tools: Tool[] = [
         metadata: {
           type: 'object',
           description: 'Optional metadata (e.g., file path, command, tool name)',
+        },
+        custom_id: {
+          type: 'string',
+          description: 'Optional unique identifier for deduplication. When provided, enables upsert semantics: updates existing event if custom_id matches, inserts new event otherwise.',
         },
       },
       required: ['session_id', 'event_type', 'content'],
@@ -547,6 +556,36 @@ export const tools: Tool[] = [
         },
       },
       required: ['session_id'],
+    },
+  },
+
+  // Profile Tools
+  {
+    name: 'get_profile',
+    description:
+      'Retrieve user/project profile with static facts, dynamic patterns, and key entities. Profiles are synthesized from project notes and provide context about user preferences, tech stack, and behavioral patterns.',
+    annotations: {
+      title: 'Get Project Profile',
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project: {
+          type: 'string',
+          description: 'Project identifier to get profile for',
+        },
+        response_format: {
+          type: 'string',
+          enum: ['json', 'markdown'],
+          default: 'json',
+          description: 'Response format: "json" for structured data, "markdown" for human-readable text',
+        },
+      },
+      required: ['project'],
     },
   },
 ];

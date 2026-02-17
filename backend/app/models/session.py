@@ -29,6 +29,8 @@ class SessionEvent(BaseModel):
     metadata: dict = Field(
         default_factory=dict, description="Additional event metadata"
     )
+    custom_id: str | None = Field(default=None, description="Optional unique identifier for deduplication (enables upsert)")
+    updated_at: datetime | None = Field(default=None, description="Last update timestamp for upserted events")
 
 
 class Session(BaseModel):
@@ -55,6 +57,7 @@ class SessionObserveRequest(BaseModel):
     event_type: SessionEventType = Field(..., description="Event type")
     content: str = Field(..., description="Event content")
     metadata: dict = Field(default_factory=dict, description="Additional metadata")
+    custom_id: str | None = Field(default=None, description="Optional unique ID for deduplication (enables upsert)")
 
 
 class SessionContextRequest(BaseModel):

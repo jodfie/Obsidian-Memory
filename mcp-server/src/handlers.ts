@@ -5,7 +5,7 @@
  * All handlers use the singleton apiClient and shared formatters.
  */
 
-import { apiClient, type NoteResponse } from './client.js';
+import { apiClient, type NoteResponse, type ProfileResponse, ProfileNotFoundError } from './client.js';
 import { DEFAULT_LIMIT, type ResponseFormat } from './constants.js';
 import {
   formatNote,
@@ -160,6 +160,7 @@ export interface MemSearchInput {
   sort?: string;
   limit?: number;
   offset?: number;
+  include_expired?: boolean;
   response_format?: ResponseFormat;
 }
 
@@ -173,6 +174,7 @@ export async function handleMemSearch({
   sort,
   limit,
   offset,
+  include_expired,
   response_format = 'json',
 }: MemSearchInput): Promise<ToolResponse> {
   const results = await apiClient.searchNotes({
@@ -185,6 +187,7 @@ export async function handleMemSearch({
     sort: sort || 'relevance',
     limit: limit || DEFAULT_LIMIT,
     offset: offset || 0,
+    ...(include_expired !== undefined && { include_expired }),
   });
 
   const actualOffset = offset || 0;
@@ -424,6 +427,7 @@ export interface SessionObserveInput {
   event_type: string;
   content: string;
   metadata?: Record<string, unknown>;
+  custom_id?: string;
 }
 
 export async function handleSessionObserve({
@@ -431,8 +435,9 @@ export async function handleSessionObserve({
   event_type,
   content,
   metadata,
+  custom_id,
 }: SessionObserveInput): Promise<ToolResponse> {
-  const result = await apiClient.observeSessionEvent(session_id, event_type, content, metadata);
+  const result = await apiClient.observeSessionEvent(session_id, event_type, content, metadata, custom_id);
 
   return {
     content: [{ type: 'text', text: `Event recorded in session ${session_id} (${result.event_count} total events)` }],
@@ -517,6 +522,85 @@ export async function handleSessionContext({
 }
 
 // ============================================================================
+// Profile Tool Handlers
+// ============================================================================
+
+export interface GetProfileInput {
+  project: string;
+  response_format?: ResponseFormat;
+}
+
+export async function handleGetProfile({
+  project,
+  response_format = 'json',
+}: GetProfileInput): Promise<ToolResponse> {
+  try {
+    const profile = await apiClient.getProfile(project);
+
+    if (response_format === 'markdown') {
+      const text = formatProfile(profile);
+      return {
+        content: [{ type: 'text', text }],
+        structuredContent: profile,
+      };
+    }
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(profile, null, 2) }],
+      structuredContent: profile,
+    };
+  } catch (error) {
+    if (error instanceof ProfileNotFoundError) {
+      const message =
+        `No profile synthesized yet for project: ${project}.\n` +
+        `To create one, use the POST /api/profile/${project}/synthesize endpoint ` +
+        `or write more notes to trigger auto-synthesis.`;
+      return {
+        content: [{ type: 'text', text: message }],
+      };
+    }
+    throw error;
+  }
+}
+
+function formatProfile(profile: ProfileResponse): string {
+  const lines: string[] = [];
+
+  lines.push(`# Profile: ${profile.project}`);
+  lines.push(`*Version ${profile.profile_version} | ${profile.synthesis_note_count} notes analyzed*`);
+  if (profile.last_synthesized) {
+    lines.push(`*Last synthesized: ${profile.last_synthesized}*`);
+  }
+  lines.push('');
+
+  if (profile.static_facts.length > 0) {
+    lines.push('## Static Profile');
+    for (const fact of profile.static_facts) {
+      lines.push(`- ${fact}`);
+    }
+    lines.push('');
+  }
+
+  if (profile.dynamic_patterns.length > 0) {
+    lines.push('## Dynamic Patterns');
+    for (const pattern of profile.dynamic_patterns) {
+      lines.push(`- ${pattern}`);
+    }
+    lines.push('');
+  }
+
+  if (Object.keys(profile.key_entities).length > 0) {
+    lines.push('## Key Entities');
+    for (const [category, entities] of Object.entries(profile.key_entities)) {
+      lines.push(`**${category}**: ${entities.join(', ')}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+// ============================================================================
 // Tool Dispatcher
 // ============================================================================
 
@@ -558,6 +642,8 @@ export async function dispatchToolCall(
       return handleSessionSummary(args as unknown as SessionSummaryInput);
     case 'session_context':
       return handleSessionContext(args as unknown as SessionContextInput);
+    case 'get_profile':
+      return handleGetProfile(args as unknown as GetProfileInput);
     default:
       throw new Error(`Unknown tool: ${toolName}`);
   }

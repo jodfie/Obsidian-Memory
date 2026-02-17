@@ -60,6 +60,32 @@ INLINE_CODE_PATTERN = re.compile(
     r'`[^`]+`'
 )
 
+DECISION_PATTERNS = [
+    # decided/chose/picked X because Y
+    re.compile(
+        r'(?:decided|chose|picked|selected|choosing)\s+(?:to\s+)?(?:use\s+)?(.+?)'
+        r'(?:\s+(?:because|since|for|due to)\s+(.+?))?[.!]?\s*$',
+        re.IGNORECASE | re.MULTILINE
+    ),
+    # use X over Y
+    re.compile(
+        r'(?:use|using|chose|prefer|picked)\s+(.+?)\s+(?:over|instead of|rather than)\s+(.+?)'
+        r'(?:\s+(?:because|since|for|due to)\s+(.+?))?[.!]?\s*$',
+        re.IGNORECASE | re.MULTILINE
+    ),
+    # always/never/must X
+    re.compile(
+        r'(?:always|never|must|should always|should never)\s+(.+?)[.!]?\s*$',
+        re.IGNORECASE | re.MULTILINE
+    ),
+    # went with X for Y
+    re.compile(
+        r'(?:went with|sticking with|going with)\s+(.+?)'
+        r'(?:\s+(?:for|due to|because)\s+(.+?))?[.!]?\s*$',
+        re.IGNORECASE | re.MULTILINE
+    ),
+]
+
 
 class MarkdownParser:
     """Parses Obsidian-compatible markdown files."""
@@ -283,6 +309,62 @@ class MarkdownParser:
                 )
 
         return observations
+
+    def extract_decisions_from_prose(
+        self,
+        content: str,
+        existing_observations: list[Observation],
+    ) -> list[Observation]:
+        """Extract decision observations from prose content.
+
+        Skips code blocks and existing observation lines.
+        Deduplicates against existing observations.
+        """
+        decisions: list[Observation] = []
+        code_ranges = self._get_code_block_ranges(content)
+        existing_contents = {obs.content.lower() for obs in existing_observations}
+
+        lines = content.split('\n')
+        for line_num, line in enumerate(lines, start=1):
+            # Skip code blocks
+            if self._is_in_code_block(line_num, code_ranges):
+                continue
+
+            # Skip existing observation lines
+            stripped = line.strip()
+            if OBSERVATION_PATTERN.match(stripped):
+                continue
+
+            # Skip empty lines and frontmatter markers
+            if not stripped or stripped == '---':
+                continue
+
+            # Test against each decision pattern
+            for pattern in DECISION_PATTERNS:
+                match = pattern.search(stripped)
+                if match:
+                    decision_content = stripped
+
+                    # Skip if similar to existing observation
+                    if any(
+                        decision_content.lower() in existing
+                        or existing in decision_content.lower()
+                        for existing in existing_contents
+                    ):
+                        continue
+
+                    decisions.append(Observation(
+                        category=ObservationCategory.DECISION,
+                        content=decision_content,
+                        tags=[],
+                        context=match.group(2) if len(match.groups()) > 1 and match.group(2) else None,
+                        line_number=line_num,
+                        auto_extracted=True,
+                        decay_override='permanent',
+                    ))
+                    break  # One match per line is enough
+
+        return decisions
 
     def extract_relations(self, content: str) -> list[Relation]:
         """

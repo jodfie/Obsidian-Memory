@@ -11,6 +11,7 @@ from app.services.config_manager import ConfigurationManager
 from app.services.markdown_parser import MarkdownParser
 from app.services.deduplication_service import DeduplicationService
 from app.services.pattern_detection_service import PatternDetectionService
+from app.services.profile_tracker import ProfileSynthesisTracker
 from app.services.search_index import SearchIndex
 from app.services.session_manager import SessionManager
 from app.services.vault_manager import VaultManager, VaultManagerConfig
@@ -18,6 +19,7 @@ from app.services.vault_manager import VaultManager, VaultManagerConfig
 # Module-level singletons
 _ai_processor_instance: AIProcessor | None = None
 _search_index_instance: SearchIndex | None = None
+_profile_tracker_instance: ProfileSynthesisTracker | None = None
 
 
 def get_ai_processor() -> AIProcessor:
@@ -107,3 +109,11 @@ def get_deduplication_service(
         markdown_parser=markdown_parser,
         ai_processor=ai_processor,
     )
+
+
+def get_profile_tracker() -> ProfileSynthesisTracker:
+    """Get ProfileSynthesisTracker singleton instance."""
+    global _profile_tracker_instance
+    if _profile_tracker_instance is None:
+        _profile_tracker_instance = ProfileSynthesisTracker()
+    return _profile_tracker_instance

@@ -11,6 +11,7 @@ from app.api.ai import router as ai_router
 from app.api.graph import router as graph_router
 from app.api.mcp import router as mcp_router
 from app.api.notes import router as notes_router
+from app.api.profile import router as profile_router
 from app.api.projects import router as projects_router
 from app.api.sessions import router as sessions_router
 from app.api.sync import router as sync_router
@@ -96,6 +97,7 @@ app.include_router(notes_router)
 app.include_router(projects_router)
 app.include_router(sessions_router)
 app.include_router(ai_router)
+app.include_router(profile_router)
 app.include_router(graph_router)
 app.include_router(sync_router)
 app.include_router(mcp_router)  # MCP server proxy (OAuth handled by gateway)

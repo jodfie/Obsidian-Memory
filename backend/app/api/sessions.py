@@ -68,6 +68,7 @@ async def observe_event(
             event_type=request.event_type,
             content=request.content,
             metadata=request.metadata,
+            custom_id=request.custom_id,
         )
         return {
             "session_id": session.session_id,

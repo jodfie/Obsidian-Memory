@@ -91,6 +91,9 @@ class SearchRequest(BaseModel):
     sort: SortOrder = Field(default=SortOrder.RELEVANCE, description="Sort order")
     limit: int = Field(default=50, ge=1, le=1000, description="Result limit")
     offset: int = Field(default=0, ge=0, description="Result offset")
+    include_expired: bool = Field(
+        default=False, description="Include expired and low-confidence notes"
+    )
 
 
 # Vault Management Models

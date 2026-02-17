@@ -1,5 +1,6 @@
 """API v1 endpoints for notes CRUD operations with comprehensive OpenAPI documentation."""
 
+import asyncio
 import hashlib
 from datetime import datetime
 from typing import List, Optional
@@ -8,10 +9,14 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.dependencies import (
+    get_ai_processor,
     get_markdown_parser,
+    get_profile_tracker,
     get_search_index,
     get_vault_manager,
 )
+from app.services.ai_processor import AIProcessor
+from app.services.profile_tracker import ProfileSynthesisTracker
 from app.api.models import (
     NoteCreateRequest,
     NoteResponse,
@@ -265,6 +270,8 @@ async def create_note(
     vault_manager: VaultManager = Depends(get_vault_manager),
     markdown_parser: MarkdownParser = Depends(get_markdown_parser),
     search_index: SearchIndex = Depends(get_search_index),
+    ai_processor: AIProcessor = Depends(get_ai_processor),
+    profile_tracker: ProfileSynthesisTracker = Depends(get_profile_tracker),
 ) -> NoteResponse:
     """Create a new note.
 
@@ -362,6 +369,11 @@ async def create_note(
         updated_at=datetime.utcnow(),
     )
     await search_index.index_note(indexed_note)
+
+    # Track write for profile synthesis (fire-and-forget background)
+    asyncio.ensure_future(
+        profile_tracker.record_write(request.project, search_index, ai_processor)
+    )
 
     return NoteResponse(
         id=indexed_note.note_id,

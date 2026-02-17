@@ -126,6 +126,14 @@ class Settings(BaseSettings):
         description="Enable Supabase OAuth authentication for MCP"
     )
 
+    # Profile Synthesis Configuration
+    profile_synthesis_enabled: bool = Field(
+        default=True, description="Enable automatic profile synthesis after N writes"
+    )
+    profile_synthesis_frequency: int = Field(
+        default=50, ge=1, le=1000, description="Number of writes between profile syntheses"
+    )
+
     # Rate Limiting Configuration
     rate_limit_enabled: bool = Field(
         default=True, description="Enable rate limiting"

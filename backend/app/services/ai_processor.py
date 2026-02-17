@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from anthropic import Anthropic, APIError, RateLimitError
@@ -20,7 +21,7 @@ from app.models.ai import (
     InferredRelations,
     SessionSummary,
 )
-from app.models.note import ParsedNote
+from app.models.note import ParsedNote, ProfileNote
 from app.models.search import IndexedNote
 from app.services.exceptions import AIProcessorError, AIProcessorUnavailableError
 
@@ -788,3 +789,119 @@ Example:
         except Exception as e:
             logger.error(f"Error suggesting deduplication: {e}")
             return DeduplicationSuggestions(suggestions=[], notes_analyzed=len(notes))
+
+    async def synthesize_profile(
+        self,
+        project: str,
+        search_index: Any,
+        note_limit: int = 100,
+    ) -> ProfileNote:
+        """Synthesize a user/project profile from recent memory notes.
+
+        Queries recent notes for the given project, sends them to Claude for
+        analysis, and returns a structured ProfileNote with static facts,
+        dynamic patterns, and key entities.
+
+        Args:
+            project: Project identifier to synthesize profile for
+            search_index: SearchIndex instance for querying notes
+            note_limit: Maximum number of notes to analyze
+
+        Returns:
+            ProfileNote with synthesized profile data
+        """
+        from app.models.search import SearchQuery, SortOrder
+
+        # Query recent notes for this project
+        query = SearchQuery(
+            query="*",
+            project=project,
+            sort=SortOrder.UPDATED_DESC,
+            limit=note_limit,
+        )
+        results = await search_index.search(query)
+
+        if not results:
+            logger.info(f"No notes found for project '{project}', returning empty profile")
+            return ProfileNote(
+                project=project,
+                last_synthesized=datetime.now(timezone.utc),
+                synthesis_note_count=0,
+            )
+
+        # Format notes for Claude analysis
+        notes_text = []
+        for r in results:
+            notes_text.append(
+                f"--- Note: {r.title} (type: {r.note_type}, updated: {r.updated_at}) ---\n"
+                f"{r.snippet[:500]}\n"
+            )
+
+        notes_content = "\n".join(notes_text)
+
+        system_prompt = """You are a profile synthesis system for a knowledge management tool.
+Analyze the provided notes and extract a structured profile for the project/user.
+
+Extract three categories of information:
+
+1. **static_facts**: Stable, persistent facts and preferences that don't change often.
+   Examples: preferred language, tech stack, team size, architecture choices, coding style preferences.
+
+2. **dynamic_patterns**: Recent behavioral patterns, focus areas, and recurring themes.
+   Examples: "Currently focused on performance optimization", "Frequently debugging async issues",
+   "Writing many tests for API endpoints".
+
+3. **key_entities**: Categorized important entities mentioned across notes.
+   Categories: tools, languages, frameworks, people, services, concepts.
+   Example: {"tools": ["Docker", "pytest"], "frameworks": ["FastAPI", "React"]}
+
+Return a JSON object:
+{
+  "static_facts": ["fact1", "fact2", ...],
+  "dynamic_patterns": ["pattern1", "pattern2", ...],
+  "key_entities": {
+    "tools": ["tool1", "tool2"],
+    "languages": ["lang1"],
+    "frameworks": ["fw1"],
+    "people": ["person1"],
+    "services": ["svc1"],
+    "concepts": ["concept1"]
+  }
+}
+
+Rules:
+- Keep facts concise (one sentence each)
+- Limit to 10-15 static facts, 5-10 dynamic patterns
+- Only include entities that appear in multiple notes or are clearly central
+- Omit empty entity categories"""
+
+        user_prompt = f"Synthesize a profile for project '{project}' from these {len(results)} notes:\n\n{notes_content}"
+
+        try:
+            response = await self._call_claude(system_prompt, user_prompt, max_tokens=2048)
+            data = self._parse_json_response(response)
+
+            return ProfileNote(
+                project=project,
+                static_facts=data.get("static_facts", []),
+                dynamic_patterns=data.get("dynamic_patterns", []),
+                key_entities=data.get("key_entities", {}),
+                profile_version=1,
+                last_synthesized=datetime.now(timezone.utc),
+                synthesis_note_count=len(results),
+            )
+
+        except AIProcessorUnavailableError:
+            logger.warning(f"AI unavailable for profile synthesis of project '{project}'")
+            return ProfileNote(
+                project=project,
+                last_synthesized=datetime.now(timezone.utc),
+                synthesis_note_count=len(results),
+            )
+        except Exception as e:
+            logger.error(f"Error synthesizing profile for project '{project}': {e}")
+            return ProfileNote(
+                project=project,
+                last_synthesized=datetime.now(timezone.utc),
+                synthesis_note_count=len(results),
+            )

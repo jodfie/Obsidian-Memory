@@ -1,5 +1,6 @@
 """Session management service."""
 
+import hashlib
 import json
 import logging
 import uuid
@@ -19,6 +20,21 @@ from app.services.ai_processor import AIProcessor
 from app.services.exceptions import AIProcessorUnavailableError
 
 logger = logging.getLogger(__name__)
+
+
+def generate_custom_id(
+    session_id: str, event_type: SessionEventType, content: str
+) -> str:
+    """Generate deterministic custom_id for session event deduplication.
+
+    Format: session_{session_id}_{event_type}_{content_hash[:8]}
+
+    Same inputs always produce the same ID, enabling callers to
+    detect and update duplicate events automatically.
+    """
+    content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()[:8]
+    return f"session_{session_id}_{event_type.value}_{content_hash}"
+
 
 # Configuration for incremental summarization
 DEFAULT_CHUNK_SIZE = 50  # Events per chunk
@@ -105,14 +121,20 @@ class SessionManager:
         event_type: SessionEventType,
         content: str,
         metadata: dict[str, Any] | None = None,
+        custom_id: str | None = None,
     ) -> Session:
-        """Add an observation/event to a session.
+        """Add an observation/event to a session (with optional upsert).
+
+        When custom_id is provided, an existing event with the same
+        custom_id is updated instead of appending a duplicate.
+        When custom_id is None, behavior is append-only (backward compatible).
 
         Args:
             session_id: Session identifier
             event_type: Type of event
             content: Event content
             metadata: Optional metadata
+            custom_id: Optional deduplication key (enables upsert)
 
         Returns:
             Updated session
@@ -124,14 +146,43 @@ class SessionManager:
         if not session:
             raise ValueError(f"Session {session_id} not found")
 
-        event = SessionEvent(
-            event_type=event_type,
-            content=content,
-            timestamp=datetime.now(),
-            metadata=metadata or {},
-        )
+        if custom_id is not None:
+            # Upsert: find existing event with matching custom_id
+            existing_idx = next(
+                (
+                    i
+                    for i, e in enumerate(session.events)
+                    if getattr(e, "custom_id", None) == custom_id
+                ),
+                None,
+            )
+            if existing_idx is not None:
+                # Update existing event in place
+                existing = session.events[existing_idx]
+                existing.content = content
+                existing.event_type = event_type
+                existing.metadata = metadata or {}
+                existing.updated_at = datetime.now()
+            else:
+                # Insert new event with custom_id
+                event = SessionEvent(
+                    event_type=event_type,
+                    content=content,
+                    timestamp=datetime.now(),
+                    metadata=metadata or {},
+                    custom_id=custom_id,
+                )
+                session.events.append(event)
+        else:
+            # Original append-only behavior (backward compatible)
+            event = SessionEvent(
+                event_type=event_type,
+                content=content,
+                timestamp=datetime.now(),
+                metadata=metadata or {},
+            )
+            session.events.append(event)
 
-        session.events.append(event)
         self._sessions[session_id] = session
         await self._save_session(session)
 

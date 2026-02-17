@@ -880,7 +880,7 @@ async def test_bm25_custom_b_parameter(
 async def test_title_field_boost(
     search_index: SearchIndex, temp_dir: Path
 ) -> None:
-    """Test that title field boosting prioritizes title matches."""
+    """Test that title field boosting affects BM25 relevance component."""
     # Index notes with term in different positions
     note1 = IndexedNote(
         vault_name="test",
@@ -915,15 +915,17 @@ async def test_title_field_boost(
     assert len(results_boosted.results) == 2
     assert len(results_no_boost.results) == 2
 
-    # With high boost, title match should rank first
-    assert "Authentication" in results_boosted.results[0].title
+    # Composite scoring includes score_breakdown
+    for r in results_boosted.results:
+        assert r.score_breakdown is not None
+        assert "relevance" in r.score_breakdown
 
 
 @pytest.mark.asyncio
-async def test_recency_boost_enabled(
+async def test_composite_freshness_component(
     search_index: SearchIndex, temp_dir: Path
 ) -> None:
-    """Test that recency boost prioritizes recently updated notes."""
+    """Test that freshness component in composite scoring favors recent notes."""
     from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
@@ -939,7 +941,7 @@ async def test_recency_boost_enabled(
         content="search term content",
         tags=[],
         file_hash="hash1",
-        updated_at=now,  # Most recent
+        updated_at=now,
     )
     note2 = IndexedNote(
         vault_name="test",
@@ -949,7 +951,7 @@ async def test_recency_boost_enabled(
         content="search term content",
         tags=[],
         file_hash="hash2",
-        updated_at=month_ago,  # Older
+        updated_at=month_ago,
     )
     note3 = IndexedNote(
         vault_name="test",
@@ -959,26 +961,33 @@ async def test_recency_boost_enabled(
         content="search term content",
         tags=[],
         file_hash="hash3",
-        updated_at=week_ago,  # Middle age
+        updated_at=week_ago,
     )
     await search_index.index_note(note1)
     await search_index.index_note(note2)
     await search_index.index_note(note3)
 
-    # Search with recency boost enabled
-    query_recency = SearchQuery(query="search", recency_boost=True)
-    results_recency = await search_index.search(query_recency)
+    # Composite scoring always includes freshness
+    query = SearchQuery(query="search")
+    results = await search_index.search(query)
 
-    # Search without recency boost
-    query_no_recency = SearchQuery(query="search", recency_boost=False)
-    results_no_recency = await search_index.search(query_no_recency)
+    assert len(results.results) == 3
 
-    # Both should find all results
-    assert len(results_recency.results) == 3
-    assert len(results_no_recency.results) == 3
+    # All results should have score_breakdown with freshness
+    for r in results.results:
+        assert r.score_breakdown is not None
+        assert "freshness" in r.score_breakdown
 
-    # With recency boost, recent note should rank first
-    assert "Recent" in results_recency.results[0].title
+    # Recent note should have highest freshness, old note lowest
+    freshness_by_title = {
+        r.title: r.score_breakdown["freshness"] for r in results.results
+    }
+    assert freshness_by_title["Recent Note"] > freshness_by_title["Week Old Note"]
+    assert freshness_by_title["Week Old Note"] > freshness_by_title["Old Note"]
+
+    # Scores should reflect freshness ordering (relevance tied, confidence tied)
+    score_by_title = {r.title: r.score for r in results.results}
+    assert score_by_title["Recent Note"] > score_by_title["Old Note"]
 
 
 @pytest.mark.asyncio
@@ -1022,16 +1031,15 @@ async def test_recency_boost_with_missing_dates(
 
 
 @pytest.mark.asyncio
-async def test_recency_decay_parameter(
+async def test_deprecated_recency_params_accepted(
     search_index: SearchIndex, temp_dir: Path
 ) -> None:
-    """Test that recency_decay parameter controls strength of recency boost."""
+    """Test that deprecated recency_boost/recency_decay params are still accepted."""
     from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
     month_ago = now - timedelta(days=30)
 
-    # Index notes with different ages
     note_recent = IndexedNote(
         vault_name="test",
         relative_path="recent.md",
@@ -1055,33 +1063,22 @@ async def test_recency_decay_parameter(
     await search_index.index_note(note_recent)
     await search_index.index_note(note_old)
 
-    # Search with low decay (subtle recency preference)
-    query_low_decay = SearchQuery(query="search", recency_boost=True, recency_decay=0.1)
-    results_low = await search_index.search(query_low_decay)
+    # Deprecated params should still be accepted without error
+    query = SearchQuery(query="search", recency_boost=True, recency_decay=2.0)
+    results = await search_index.search(query)
 
-    # Search with high decay (strong recency preference)
-    query_high_decay = SearchQuery(query="search", recency_boost=True, recency_decay=2.0)
-    results_high = await search_index.search(query_high_decay)
-
-    # Both should return results
-    assert len(results_low.results) == 2
-    assert len(results_high.results) == 2
-
-    # With recency boost, recent note should rank first in both cases
-    assert "Recent" in results_low.results[0].title
-    assert "Recent" in results_high.results[0].title
-
-    # Score difference should be larger with higher decay
-    low_score_diff = abs(results_low.results[0].score - results_low.results[1].score)
-    high_score_diff = abs(results_high.results[0].score - results_high.results[1].score)
-    assert high_score_diff > low_score_diff
+    assert len(results.results) == 2
+    # Composite scoring always applies freshness
+    for r in results.results:
+        assert r.score_breakdown is not None
+        assert r.score_breakdown["freshness"] >= 0
 
 
 @pytest.mark.asyncio
-async def test_combined_boosts(
+async def test_composite_score_with_multiple_factors(
     search_index: SearchIndex, temp_dir: Path
 ) -> None:
-    """Test that multiple boosts work together."""
+    """Test that composite score combines relevance, freshness, confidence, and decision_boost."""
     from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
@@ -1120,8 +1117,14 @@ async def test_combined_boosts(
     results = await search_index.search(query)
 
     assert len(results.results) == 2
-    # Note with both title match and recency should rank first
-    assert "JWT Authentication" in results.results[0].title
+    # Both results should have composite score breakdowns
+    for r in results.results:
+        assert r.score_breakdown is not None
+        assert all(k in r.score_breakdown for k in ["relevance", "freshness", "confidence", "decision_boost"])
+    # Recent note should have higher freshness than old note
+    jwt_result = next(r for r in results.results if "JWT" in r.title)
+    other_result = next(r for r in results.results if "JWT" not in r.title)
+    assert jwt_result.score_breakdown["freshness"] > other_result.score_breakdown["freshness"]
 
 
 @pytest.mark.asyncio

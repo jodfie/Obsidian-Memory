@@ -210,13 +210,995 @@
         "status": "done",
         "subtasks": [],
         "updatedAt": "2026-02-05T22:03:56.214Z"
+      },
+      {
+        "id": "25",
+        "title": "Schema Migration for Decay and Decision Columns",
+        "description": "Add decay-related columns to the notes table (decay_class, confidence, expires_at, last_accessed_at) and decision-tracking columns to the observations table (decay_override, auto_extracted). Create supporting indexes for efficient queries.",
+        "details": "Implement idempotent schema migration in `SearchIndex._create_schema()` using ALTER TABLE with existence checks:\n\n```python\n# Add to search_index.py after existing schema creation\n\n# Check if decay columns exist using PRAGMA table_info\nasync def _migrate_decay_schema(self) -> None:\n    \"\"\"Add decay-related columns if they don't exist.\"\"\"\n    # Check notes table columns\n    cursor = await self.db.execute(\"PRAGMA table_info(notes)\")\n    existing_cols = {row['name'] for row in await cursor.fetchall()}\n    \n    if 'decay_class' not in existing_cols:\n        await self.db.execute(\n            \"ALTER TABLE notes ADD COLUMN decay_class TEXT NOT NULL DEFAULT 'stable'\"\n        )\n    if 'confidence' not in existing_cols:\n        await self.db.execute(\n            \"ALTER TABLE notes ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0\"\n        )\n    if 'expires_at' not in existing_cols:\n        await self.db.execute(\"ALTER TABLE notes ADD COLUMN expires_at TEXT\")\n    if 'last_accessed_at' not in existing_cols:\n        await self.db.execute(\"ALTER TABLE notes ADD COLUMN last_accessed_at TEXT\")\n    \n    # Check observations table columns\n    cursor = await self.db.execute(\"PRAGMA table_info(observations)\")\n    obs_cols = {row['name'] for row in await cursor.fetchall()}\n    \n    if 'decay_override' not in obs_cols:\n        await self.db.execute(\n            \"ALTER TABLE observations ADD COLUMN decay_override TEXT DEFAULT NULL\"\n        )\n    if 'auto_extracted' not in obs_cols:\n        await self.db.execute(\n            \"ALTER TABLE observations ADD COLUMN auto_extracted INTEGER DEFAULT 0\"\n        )\n    \n    # Create indexes\n    await self.db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_notes_decay_class ON notes(decay_class)\"\n    )\n    await self.db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_notes_expires ON notes(expires_at) WHERE expires_at IS NOT NULL\"\n    )\n    await self.db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_notes_confidence ON notes(confidence)\"\n    )\n    await self.db.execute(\n        \"CREATE INDEX IF NOT EXISTS idx_obs_decay_override ON observations(decay_override) WHERE decay_override IS NOT NULL\"\n    )\n```\n\nUpdate Pydantic models in `models/note.py` and `models/search.py`:\n- Add `DecayClass` literal type: `Literal['permanent', 'stable', 'active', 'session', 'checkpoint']`\n- Add `decay_class`, `confidence`, `expires_at`, `last_accessed_at` to `IndexedNote`\n- Add `decay_override: str | None` and `auto_extracted: bool` to `Observation`\n\nCall `_migrate_decay_schema()` from `initialize()` after `_create_schema()`.",
+        "testStrategy": "1. Unit test: Run migration on fresh DB, verify columns created with correct defaults\n2. Unit test: Run migration twice to verify idempotency (no errors on second run)\n3. Unit test: Verify indexes exist via PRAGMA index_list\n4. Integration test: Insert note, verify decay_class defaults to 'stable' and confidence to 1.0\n5. Verify PRAGMA table_info returns all new columns with correct types",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add DecayClass literal type to models/note.py",
+            "description": "Create a DecayClass literal type for the five-tier classification system and ensure it's exported for use in search models.",
+            "dependencies": [],
+            "details": "Define `DecayClass = Literal['permanent', 'stable', 'active', 'session', 'checkpoint']` at the top of `backend/app/models/note.py` after the existing enum definitions. This provides type safety for decay classification throughout the codebase. Import from typing: `from typing import Literal`. Place after the existing `RelationType` enum definition.\n<info added on 2026-02-14T20:41:25.601Z>\n★ Insight ─────────────────────────────────────────\n- The Observation model is defined in `backend/app/models/note.py` alongside the Note model\n- This subtask builds on 25.1 by using the DecayClass literal type\n- The design requires tracking both user decisions and auto-extraction state\n─────────────────────────────────────────────────────────────\n\nLet me analyze the codebase structure to understand the current schema and provide specific implementation guidance.Let me use the Read tool instead:Now let me check if there's a specific location for the Observation model:★ Insight ─────────────────────────────────────────\n- The Observation model (line 81 in note.py) is where we'll add the new fields\n- Design doc specifies: `decay_override TEXT DEFAULT NULL` and `auto_extracted INTEGER DEFAULT 0`\n- These fields enable decision observations to protect parent note confidence and track extraction source\n─────────────────────────────────────────────────────────────\n\nBased on the design and implementation documents, here's the new information to append to the subtask:\n\nAdd two fields to the `Observation` model in `backend/app/models/note.py` (starting at line 81): `decay_override: str | None = Field(default=None, description=\"When set to 'permanent', protects parent note's confidence floor\")` and `auto_extracted: bool = Field(default=False, description=\"True if detected by parser/AI, False if manually written\")`. These correspond to the database columns `decay_override TEXT DEFAULT NULL` and `auto_extracted INTEGER DEFAULT 0` in the observations table schema. The `decay_override` field allows decision observations to prevent their parent note's confidence from dropping below 0.5 during decay processing (see Phase 5 in implementation.md). The `auto_extracted` field tracks whether the observation was created by regex/AI extraction or manually written by the user in markdown. Insert these fields after the existing `line_number` field (line 92) to maintain logical grouping with other observation metadata.\n</info added on 2026-02-14T20:41:25.601Z>",
+            "status": "done",
+            "testStrategy": "1. Unit test: Import DecayClass and verify it accepts valid values ('permanent', 'stable', etc.)\n2. Unit test: Verify type checker rejects invalid values like 'invalid' or 'expired'\n3. Verify the type can be used in Pydantic models (instantiate a model with decay_class field)",
+            "updatedAt": "2026-02-17T21:17:22.308Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Add decay fields to Observation model",
+            "description": "Extend the Observation Pydantic model to include decay_override and auto_extracted fields for decision tracking.",
+            "dependencies": [],
+            "details": "In `backend/app/models/note.py`, add to the `Observation` class:\n- `decay_override: str | None = Field(default=None, description=\"Override to 'permanent' for decisions\")` \n- `auto_extracted: bool = Field(default=False, description=\"True if detected by parser/AI, False if user-written\")`\n\nPlace after the existing `line_number` field. These fields track which observations protect the parent note from decay and whether they were automatically extracted.",
+            "status": "done",
+            "testStrategy": "1. Unit test: Instantiate Observation with decay_override='permanent' and auto_extracted=True\n2. Unit test: Verify decay_override defaults to None and auto_extracted defaults to False\n3. Unit test: Verify model serialization includes new fields in dict/JSON output",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:17:22.420Z"
+          },
+          {
+            "id": 3,
+            "title": "Add decay fields to IndexedNote model",
+            "description": "Extend the IndexedNote Pydantic model in models/search.py to include decay_class, confidence, expires_at, and last_accessed_at fields.",
+            "dependencies": [
+              1
+            ],
+            "details": "In `backend/app/models/search.py`, import DecayClass from note.py: `from app.models.note import DecayClass`. Add to the `IndexedNote` class (after the `file_hash` field):\n- `decay_class: DecayClass = Field(default='stable', description=\"Decay tier classification\")`\n- `confidence: float = Field(default=1.0, ge=0.0, le=1.0, description=\"Decay confidence score\")`\n- `expires_at: datetime | None = Field(default=None, description=\"Expiration timestamp\")`\n- `last_accessed_at: datetime | None = Field(default=None, description=\"Last search access time\")`\n\nThese fields mirror the database schema and enable type-safe handling of decay data.",
+            "status": "done",
+            "testStrategy": "1. Unit test: Instantiate IndexedNote with all decay fields populated\n2. Unit test: Verify decay_class defaults to 'stable' and confidence to 1.0\n3. Unit test: Verify confidence validation rejects values outside 0.0-1.0 range\n4. Unit test: Verify expires_at and last_accessed_at accept None and datetime objects",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:17:22.450Z"
+          },
+          {
+            "id": 4,
+            "title": "Implement _migrate_decay_schema method in SearchIndex",
+            "description": "Create the idempotent schema migration method that adds decay columns to notes and observations tables using PRAGMA table_info existence checks.",
+            "dependencies": [],
+            "details": "In `backend/app/services/search_index.py`, add the `_migrate_decay_schema()` async method after `_create_schema()`. Implementation:\n\n1. Check notes table columns: `await self.db.execute('PRAGMA table_info(notes)')`, collect existing column names into a set\n2. Conditionally add columns if missing:\n   - `decay_class TEXT NOT NULL DEFAULT 'stable'`\n   - `confidence REAL NOT NULL DEFAULT 1.0`\n   - `expires_at TEXT` (nullable)\n   - `last_accessed_at TEXT` (nullable)\n3. Check observations table columns with PRAGMA\n4. Conditionally add: `decay_override TEXT DEFAULT NULL`, `auto_extracted INTEGER DEFAULT 0`\n5. Create indexes: `idx_notes_decay_class`, `idx_notes_expires` (partial WHERE NOT NULL), `idx_notes_confidence`, `idx_obs_decay_override` (partial)\n\nUse `await cursor.fetchall()` and extract `row['name']` for column names.",
+            "status": "done",
+            "testStrategy": "1. Unit test: Run on fresh database, verify all columns created\n2. Unit test: Run twice (idempotency test), verify no errors on second run\n3. Unit test: Verify indexes exist via `PRAGMA index_list(notes)` and `PRAGMA index_list(observations)`\n4. Integration test: Add column manually, run migration, verify no duplicate column error\n5. Integration test: Insert note with decay fields, verify default values applied",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:17:22.464Z"
+          },
+          {
+            "id": 5,
+            "title": "Call _migrate_decay_schema from initialize method",
+            "description": "Integrate the migration into the SearchIndex initialization flow so it runs automatically on startup after schema creation.",
+            "dependencies": [
+              4
+            ],
+            "details": "In `backend/app/services/search_index.py`, locate the `initialize()` method (around line 63). After the existing `await self._create_schema()` call and before `await self.db.commit()`, add:\n\n```python\n# Apply decay schema migration if needed\nawait self._migrate_decay_schema()\n```\n\nThis ensures the migration runs on every startup but is idempotent (safe to run multiple times). The migration checks for existing columns before attempting ALTER TABLE operations. Place the call right after line 63 (`await self._create_schema()`).",
+            "status": "done",
+            "testStrategy": "1. Integration test: Start with fresh database, initialize SearchIndex, verify decay columns exist\n2. Integration test: Start with database with decay columns, initialize SearchIndex, verify no errors (idempotent)\n3. Integration test: Check logs/output for migration messages\n4. Integration test: Insert note after initialization, verify decay fields are usable\n5. System test: Run full application startup, verify no migration errors in logs",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:17:22.474Z"
+          }
+        ],
+        "updatedAt": "2026-02-17T21:17:22.474Z"
+      },
+      {
+        "id": "26",
+        "title": "Implement Decay Auto-Classification Logic",
+        "description": "Create classify_decay() and calculate_expiry() functions that determine a note's decay class based on priority rules (frontmatter > note_type > tags > content patterns > default) and calculate the appropriate expiration timestamp.",
+        "details": "Add to `search_index.py`:\n\n```python\nfrom typing import Literal\nimport re\nfrom datetime import datetime, timedelta\n\nDecayClass = Literal['permanent', 'stable', 'active', 'session', 'checkpoint']\n\n# TTL values in seconds\nDECAY_TTL = {\n    'permanent': None,  # Never expires\n    'stable': 90 * 24 * 3600,  # 90 days\n    'active': 14 * 24 * 3600,  # 14 days\n    'session': 24 * 3600,  # 24 hours\n    'checkpoint': 4 * 3600,  # 4 hours\n}\n\n# Compile patterns at module level\nPERMANENT_PATTERNS = re.compile(\n    r'(?:decided|chose|always|never|must|convention|architecture)', re.IGNORECASE\n)\nACTIVE_PATTERNS = re.compile(\n    r'(?:working on|todo|blocker|in progress|wip)', re.IGNORECASE\n)\nSESSION_PATTERNS = re.compile(\n    r'(?:currently debugging|right now|this session|temp)', re.IGNORECASE\n)\n\ndef classify_decay(\n    note_type: str,\n    tags: list[str],\n    frontmatter: dict,\n    content: str,\n) -> DecayClass:\n    \"\"\"Classify note decay based on priority rules.\"\"\"\n    # 1. Explicit frontmatter override (highest priority)\n    if 'decay_class' in frontmatter:\n        decay = frontmatter['decay_class']\n        if decay in DECAY_TTL:\n            return decay\n    \n    # 2. Note type mapping\n    if note_type == 'decision':\n        return 'permanent'\n    if note_type == 'session':\n        return 'session'\n    if note_type == 'error':\n        return 'active'\n    \n    # 3. Tag-based rules (normalize tags to lowercase)\n    tag_set = {t.lower().lstrip('#') for t in tags}\n    \n    if tag_set & {'permanent', 'architecture', 'convention'}:\n        return 'permanent'\n    if tag_set & {'checkpoint', 'preflight'}:\n        return 'checkpoint'\n    if tag_set & {'debug', 'temp', 'temporary'}:\n        return 'session'\n    if tag_set & {'wip', 'sprint', 'task', 'todo'}:\n        return 'active'\n    \n    # 4. Content pattern matching\n    if PERMANENT_PATTERNS.search(content):\n        return 'permanent'\n    if SESSION_PATTERNS.search(content):\n        return 'session'\n    if ACTIVE_PATTERNS.search(content):\n        return 'active'\n    \n    # 5. Default\n    return 'stable'\n\ndef calculate_expiry(\n    decay_class: DecayClass,\n    base_time: datetime | None = None,\n) -> str | None:\n    \"\"\"Calculate expiry timestamp for decay class.\"\"\"\n    ttl = DECAY_TTL.get(decay_class)\n    if ttl is None:\n        return None  # Permanent notes never expire\n    \n    base = base_time or datetime.utcnow()\n    expiry = base + timedelta(seconds=ttl)\n    return expiry.isoformat()\n```\n\nWire into `index_note()` method after parsing:\n```python\n# After getting parsed note data\ndecay_class = classify_decay(\n    note.note_type,\n    note.tags,\n    parsed.frontmatter.extra,  # Contains unknown frontmatter fields\n    note.content,\n)\nexpires_at = calculate_expiry(decay_class)\nlast_accessed_at = datetime.utcnow().isoformat()\n\n# Add to INSERT/UPDATE SQL\n```",
+        "testStrategy": "1. Unit test classify_decay() with frontmatter override (should win over all other signals)\n2. Unit test note_type mappings: decision→permanent, session→session, error→active\n3. Unit test tag-based rules with various tag combinations\n4. Unit test content patterns with sample decision/session/active language\n5. Unit test calculate_expiry() returns None for permanent, correct ISO timestamps for others\n6. Unit test default fallback to 'stable' when no signals present\n7. Integration test: index note with decision type, verify decay_class='permanent'",
+        "priority": "high",
+        "dependencies": [
+          "25"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add decay classification types and constants to search_index.py",
+            "description": "Create the DecayClass type alias, DECAY_TTL dictionary mapping decay classes to TTL values in seconds, and compile regex patterns (PERMANENT_PATTERNS, ACTIVE_PATTERNS, SESSION_PATTERNS) at module level for efficient pattern matching.",
+            "dependencies": [],
+            "details": "Add to the top of `backend/app/services/search_index.py` after the existing imports:\n\n1. Import required modules: `from typing import Literal`, `import re`\n2. Define `DecayClass = Literal['permanent', 'stable', 'active', 'session', 'checkpoint']`\n3. Create `DECAY_TTL` dict with: permanent=None, stable=90*24*3600, active=14*24*3600, session=24*3600, checkpoint=4*3600\n4. Compile regex patterns at module level:\n   - PERMANENT_PATTERNS for decision/architecture language\n   - ACTIVE_PATTERNS for working on/todo/blocker language\n   - SESSION_PATTERNS for debugging/right now/temp language\n\nReference the design.md for exact pattern strings. Module-level compilation ensures patterns are only compiled once for performance.\n<info added on 2026-02-14T20:41:55.927Z>\nI'll analyze the codebase to understand the current implementation and the design documents to provide specific, accurate implementation guidance.Based on my analysis of the design document and implementation plan, I can now provide the specific information that should be added to subtask 26.1's details.\n\nAccording to **docs/wip/memory-decay-scoring/design.md** section \"Decay Classes\" (lines 46-54):\n\n**Permanent patterns**: Match decision/architecture language like \"decided to\", \"chose X because\", \"always use\", \"never do\", \"went with X for\", \"should always\", \"must never\"\n\n**Active patterns**: Match working-on/todo/blocker language like \"working on\", \"todo\", \"blocker\", \"need to\", \"blocked by\"\n\n**Session patterns**: Match debugging/right-now/temp language like \"currently debugging\", \"right now\", \"this session\", \"temporary fix\", \"debug this\"\n\nAccording to **docs/wip/memory-decay-scoring/implementation.md** Phase 1 (lines 46-74):\n\nThe patterns should be compiled at module level using `re.compile()` with appropriate flags (IGNORECASE recommended for robustness). The exact regex patterns are defined in **design.md** lines 88-95 under \"Decision Extraction - Regex Extraction\":\n\n- `r'(?:decided|chose|picked|selected|choosing)\\s+(?:to\\s+)?(?:use\\s+)?(.+?)(?:\\s+(?:because|since|for|due to|over)\\s+(.+?))?\\.?\\s*$'`\n- `r'(?:use|using|chose|prefer|picked)\\s+(.+?)\\s+(?:over|instead of|rather than)\\s+(.+?)(?:\\s+(?:because|since|for|due to)\\s+(.+?))?\\.?\\s*$'`\n- `r'(?:always|never|must|should always|should never)\\s+(.+?)\\.?\\s*$'`\n- `r'(?:went with|sticking with|going with)\\s+(.+?)(?:\\s+(?:for|due to|because)\\s+(.+?))?\\.?\\s*$'`\n\nFor active and session patterns, derive from the triggers in design.md lines 46-54.\n</info added on 2026-02-14T20:41:55.927Z>",
+            "status": "done",
+            "testStrategy": "Unit test that DECAY_TTL contains all 5 decay classes with correct TTL values. Verify regex patterns compile without errors and match expected test strings.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:22:27.992Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement classify_decay() function with priority-based rules",
+            "description": "Create the classify_decay() function that takes note_type, tags, frontmatter, and content as parameters and returns the appropriate DecayClass by evaluating rules in priority order: frontmatter override → note type mapping → tag-based rules → content patterns → default stable.",
+            "dependencies": [
+              1
+            ],
+            "details": "Add `classify_decay()` function to `backend/app/services/search_index.py`:\n\n1. Function signature: `def classify_decay(note_type: str, tags: list[str], frontmatter: dict, content: str) -> DecayClass`\n2. Priority 1: Check frontmatter['decay_class'] and return if valid\n3. Priority 2: Map note_type: decision→permanent, session→session, error→active\n4. Priority 3: Normalize tags to lowercase set, check for:\n   - {permanent, architecture, convention} → permanent\n   - {checkpoint, preflight} → checkpoint\n   - {debug, temp, temporary} → session\n   - {wip, sprint, task, todo} → active\n5. Priority 4: Use compiled regex patterns on content\n6. Priority 5: Return 'stable' as default\n\nReference docs/wip/memory-decay-scoring/design.md lines 48-62 for complete rule set.",
+            "status": "done",
+            "testStrategy": "Unit tests for each priority level: (1) frontmatter override beats all other signals, (2) note_type mappings work correctly, (3) tag-based rules with various tag combinations, (4) content pattern matching with sample text, (5) default stable when no rules match. Test tag normalization handles both '#tag' and 'tag' formats.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:22:28.014Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement calculate_expiry() function with TTL calculation",
+            "description": "Create calculate_expiry() function that takes a DecayClass and optional base_time, looks up the TTL from DECAY_TTL dict, and returns an ISO8601 timestamp string representing when the note expires (or None for permanent notes).",
+            "dependencies": [
+              1
+            ],
+            "details": "Add `calculate_expiry()` function to `backend/app/services/search_index.py`:\n\n1. Function signature: `def calculate_expiry(decay_class: DecayClass, base_time: datetime | None = None) -> str | None`\n2. Look up TTL from DECAY_TTL dict using decay_class\n3. If TTL is None (permanent notes), return None\n4. Use base_time if provided, otherwise use `datetime.utcnow()`\n5. Calculate expiry as base + timedelta(seconds=ttl)\n6. Return expiry.isoformat() for serialization to SQLite TEXT column\n\nThis function is pure logic with no side effects, making it easy to test in isolation.",
+            "status": "done",
+            "testStrategy": "Unit tests: (1) permanent class returns None, (2) stable class returns timestamp 90 days in future, (3) active returns 14 days, (4) session returns 24 hours, (5) checkpoint returns 4 hours. Test with explicit base_time to avoid time-dependent test failures.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:22:28.024Z"
+          },
+          {
+            "id": 4,
+            "title": "Wire classify_decay() and calculate_expiry() into index_note() method",
+            "description": "Integrate the decay classification and expiry calculation into the existing index_note() method by calling classify_decay() after parsing the note and calculate_expiry() to set expires_at, then include these values in the INSERT/UPDATE SQL statements.",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Modify `backend/app/services/search_index.py` in the `index_note()` method:\n\n1. After parsing note with MarkdownParser (where you have `parsed` variable), call:\n   ```python\n   decay_class = classify_decay(\n       note.note_type,\n       note.tags,\n       parsed.frontmatter.extra,  # Contains unknown frontmatter fields\n       note.content,\n   )\n   expires_at = calculate_expiry(decay_class)\n   last_accessed_at = datetime.utcnow().isoformat()\n   ```\n2. Add decay_class, expires_at, last_accessed_at to INSERT SQL statement\n3. Add decay_class, expires_at to UPDATE SQL statement (last_accessed_at is only set on creation)\n4. Ensure the new columns exist in the notes table schema (task 25 dependency handles migration)\n\nRead the existing index_note() implementation carefully to understand where to inject this logic and which variables are available at that point.",
+            "status": "done",
+            "testStrategy": "Integration test: Create test note with decision note_type, verify decay_class='permanent' and expires_at=None in database. Create note with #wip tag, verify decay_class='active' and expires_at is ~14 days from now. Update existing note, verify decay_class is recalculated.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:22:28.037Z"
+          },
+          {
+            "id": 5,
+            "title": "Add comprehensive unit tests for classify_decay() edge cases",
+            "description": "Create thorough unit tests covering all classification rules, edge cases, priority ordering, and tag normalization to ensure classify_decay() correctly handles malformed input, conflicting signals, and boundary conditions.",
+            "dependencies": [
+              2
+            ],
+            "details": "Create test file `backend/tests/test_decay_classification.py` with comprehensive coverage:\n\n1. Test frontmatter override priority:\n   - frontmatter decay_class='permanent' overrides note_type='session'\n   - frontmatter decay_class='checkpoint' overrides #wip tag\n   - Invalid frontmatter decay_class falls through to next priority\n\n2. Test note_type mappings:\n   - decision → permanent\n   - session → session  \n   - error → active\n   - Unknown note_type falls through\n\n3. Test tag-based rules:\n   - Multiple tags with different priorities (highest priority wins)\n   - Tag normalization: both '#permanent' and 'permanent' work\n   - Case insensitivity: '#WIP' and '#wip' both → active\n\n4. Test content pattern matching:\n   - Decision language → permanent\n   - Working on/todo → active\n   - Debugging/temp → session\n   - Pattern matching is case-insensitive\n\n5. Test default fallback:\n   - Empty note → stable\n   - No matching patterns → stable\n\nReference existing test patterns in backend/tests/ for consistency.",
+            "status": "done",
+            "testStrategy": "Run pytest with coverage to ensure all branches in classify_decay() are tested. Verify test suite covers: frontmatter override edge cases, all note_type mappings, tag normalization variants, regex pattern matches, and default fallback.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:24:31.711Z"
+          }
+        ],
+        "updatedAt": "2026-02-17T21:24:31.711Z"
+      },
+      {
+        "id": "27",
+        "title": "Implement Composite Search Scoring Formula",
+        "description": "Replace the current BM25 + optional recency boost with an always-on four-component composite score: relevance (0.50) + freshness (0.25) + confidence (0.15) + decision_boost (0.10). Add score_breakdown to search results.",
+        "details": "Modify `search()` method in `search_index.py`:\n\n```python\nasync def search(self, query: SearchQuery) -> SearchResults:\n    start_time = time.time()\n    \n    # Build base FTS query\n    fts_query = self._build_fts_query(query)\n    \n    # SQL with composite scoring components\n    sql = \"\"\"\n        SELECT \n            n.id, n.vault_name, n.relative_path, n.permalink, n.title,\n            n.note_type, n.project, n.content, n.created_at, n.updated_at,\n            n.decay_class, n.confidence,\n            bm25(notes_fts, {title_w}, 1.0, {tags_w}, {obs_w}) AS rank,\n            (1.0 / (1.0 + (julianday('now') - julianday(COALESCE(n.updated_at, n.created_at))) / 30.0)) AS freshness,\n            COALESCE(\n                (SELECT 1.0 FROM observations o \n                 WHERE o.note_id = n.id AND o.decay_override = 'permanent' LIMIT 1),\n                0.0\n            ) AS decision_boost\n        FROM notes n\n        JOIN notes_fts ON notes_fts.rowid = n.id\n        WHERE notes_fts MATCH ?\n          AND (? = 1 OR (n.expires_at IS NULL OR n.expires_at > datetime('now')))\n          AND (? = 1 OR n.confidence >= 0.1)\n          {filters}\n        ORDER BY rank\n        LIMIT ? OFFSET ?\n    \"\"\".format(\n        title_w=query.boost_title,\n        tags_w=query.boost_tags,\n        obs_w=query.boost_observations,\n        filters=self._build_filter_clauses(query),\n    )\n    \n    include_expired = getattr(query, 'include_expired', False)\n    params = [fts_query, 1 if include_expired else 0, 1 if include_expired else 0, ...]\n    \n    # Execute and fetch results\n    cursor = await self.db.execute(sql, params)\n    rows = await cursor.fetchall()\n    \n    # Normalize BM25 scores and compute composite\n    if rows:\n        ranks = [abs(row['rank']) for row in rows]  # BM25 returns negative\n        min_rank, max_rank = min(ranks), max(ranks)\n        rank_range = max_rank - min_rank if max_rank != min_rank else 1.0\n    \n    results = []\n    for row in rows:\n        # Normalize relevance to 0-1 (lower BM25 rank = better = higher score)\n        relevance = 1.0 - (abs(row['rank']) - min_rank) / rank_range if rank_range else 1.0\n        freshness = row['freshness']\n        confidence = row['confidence'] or 1.0\n        decision_boost = row['decision_boost']\n        \n        # Composite formula\n        score = relevance * 0.50 + freshness * 0.25 + confidence * 0.15 + decision_boost * 0.10\n        \n        results.append(SearchResult(\n            ...,\n            score=score,\n            score_breakdown={\n                'relevance': round(relevance, 4),\n                'freshness': round(freshness, 4),\n                'confidence': round(confidence, 4),\n                'decision_boost': round(decision_boost, 4),\n            },\n            decay_class=row['decay_class'],\n            confidence=row['confidence'],\n        ))\n    \n    # Sort by composite score descending\n    results.sort(key=lambda r: r.score, reverse=True)\n```\n\nUpdate `models/search.py`:\n```python\nclass SearchQuery(BaseModel):\n    # ... existing fields ...\n    include_expired: bool = Field(default=False, description=\"Include expired/low-confidence notes\")\n    # Mark recency_boost and recency_decay as deprecated (still accept but ignore)\n\nclass SearchResult(BaseModel):\n    # ... existing fields ...\n    score_breakdown: dict[str, float] | None = Field(default=None)\n    decay_class: str | None = Field(default=None)\n    confidence: float | None = Field(default=None)\n```",
+        "testStrategy": "1. Unit test composite scoring formula with controlled inputs (verify weights sum correctly)\n2. Test relevance normalization: best BM25 match should get relevance=1.0, worst=0.0\n3. Test freshness calculation: today=~1.0, 30 days=~0.5, 90 days=~0.25\n4. Test decision_boost: notes with permanent observations get 0.10 boost\n5. Test expired note filtering: default excludes expired, include_expired=True includes them\n6. Test confidence filtering: notes with confidence<0.1 excluded by default\n7. Regression test: existing searches still return sensible results\n8. Performance test: composite scoring adds <50ms overhead for 1000 results",
+        "priority": "high",
+        "dependencies": [
+          "25"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add new SearchQuery fields for composite scoring",
+            "description": "Update SearchQuery model to add include_expired field and deprecate recency_boost/recency_decay fields. Mark deprecated fields with warnings while maintaining backward compatibility.",
+            "dependencies": [],
+            "details": "In backend/app/models/search.py, add `include_expired: bool = Field(default=False, description=\"Include expired/low-confidence notes\")` to SearchQuery class. Add deprecation notices to recency_boost and recency_decay field descriptions (\"DEPRECATED: Replaced by composite scoring in v2. This parameter is ignored.\"). Keep the fields present for backward compatibility but they will not be used in the new scoring logic.\n<info added on 2026-02-14T20:42:22.313Z>\nI'll analyze the codebase to understand the current implementation and provide context-specific references for the design documents.Based on the design document (Feature 3: Composite Search Scoring) and implementation plan (Phase 3: Composite Search Scoring), here is the new information that should be appended to subtask 27.2:\n\nThe score_breakdown field must be added to SearchResult model as `score_breakdown: dict[str, float] | None` containing four component values: relevance (BM25 normalized 0-1, weight 0.50), freshness (exponential decay from updated_at with formula 1.0/(1.0 + days_since_update/30), weight 0.25), confidence (direct from notes.confidence column 0-1, weight 0.15), and decision_boost (binary 1.0 if note has any permanent observation else 0.0, weight 0.10). The decay_class and confidence fields must also be added to SearchResult model to surface these values in search responses. Default should be None for backward compatibility - only populate when composite scoring is active.\n</info added on 2026-02-14T20:42:22.313Z>",
+            "status": "done",
+            "testStrategy": "Unit test: Create SearchQuery with include_expired=True and verify field is set. Verify deprecated fields still parse but can be ignored in search logic.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:37:17.697Z"
+          },
+          {
+            "id": 2,
+            "title": "Add score_breakdown and decay fields to SearchResult model",
+            "description": "Extend SearchResult model to include score_breakdown dictionary, decay_class, and confidence fields for transparency in composite scoring.",
+            "dependencies": [],
+            "details": "In backend/app/models/search.py, add three new fields to SearchResult class: `score_breakdown: dict[str, float] | None = Field(default=None, description=\"Breakdown of composite score components\")`, `decay_class: str | None = Field(default=None, description=\"Decay classification of note\")`, and `confidence: float | None = Field(default=None, description=\"Note confidence score (0.0-1.0)\")`. These fields will be populated by the new composite scoring logic in search_index.py.",
+            "status": "done",
+            "testStrategy": "Unit test: Create SearchResult with all new fields and verify serialization. Test with score_breakdown={'relevance': 0.85, 'freshness': 0.72, 'confidence': 1.0, 'decision_boost': 0.0} and verify dict structure.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:37:17.706Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement composite scoring SQL query with all four components",
+            "description": "Rewrite the SQL SELECT in SearchIndex.search() to compute relevance (BM25), freshness (time-based), confidence (from column), and decision_boost (subquery for permanent observations) as separate columns.",
+            "dependencies": [],
+            "details": "In backend/app/services/search_index.py search() method, modify the SQL query at line ~1068 to add four computed columns:\n1. `rank` - existing BM25 with field weights: bm25(notes_fts, {title_w}, 1.0, {tags_w}, {obs_w})\n2. `freshness` - (1.0 / (1.0 + (julianday('now') - julianday(COALESCE(n.updated_at, n.created_at))) / 30.0))\n3. Read confidence directly from n.confidence column\n4. `decision_boost` - COALESCE((SELECT 1.0 FROM observations o WHERE o.note_id = n.id AND o.decay_override = 'permanent' LIMIT 1), 0.0)\nAdd decay_class, confidence to SELECT. Add default WHERE filter: `(n.expires_at IS NULL OR n.expires_at > datetime('now'))` unless include_expired=True, and `n.confidence >= 0.1` unless include_expired=True.",
+            "status": "done",
+            "testStrategy": "Integration test: Execute search query and verify all four score component columns are returned. Test with a permanent observation note and verify decision_boost=1.0. Test expired note filtering with include_expired flag.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:37:17.713Z"
+          },
+          {
+            "id": 4,
+            "title": "Normalize BM25 relevance scores and compute weighted composite",
+            "description": "After fetching SQL results, normalize BM25 ranks to 0-1 scale (best match=1.0, worst=0.0), then calculate composite score using formula: score = relevance*0.50 + freshness*0.25 + confidence*0.15 + decision_boost*0.10.",
+            "dependencies": [
+              3
+            ],
+            "details": "In backend/app/services/search_index.py search() method after SQL execution (~line 1115):\n1. Extract all BM25 ranks: `ranks = [abs(row['rank']) for row in rows]` (BM25 returns negative)\n2. Find min/max: `min_rank, max_rank = min(ranks), max(ranks)`\n3. Calculate range: `rank_range = max_rank - min_rank if max_rank != min_rank else 1.0`\n4. For each result row, normalize relevance: `relevance = 1.0 - (abs(row['rank']) - min_rank) / rank_range` (inverted so lower BM25 rank = higher relevance score)\n5. Apply composite formula: `score = relevance * 0.50 + freshness * 0.25 + confidence * 0.15 + decision_boost * 0.10`\n6. Create score_breakdown dict with rounded values: `{'relevance': round(relevance, 4), 'freshness': round(freshness, 4), 'confidence': round(confidence, 4), 'decision_boost': round(decision_boost, 4)}`\n7. Sort results by composite score descending before returning.",
+            "status": "done",
+            "testStrategy": "Unit test: Mock rows with known BM25 ranks (e.g., -2.5, -1.0, -0.5) and verify normalization produces relevance scores between 0-1. Test composite formula with controlled inputs and verify weights sum correctly. Integration test: Search for term, verify results sorted by composite score.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:37:17.722Z"
+          },
+          {
+            "id": 5,
+            "title": "Update SearchResult construction to populate new fields",
+            "description": "Modify SearchResult object creation to include score_breakdown, decay_class, and confidence fields from the composite scoring calculations.",
+            "dependencies": [
+              2,
+              4
+            ],
+            "details": "In backend/app/services/search_index.py search() method, update the SearchResult constructor call (~line 1141) to include the three new fields: `decay_class=row['decay_class']`, `confidence=row['confidence']`, and `score_breakdown=score_breakdown_dict`. The score field should be set to the computed composite score instead of the raw BM25 rank. Remove the old recency_boost conditional logic in _build_bm25_rank() since it's replaced by the always-on freshness component.",
+            "status": "done",
+            "testStrategy": "Integration test: Execute full search with composite scoring, verify SearchResult objects contain all fields. Test score_breakdown sums to expected range. Verify decay_class and confidence match database values. Test that recency_boost parameter is now ignored.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:37:17.730Z"
+          }
+        ],
+        "updatedAt": "2026-02-17T21:37:17.730Z"
+      },
+      {
+        "id": "28",
+        "title": "Implement Access Refresh and Confidence Decay",
+        "description": "Add TTL refresh logic after search returns results (for stable/active notes) and implement the decay_confidence() method that soft-decays notes approaching expiry and protects decision-bearing notes.",
+        "details": "Add access refresh at end of `search()` method:\n\n```python\nasync def _refresh_access(self, note_ids: list[int]) -> None:\n    \"\"\"Refresh TTL for accessed stable/active notes.\"\"\"\n    if not note_ids:\n        return\n    \n    try:\n        placeholders = ','.join('?' * len(note_ids))\n        await self.db.execute(f\"\"\"\n            UPDATE notes\n            SET last_accessed_at = datetime('now'),\n                expires_at = CASE decay_class\n                    WHEN 'stable' THEN datetime('now', '+90 days')\n                    WHEN 'active' THEN datetime('now', '+14 days')\n                    ELSE expires_at\n                END\n            WHERE id IN ({placeholders})\n              AND decay_class IN ('stable', 'active')\n        \"\"\", note_ids)\n        await self.db.commit()\n    except Exception as e:\n        logger.warning(f\"Failed to refresh access times: {e}\")\n        # Don't fail the search if refresh fails\n\n# At end of search() method:\nrefreshable_ids = [\n    r.note_id for r in results \n    if r.decay_class in ('stable', 'active')\n]\nif refreshable_ids:\n    await self._refresh_access(refreshable_ids)\n```\n\nAdd confidence decay method (called from API endpoint):\n\n```python\nasync def decay_confidence(self) -> dict[str, int]:\n    \"\"\"Decay confidence for notes approaching or past expiry.\n    \n    Returns dict with counts: {decayed, protected, expired}\n    \"\"\"\n    stats = {'decayed': 0, 'protected': 0, 'expired': 0}\n    \n    # Step 1: Soft decay - notes 75%+ through TTL without recent access\n    cursor = await self.db.execute(\"\"\"\n        UPDATE notes\n        SET confidence = MAX(0.1, confidence * 0.5)\n        WHERE expires_at IS NOT NULL\n          AND datetime('now') > datetime(\n              last_accessed_at, \n              '+' || CAST((julianday(expires_at) - julianday(last_accessed_at)) * 0.75 AS INTEGER) || ' days'\n          )\n          AND confidence > 0.1\n          AND id NOT IN (\n              SELECT DISTINCT note_id FROM observations WHERE decay_override = 'permanent'\n          )\n    \"\"\")\n    stats['decayed'] = cursor.rowcount\n    \n    # Step 2: Decision-protected floor\n    cursor = await self.db.execute(\"\"\"\n        UPDATE notes\n        SET confidence = 0.5\n        WHERE id IN (\n            SELECT DISTINCT note_id FROM observations WHERE decay_override = 'permanent'\n        )\n        AND confidence < 0.5\n    \"\"\")\n    stats['protected'] = cursor.rowcount\n    \n    # Step 3: Expiry marking\n    cursor = await self.db.execute(\"\"\"\n        UPDATE notes\n        SET confidence = 0.05\n        WHERE expires_at IS NOT NULL\n          AND expires_at < datetime('now')\n          AND confidence > 0.05\n    \"\"\")\n    stats['expired'] = cursor.rowcount\n    \n    await self.db.commit()\n    return stats\n```",
+        "testStrategy": "1. Test access refresh: search returns stable note, verify last_accessed_at and expires_at updated\n2. Test access refresh: permanent/session/checkpoint notes NOT refreshed\n3. Test access refresh errors don't break search results (graceful degradation)\n4. Test decay_confidence step 1: note at 80% TTL without access gets confidence *= 0.5\n5. Test decay_confidence step 2: decision-protected notes don't go below 0.5\n6. Test decay_confidence step 3: expired notes get confidence = 0.05\n7. Test decay_confidence with permanent notes (never decayed)\n8. Test idempotency: running decay_confidence twice doesn't keep halving",
+        "priority": "medium",
+        "dependencies": [
+          "26",
+          "27"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement _refresh_access() method in SearchIndex",
+            "description": "Add the private _refresh_access() method to batch-update last_accessed_at and expires_at for stable/active notes that were returned in search results.",
+            "dependencies": [],
+            "details": "Create async method _refresh_access(note_ids: list[int]) in search_index.py. Build dynamic SQL with placeholders for variable-length note_ids list. UPDATE notes table: set last_accessed_at=datetime('now'), expires_at=CASE decay_class WHEN 'stable' THEN datetime('now', '+90 days') WHEN 'active' THEN datetime('now', '+14 days') ELSE expires_at END. Filter WHERE id IN (placeholders) AND decay_class IN ('stable', 'active'). Wrap in try/except with logger.warning on failure—must NOT break search if refresh fails. Commit after update.\n<info added on 2026-02-14T20:42:52.099Z>\n★ Insight ─────────────────────────────────────\n- The subtask requests specific design and implementation document references to ensure implementation aligns with the overall architecture\n- Need to examine the referenced documents to extract relevant sections for access refresh implementation\n- This provides critical context for the developer about WHY certain design decisions were made\n─────────────────────────────────────────────────────────\n\nLet me examine the referenced design and implementation documents to extract the relevant sections for this subtask.★ Insight ─────────────────────────────────────\n- The design document describes access refresh as a post-search operation (line 64-69) that selectively refreshes TTL only for stable/active notes\n- The implementation plan details the exact SQL logic (lines 202-227) with CASE statement for different decay classes\n- Decision protection is mentioned in both documents - notes with permanent observations should be handled carefully in the refresh logic\n─────────────────────────────────────────────────────────\n\nBased on the referenced documents, here's the specific context to append:\n\nDesign rationale: Access refresh runs after search SELECT to minimize performance impact. Only stable/active notes benefit from TTL extension - permanent notes never expire, session/checkpoint have fixed short TTLs. SQL uses CASE expression to branch on decay_class within single UPDATE statement. Must be wrapped in try/except to prevent refresh failures from breaking search results. Implementation follows Phase 4 of implementation plan (lines 190-234 in implementation.md). Design doc specifies batch UPDATE approach using collected IDs from result set (design.md lines 64-69). Confidence decay (Phase 5) will later add decision protection rules, but access refresh itself is neutral - it simply resets TTL for accessed notes regardless of decision presence.\n</info added on 2026-02-14T20:42:52.099Z>",
+            "status": "done",
+            "testStrategy": "Unit test: call _refresh_access([1,2,3]) with mock notes, verify SQL contains 3 placeholders. Integration test: index note with decay_class='stable', search returns it, verify last_accessed_at updated and expires_at pushed forward 90 days. Test graceful degradation: force DB error in refresh, verify search results still returned.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:00:52.399Z"
+          },
+          {
+            "id": 2,
+            "title": "Integrate access refresh into search() method",
+            "description": "Call _refresh_access() at the end of the search() method, after building SearchResults but before returning. Collect note IDs from results that have decay_class in ('stable', 'active').",
+            "dependencies": [
+              1
+            ],
+            "details": "In search() method in search_index.py, after constructing SearchResults object but before 'return SearchResults(...)' line. Add code: refreshable_ids = [r.note_id for r in results if r.decay_class in ('stable', 'active')]. Check if refreshable_ids non-empty, then await self._refresh_access(refreshable_ids). This requires SearchResult objects to include decay_class field—verify from Task 27 that decay_class is already in SELECT and SearchResult model. If not, add n.decay_class to SELECT clause and SearchResult dataclass.",
+            "status": "done",
+            "testStrategy": "Test access refresh triggered: search returns 2 stable notes and 1 permanent note, verify _refresh_access called with exactly 2 note IDs (permanent excluded). Test empty results: search returns no results, verify _refresh_access not called. Test mixed decay classes: search returns stable+active+session notes, verify only stable+active refreshed.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:00:52.407Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement decay_confidence() method core logic",
+            "description": "Create the decay_confidence() async method that performs three-step confidence decay: soft decay for notes 75%+ through TTL, decision-protected floor at 0.5, and expiry marking at 0.05.",
+            "dependencies": [],
+            "details": "Add async method decay_confidence() -> dict[str, int] to SearchIndex class in search_index.py. Initialize stats dict with keys: decayed, protected, expired. Step 1 (soft decay): UPDATE notes SET confidence = MAX(0.1, confidence * 0.5) WHERE expires_at IS NOT NULL AND datetime('now') > datetime(last_accessed_at, '+' || CAST((julianday(expires_at) - julianday(last_accessed_at)) * 0.75 AS INTEGER) || ' days') AND confidence > 0.1 AND id NOT IN (SELECT DISTINCT note_id FROM observations WHERE decay_override = 'permanent'). Capture cursor.rowcount to stats['decayed']. Step 2 (decision floor): UPDATE notes SET confidence = 0.5 WHERE id IN (SELECT DISTINCT note_id FROM observations WHERE decay_override = 'permanent') AND confidence < 0.5. Capture to stats['protected']. Step 3 (expiry): UPDATE notes SET confidence = 0.05 WHERE expires_at IS NOT NULL AND expires_at < datetime('now') AND confidence > 0.05. Capture to stats['expired']. Commit and return stats dict.",
+            "status": "done",
+            "testStrategy": "Test soft decay: create note at 80% through TTL with confidence=1.0, run decay_confidence(), verify confidence=0.5 and stats['decayed']=1. Test decision protection: create note with permanent observation and confidence=0.3, run decay_confidence(), verify confidence raised to 0.5 and stats['protected']=1. Test expiry marking: create note past expires_at with confidence=1.0, run decay_confidence(), verify confidence=0.05 and stats['expired']=1. Test floor enforcement: note already at confidence=0.05, verify not decayed further. Test no-ops: note recently accessed within 75% window, verify no change.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:00:52.416Z"
+          },
+          {
+            "id": 4,
+            "title": "Add decay_class to SearchResult and search SQL",
+            "description": "Ensure decay_class column is selected in search() SQL query and included in SearchResult dataclass, enabling access refresh filtering.",
+            "dependencies": [],
+            "details": "In search() method around line 1005-1050, verify the SELECT clause includes n.decay_class. Check existing SearchResult model definition (likely in models/ or at top of search_index.py). If decay_class field not present, add 'decay_class: str' field to SearchResult dataclass. Also add n.confidence to SELECT if not already present (needed for future features). Update SearchResult construction in search() method to pass decay_class=row['decay_class'] when building SearchResult objects from database rows.",
+            "status": "done",
+            "testStrategy": "Test SearchResult includes decay_class: search returns note with decay_class='stable', verify result.decay_class == 'stable'. Test all decay classes: search returns notes with permanent/stable/active/session/checkpoint, verify each result.decay_class matches database value. Test default: search note without explicit decay_class (should default to 'stable' from schema), verify result shows 'stable'.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:00:52.425Z"
+          },
+          {
+            "id": 5,
+            "title": "Add comprehensive logging and error handling",
+            "description": "Add detailed logging for access refresh operations and decay confidence execution, with proper error handling that degrades gracefully without breaking search.",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "In _refresh_access(): add logger.debug(f'Refreshing access for {len(note_ids)} notes') at start. On exception, log logger.warning(f'Failed to refresh access times: {e}') and return without re-raising (already in provided code). In decay_confidence(): add logger.info(f'Starting confidence decay run') at start. After each UPDATE step, log logger.debug(f'Decay step {step_name}: {rowcount} notes affected'). At end, log logger.info(f'Confidence decay complete: {stats}'). Wrap entire method in try/except with logger.error on unexpected errors, re-raise after logging. Add docstring to both methods with clear purpose, parameters, return types, and any exceptions raised.",
+            "status": "done",
+            "testStrategy": "Test logging output: enable debug logging, run search with refreshable notes, verify 'Refreshing access for N notes' appears in logs. Test error logging: mock DB error in _refresh_access, verify warning logged with exception message. Test decay logging: run decay_confidence(), verify info log with final stats dict. Test no spam: run search with no refreshable notes, verify no refresh logs emitted.",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:00:52.436Z"
+          }
+        ],
+        "updatedAt": "2026-02-17T22:00:52.436Z"
+      },
+      {
+        "id": "29",
+        "title": "Implement Regex Decision Extraction in Parser",
+        "description": "Add extract_decisions_from_prose() method to MarkdownParser that detects decision patterns in note content using compiled regex patterns, returning auto-extracted Observation objects with permanent decay override.",
+        "details": "Add to `markdown_parser.py`:\n\n```python\n# Compile decision patterns at module level\nDECISION_PATTERNS = [\n    # decided/chose/picked X because Y\n    re.compile(\n        r'(?:decided|chose|picked|selected|choosing)\\s+(?:to\\s+)?(?:use\\s+)?(.+?)'\n        r'(?:\\s+(?:because|since|for|due to)\\s+(.+?))?[.!]?\\s*$',\n        re.IGNORECASE | re.MULTILINE\n    ),\n    # use X over Y\n    re.compile(\n        r'(?:use|using|chose|prefer|picked)\\s+(.+?)\\s+(?:over|instead of|rather than)\\s+(.+?)'\n        r'(?:\\s+(?:because|since|for|due to)\\s+(.+?))?[.!]?\\s*$',\n        re.IGNORECASE | re.MULTILINE\n    ),\n    # always/never/must X\n    re.compile(\n        r'(?:always|never|must|should always|should never)\\s+(.+?)[.!]?\\s*$',\n        re.IGNORECASE | re.MULTILINE\n    ),\n    # went with X for Y\n    re.compile(\n        r'(?:went with|sticking with|going with)\\s+(.+?)'\n        r'(?:\\s+(?:for|due to|because)\\s+(.+?))?[.!]?\\s*$',\n        re.IGNORECASE | re.MULTILINE\n    ),\n]\n\ndef extract_decisions_from_prose(\n    self,\n    content: str,\n    existing_observations: list[Observation],\n) -> list[Observation]:\n    \"\"\"Extract decision observations from prose content.\n    \n    Skips code blocks and existing observation lines.\n    Deduplicates against existing observations.\n    \"\"\"\n    decisions: list[Observation] = []\n    code_ranges = self._get_code_block_ranges(content)\n    existing_contents = {obs.content.lower() for obs in existing_observations}\n    \n    lines = content.split('\\n')\n    for line_num, line in enumerate(lines, start=1):\n        # Skip code blocks\n        if self._is_in_code_block(line_num, code_ranges):\n            continue\n        \n        # Skip existing observation lines\n        stripped = line.strip()\n        if OBSERVATION_PATTERN.match(stripped):\n            continue\n        \n        # Skip empty lines and frontmatter markers\n        if not stripped or stripped == '---':\n            continue\n        \n        # Test against each decision pattern\n        for pattern in DECISION_PATTERNS:\n            match = pattern.search(stripped)\n            if match:\n                decision_content = stripped\n                \n                # Skip if similar to existing observation\n                if any(\n                    decision_content.lower() in existing \n                    or existing in decision_content.lower()\n                    for existing in existing_contents\n                ):\n                    continue\n                \n                decisions.append(Observation(\n                    category=ObservationCategory.DECISION,\n                    content=decision_content,\n                    tags=[],\n                    context=match.group(2) if len(match.groups()) > 1 else None,\n                    line_number=line_num,\n                    auto_extracted=True,\n                    decay_override='permanent',\n                ))\n                break  # One match per line is enough\n    \n    return decisions\n```\n\nWire into `index_note()` in `search_index.py`:\n```python\n# After inserting regular observations\nauto_decisions = parser.extract_decisions_from_prose(\n    note.content, \n    note.observations\n)\nfor decision in auto_decisions:\n    await self.db.execute(\"\"\"\n        INSERT INTO observations(\n            note_id, category, content, context, line_number, \n            auto_extracted, decay_override\n        ) VALUES (?, ?, ?, ?, ?, 1, 'permanent')\n    \"\"\", (note_id, 'decision', decision.content, decision.context, decision.line_number))\n```",
+        "testStrategy": "1. Test each regex pattern with positive examples from PRD\n2. Test negative cases: code blocks skipped, existing observations skipped\n3. Test deduplication: manual [decision] line prevents duplicate extraction\n4. Test line number tracking is accurate\n5. Test multiple decisions in same note are all extracted\n6. Test empty/whitespace lines are skipped\n7. Integration test: index note with decision prose, verify observations table has auto_extracted=1 entries",
+        "priority": "high",
+        "dependencies": [
+          "25"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add auto_extracted and decay_override fields to Observation model",
+            "description": "Extend the Observation Pydantic model in app/models/note.py to include auto_extracted (bool) and decay_override (optional str) fields for supporting auto-extracted decision observations with permanent decay override.",
+            "dependencies": [],
+            "details": "Modify the Observation class in backend/app/models/note.py by adding two new Pydantic fields:\n1. auto_extracted: bool = Field(default=False, description=\"True if detected by parser/AI, False if manually written\")\n2. decay_override: str | None = Field(default=None, description=\"When set to 'permanent', protects parent note's confidence floor\")\n\nThese fields enable tracking which observations were auto-extracted vs user-authored, and allow decision observations to override note-level decay settings.\n<info added on 2026-02-14T20:43:21.093Z>\nI'll analyze the codebase to understand the current implementation and then provide the update for subtask 29.1.★ Insight ─────────────────────────────────────\nBased on the design and implementation documents:\n1. **Feature 2: Decision Extraction** specifies regex patterns must detect decision language in prose (e.g., \"decided to use X because Y\")\n2. **Phase 3: Regex Decision Extraction** details that patterns should be **compiled at module level** in `markdown_parser.py` for performance\n3. The `Observation` model already exists but needs two new fields: `auto_extracted` and `decay_override` per the schema design\n─────────────────────────────────────────────────\n\nBased on the design document (Feature 2: Decision Extraction - Regex Extraction, lines 84-127) and implementation plan (Phase 3: Regex Decision Extraction in Parser, lines 143-187), the regex patterns must be compiled at module level in `markdown_parser.py` for optimal performance during index-time extraction. The patterns detect decision language like \"decided to use FastAPI because of async support\" or \"chose SQLite over Postgres for simplicity\". These compiled regex objects will be imported/used by the `extract_decisions_from_prose()` method to scan note content (excluding code blocks and existing observation lines) and generate auto-extracted decision observations with `auto_extracted=True` and `decay_override='permanent'`.\n</info added on 2026-02-14T20:43:21.093Z>",
+            "status": "done",
+            "testStrategy": "1. Verify Observation model instantiates with new fields using default values\n2. Test setting auto_extracted=True and decay_override='permanent'\n3. Verify backwards compatibility: existing code creating Observations without these fields still works\n4. Test Pydantic validation rejects invalid decay_override values",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:39:41.832Z"
+          },
+          {
+            "id": 2,
+            "title": "Compile decision regex patterns at module level in markdown_parser.py",
+            "description": "Add DECISION_PATTERNS list at module level in markdown_parser.py containing compiled regex patterns for detecting decision language: decided/chose X because Y, use X over Y, always/never X, went with X for Y.",
+            "dependencies": [
+              1
+            ],
+            "details": "Add at the top of backend/app/services/markdown_parser.py after existing pattern definitions (after line 62):\n\nDECISION_PATTERNS = [\n    # decided/chose/picked X because Y\n    re.compile(\n        r'(?:decided|chose|picked|selected|choosing)\\s+(?:to\\s+)?(?:use\\s+)?(.+?)'\n        r'(?:\\s+(?:because|since|for|due to)\\s+(.+?))?[.!]?\\s*$',\n        re.IGNORECASE | re.MULTILINE\n    ),\n    # use X over Y\n    re.compile(\n        r'(?:use|using|chose|prefer|picked)\\s+(.+?)\\s+(?:over|instead of|rather than)\\s+(.+?)'\n        r'(?:\\s+(?:because|since|for|due to)\\s+(.+?))?[.!]?\\s*$',\n        re.IGNORECASE | re.MULTILINE\n    ),\n    # always/never/must X\n    re.compile(\n        r'(?:always|never|must|should always|should never)\\s+(.+?)[.!]?\\s*$',\n        re.IGNORECASE | re.MULTILINE\n    ),\n    # went with X for Y\n    re.compile(\n        r'(?:went with|sticking with|going with)\\s+(.+?)'\n        r'(?:\\s+(?:for|due to|because)\\s+(.+?))?[.!]?\\s*$',\n        re.IGNORECASE | re.MULTILINE\n    ),\n]\n\nCompiling at module level provides better performance than compiling on every parse.",
+            "status": "done",
+            "testStrategy": "1. Test each pattern matches positive examples from design doc (\"We decided to use FastAPI because of async support\", \"Chose SQLite over Postgres for simplicity\", etc.)\n2. Test patterns are case-insensitive (\"DECIDED\" matches same as \"decided\")\n3. Test patterns handle optional context groups correctly\n4. Verify patterns don't match inside code blocks or observation lines",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:56:50.265Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement extract_decisions_from_prose method in MarkdownParser",
+            "description": "Add extract_decisions_from_prose(content: str, existing_observations: list[Observation]) method to MarkdownParser class that scans prose content for decision patterns, skips code blocks and existing observation lines, deduplicates against existing observations, and returns Observation objects with auto_extracted=True and decay_override='permanent'.",
+            "dependencies": [
+              2
+            ],
+            "details": "Add method to MarkdownParser class in backend/app/services/markdown_parser.py:\n\ndef extract_decisions_from_prose(\n    self,\n    content: str,\n    existing_observations: list[Observation],\n) -> list[Observation]:\n    \"\"\"Extract decision observations from prose content.\n    \n    Skips code blocks and existing observation lines.\n    Deduplicates against existing observations.\n    \"\"\"\n    decisions: list[Observation] = []\n    code_ranges = self._get_code_block_ranges(content)\n    existing_contents = {obs.content.lower() for obs in existing_observations}\n    \n    lines = content.split('\\n')\n    for line_num, line in enumerate(lines, start=1):\n        # Skip code blocks\n        if self._is_in_code_block(line_num, code_ranges):\n            continue\n        \n        # Skip existing observation lines\n        stripped = line.strip()\n        if OBSERVATION_PATTERN.match(stripped):\n            continue\n        \n        # Skip empty lines and frontmatter markers\n        if not stripped or stripped == '---':\n            continue\n        \n        # Test against each decision pattern\n        for pattern in DECISION_PATTERNS:\n            match = pattern.search(stripped)\n            if match:\n                decision_content = stripped\n                \n                # Skip if similar to existing observation\n                if any(\n                    decision_content.lower() in existing \n                    or existing in decision_content.lower()\n                    for existing in existing_contents\n                ):\n                    continue\n                \n                decisions.append(Observation(\n                    category=ObservationCategory.DECISION,\n                    content=decision_content,\n                    tags=[],\n                    context=match.group(2) if len(match.groups()) > 1 and match.group(2) else None,\n                    line_number=line_num,\n                    auto_extracted=True,\n                    decay_override='permanent',\n                ))\n                break  # One match per line is enough\n    \n    return decisions\n\nReuses existing _get_code_block_ranges and _is_in_code_block helper methods. Implements deduplication via substring matching against existing observation content.",
+            "status": "done",
+            "testStrategy": "1. Test decision extraction with sample note containing decision patterns\n2. Test code block skipping: decisions in ```code blocks``` are not extracted\n3. Test observation line skipping: lines matching '- [decision] X' are not extracted\n4. Test deduplication: if manual observation '- [decision] use FastAPI' exists, don't extract 'decided to use FastAPI because...'\n5. Test line number tracking is accurate (matches line in original content)\n6. Test multiple decisions in same note are all extracted\n7. Test empty/whitespace-only lines are skipped",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:56:50.274Z"
+          },
+          {
+            "id": 4,
+            "title": "Wire extract_decisions_from_prose into index_note in search_index.py",
+            "description": "Modify the index_note method in SearchIndex (search_index.py) to call parser.extract_decisions_from_prose after inserting regular observations, and insert the auto-extracted decision observations into the observations table with auto_extracted=1 and decay_override='permanent'.",
+            "dependencies": [
+              3
+            ],
+            "details": "Modify backend/app/services/search_index.py index_note method:\n\n1. Add MarkdownParser import at top if not already present:\n   from app.services.markdown_parser import MarkdownParser\n\n2. Instantiate parser if needed:\n   parser = MarkdownParser()\n\n3. After the observations insertion loop (after line 523), add:\n\n# Extract auto-decisions from prose\nauto_decisions = parser.extract_decisions_from_prose(\n    note.content, \n    note.observations\n)\nfor decision in auto_decisions:\n    await self.db.execute(\"\"\"\n        INSERT INTO observations(\n            note_id, category, content, context, line_number, \n            auto_extracted, decay_override\n        ) VALUES (?, ?, ?, ?, ?, 1, 'permanent')\n    \"\"\", (\n        note_id, \n        decision.category.value, \n        decision.content, \n        decision.context, \n        decision.line_number\n    ))\n\nThis ensures auto-extracted decisions are stored alongside manually authored observations, with proper flags for decay system integration.",
+            "status": "done",
+            "testStrategy": "1. Test index_note with note containing decision prose: verify auto-extracted observations inserted into DB\n2. Test auto_extracted=1 flag is correctly set in database\n3. Test decay_override='permanent' is correctly set in database\n4. Test that manual observations and auto-extracted decisions coexist without conflicts\n5. Test re-indexing same note: auto-decisions are re-extracted (observations table cleared first)\n6. Integration test: index note, query observations table, verify both manual and auto-extracted observations present",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:56:50.281Z"
+          },
+          {
+            "id": 5,
+            "title": "Add unit tests for extract_decisions_from_prose covering all regex patterns and edge cases",
+            "description": "Create comprehensive unit tests in backend/tests/ that verify extract_decisions_from_prose correctly detects all decision patterns, handles edge cases (code blocks, existing observations, deduplication, empty content), and sets proper Observation fields (auto_extracted=True, decay_override='permanent', correct line_number).",
+            "dependencies": [
+              4
+            ],
+            "details": "Create backend/tests/test_decision_extraction.py with test cases:\n\n1. test_extract_decided_because_pattern(): Test \"We decided to use FastAPI because of async support\"\n2. test_extract_chose_over_pattern(): Test \"Chose SQLite over Postgres for simplicity\"\n3. test_extract_always_never_pattern(): Test \"Always run migrations before deploy\"\n4. test_extract_went_with_pattern(): Test \"Went with Docker for portability\"\n5. test_skip_code_blocks(): Decision patterns inside ```code``` blocks should not be extracted\n6. test_skip_observation_lines(): Lines matching '- [decision] X' should not be extracted\n7. test_deduplication(): If manual '- [decision] use FastAPI' exists, don't extract prose decision about FastAPI\n8. test_line_number_tracking(): Verify line_number field matches actual line in content\n9. test_multiple_decisions_same_note(): Multiple decision patterns extracted correctly\n10. test_empty_content(): Empty string returns empty list\n11. test_auto_extracted_and_decay_override_set(): Verify auto_extracted=True and decay_override='permanent' on all returned Observations\n12. test_context_extraction(): Verify context field populated from regex group 2 when present\n\nUse pytest framework, mock MarkdownParser if needed, assert on returned Observation objects.",
+            "status": "done",
+            "testStrategy": "Run pytest with coverage:\n1. pytest backend/tests/test_decision_extraction.py -v\n2. Verify all tests pass\n3. Check coverage report shows >90% coverage for extract_decisions_from_prose method\n4. Test edge cases with malformed input (unicode, very long lines, mixed encodings)\n5. Performance test: 1000-line note with multiple decisions completes in <100ms",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:56:50.288Z"
+          }
+        ],
+        "updatedAt": "2026-02-17T21:56:50.288Z"
+      },
+      {
+        "id": "30",
+        "title": "Implement AI Decision Extraction in AIProcessor",
+        "description": "Add extract_decisions() method to AIProcessor that uses Claude to find implicit decisions, conventions, and preferences with rationale and confidence scores. This complements regex extraction for deeper analysis.",
+        "details": "Add to `ai_processor.py`:\n\n```python\nfrom dataclasses import dataclass\n\n@dataclass\nclass ExtractedDecision:\n    content: str\n    rationale: str | None\n    confidence: float\n    decision_type: str  # 'decision' | 'convention' | 'preference'\n    entities: list[str]\n\nclass AIProcessor:\n    # ... existing methods ...\n    \n    async def extract_decisions(\n        self,\n        content: str,\n        note_title: str | None = None,\n    ) -> list[ExtractedDecision]:\n        \"\"\"Extract decisions using Claude AI.\n        \n        Finds implicit decisions that regex patterns miss.\n        Cost: ~500-1000 tokens per note (~$0.002/note with Sonnet)\n        \"\"\"\n        system_prompt = \"\"\"You are analyzing a technical note for decisions, conventions, and architectural choices.\n\nExtract each decision as a JSON object:\n- \"content\": The full decision statement (1-2 sentences)\n- \"rationale\": Why this decision was made (null if not stated)\n- \"confidence\": How firm the decision seems (0.0-1.0)\n- \"type\": \"decision\" | \"convention\" | \"preference\"\n- \"entities\": List of technologies/concepts involved\n\nOnly extract genuine decisions, not observations or descriptions. A decision implies a choice was made between alternatives.\n\nReturn JSON: {\"decisions\": [...]}\n\"\"\"\n        \n        user_prompt = f\"\"\"Analyze this note for decisions and conventions:\n\nTitle: {note_title or 'Untitled'}\n\nContent:\n{content[:4000]}\"\"\"  # Limit content to control costs\n        \n        try:\n            response = await self._call_claude(\n                system_prompt, \n                user_prompt, \n                max_tokens=1024\n            )\n            data = self._parse_json_response(response)\n            \n            decisions = []\n            for item in data.get('decisions', []):\n                try:\n                    decisions.append(ExtractedDecision(\n                        content=item.get('content', ''),\n                        rationale=item.get('rationale'),\n                        confidence=min(1.0, max(0.0, item.get('confidence', 0.8))),\n                        decision_type=item.get('type', 'decision'),\n                        entities=item.get('entities', []),\n                    ))\n                except Exception as e:\n                    logger.warning(f\"Failed to parse decision: {item}, error: {e}\")\n            \n            return decisions\n            \n        except AIProcessorUnavailableError:\n            logger.info(\"AI processing unavailable, skipping decision extraction\")\n            return []\n        except Exception as e:\n            logger.error(f\"Error extracting decisions: {e}\")\n            return []\n```\n\nAdd helper to convert AI decisions to Observations:\n```python\ndef _ai_decision_to_observation(\n    decision: ExtractedDecision, \n    line_number: int = 0\n) -> Observation:\n    return Observation(\n        category=ObservationCategory.DECISION,\n        content=decision.content,\n        tags=[],\n        context=decision.rationale,\n        line_number=line_number,\n        auto_extracted=True,\n        decay_override='permanent',\n    )\n```",
+        "testStrategy": "1. Test with sample note containing implicit decisions (no trigger words)\n2. Test that AI finds decisions regex misses\n3. Test confidence scores are bounded 0.0-1.0\n4. Test graceful degradation when API unavailable (returns empty list)\n5. Test content truncation for long notes (cost control)\n6. Test deduplication between AI and regex results at API level\n7. Test error handling for malformed AI responses",
+        "priority": "medium",
+        "dependencies": [
+          "25"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define ExtractedDecision dataclass in ai_processor.py",
+            "description": "Create the ExtractedDecision dataclass with fields: content (str), rationale (str | None), confidence (float), decision_type (Literal['decision', 'convention', 'preference']), and entities (list[str]). This data structure will hold AI-extracted decisions before conversion to Observation objects.",
+            "dependencies": [],
+            "details": "Add the dataclass import and define ExtractedDecision at the top of ai_processor.py, after the existing imports but before the AIProcessor class. Use the @dataclass decorator. The decision_type field should use Literal type hint from typing module. Confidence should be a float between 0.0-1.0, though validation happens in the extraction method. This follows the same pattern as existing Pydantic models in app/models/ai.py but uses dataclass for simpler internal data structure.\n<info added on 2026-02-14T20:43:48.351Z>\nI'll analyze the codebase to understand the current implementation and then provide the reference documentation context for this subtask.Based on the design document (Feature 2: Decision Extraction - AI Extraction) and implementation plan (Phase 7: AI Decision Extraction), the ExtractedDecision dataclass should align with the AI extraction system prompt specification.\n\nDesign doc specifies that AI extraction should return JSON objects with fields: content, rationale, confidence (0.0-1.0), decision_type (decision/convention/preference), and entities (list of technologies/concepts). The implementation plan describes these as an ExtractedDecision dataclass that gets converted to Observation rows.\n\nThe subtask update should reference these specific design and implementation documents to ensure the dataclass structure matches the AI extraction contract.\n\nDesign document location: docs/wip/memory-decay-scoring/design.md (Feature 2: Decision Extraction - AI Extraction, lines 103-126). Implementation plan location: docs/wip/memory-decay-scoring/implementation.md (Phase 7: AI Decision Extraction, lines 360-398). The ExtractedDecision dataclass must match the AI extraction system prompt specification with five fields: content (str), rationale (str | None), confidence (float 0.0-1.0), decision_type (Literal['decision', 'convention', 'preference']), and entities (list[str]). These fields align with the JSON structure returned by Claude API and will be converted to Observation rows with category='decision', auto_extracted=1, decay_override='permanent' by the API endpoint in Phase 6.\n</info added on 2026-02-14T20:43:48.351Z>",
+            "status": "pending",
+            "testStrategy": "Unit test: instantiate ExtractedDecision with all fields and verify field access. Test with None rationale. Test with empty entities list. Verify type hints are correct using mypy or runtime type checking if available.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement extract_decisions() method in AIProcessor class",
+            "description": "Add the async extract_decisions(content: str, note_title: str | None = None) -> list[ExtractedDecision] method to AIProcessor class. This method calls Claude API with a decision-extraction system prompt, parses the JSON response, and returns a list of ExtractedDecision objects.",
+            "dependencies": [
+              1
+            ],
+            "details": "Add the method to AIProcessor class in backend/app/services/ai_processor.py. Use the existing _call_claude() helper method with max_tokens=1024. Content should be truncated to 4000 chars for cost control. System prompt should instruct Claude to find decisions, conventions, and architectural choices, extracting each as JSON with content, rationale, confidence (0.0-1.0), type (decision|convention|preference), and entities. User prompt format: 'Analyze this note for decisions:\\n\\nTitle: {title}\\n\\nContent:\\n{content[:4000]}'. Parse response with _parse_json_response(). Extract 'decisions' array from parsed JSON. For each item, create ExtractedDecision with bounds-checked confidence (min 0.0, max 1.0). Handle AIProcessorUnavailableError by returning empty list. Log warnings for unparseable decisions. Catch general exceptions and return empty list with error logging.",
+            "status": "pending",
+            "testStrategy": "1. Mock _call_claude to return JSON with sample decisions, verify ExtractedDecision objects created correctly. 2. Test confidence clamping: mock response with confidence >1.0 and <0.0, verify bounded to [0.0, 1.0]. 3. Test AIProcessorUnavailableError handling: mock to raise exception, verify returns empty list. 4. Test malformed JSON: mock invalid response, verify returns empty list and logs error. 5. Test content truncation: pass >4000 char content, verify only first 4000 chars sent to API (inspect _call_claude call args). 6. Test with null note_title, verify method works.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement _ai_decision_to_observation() helper function",
+            "description": "Create a module-level helper function _ai_decision_to_observation(decision: ExtractedDecision, line_number: int = 0) -> Observation that converts an ExtractedDecision to an Observation object with category=DECISION, auto_extracted=True, and decay_override='permanent'.",
+            "dependencies": [
+              1
+            ],
+            "details": "Add this function in ai_processor.py as a module-level function (not a method of AIProcessor). It should be placed after the ExtractedDecision dataclass definition and before the AIProcessor class. Import Observation and ObservationCategory from app.models.note. The function creates an Observation with: category=ObservationCategory.DECISION, content=decision.content, tags=[] (empty, as AI doesn't extract inline tags), context=decision.rationale (rationale goes in context field), line_number=line_number (defaults to 0 for AI-extracted), auto_extracted=True, decay_override='permanent'. Return the constructed Observation object.",
+            "status": "pending",
+            "testStrategy": "Unit test: create sample ExtractedDecision, call helper, verify Observation fields match. Test with None rationale -> context should be None. Test with custom line_number. Verify category is DECISION. Verify auto_extracted=True and decay_override='permanent'. Test that entities are not included (not part of Observation model).",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Add comprehensive tests for extract_decisions() in test_ai_processor.py",
+            "description": "Create test cases covering extract_decisions() functionality: implicit decisions detection, confidence bounds, API unavailability graceful degradation, content truncation, and malformed response handling.",
+            "dependencies": [
+              2
+            ],
+            "details": "Add tests to backend/tests/services/test_ai_processor.py following existing test patterns. Use @pytest.mark.asyncio for async tests. Mock _call_claude using unittest.mock.patch or AsyncMock. Test cases: (1) test_extract_decisions_implicit_patterns: mock Claude response with implicit decisions (no trigger words like 'decided'), verify ExtractedDecision objects created; (2) test_extract_decisions_confidence_bounds: mock response with confidence values <0, >1, and in range, verify clamped to [0.0, 1.0]; (3) test_extract_decisions_api_unavailable: mock _call_claude to raise AIProcessorUnavailableError, verify returns empty list and logs appropriately; (4) test_extract_decisions_content_truncation: pass note with >4000 chars, verify _call_claude receives truncated content; (5) test_extract_decisions_malformed_response: mock invalid JSON response, verify returns empty list; (6) test_extract_decisions_empty_note: pass empty content, verify handles gracefully; (7) test_extract_decisions_multiple_types: mock response with decision/convention/preference types, verify all parsed correctly.",
+            "status": "pending",
+            "testStrategy": "Run pytest on test_ai_processor.py. All new tests should pass. Use pytest-cov to verify coverage of extract_decisions() method reaches >90%. Check that error paths are tested (exception handling). Verify mocks are properly set up and _call_claude is actually called with expected args.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Add integration test for AI decision extraction with Observation conversion",
+            "description": "Create an end-to-end integration test that verifies extract_decisions() can be used in conjunction with _ai_decision_to_observation() to produce valid Observation objects suitable for indexing.",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Add integration test to backend/tests/services/test_ai_processor.py (or test_integration.py if that's the pattern). Test should: (1) Create sample note content with implicit decisions; (2) Mock _call_claude to return realistic decision extraction JSON; (3) Call extract_decisions() on the content; (4) For each ExtractedDecision, call _ai_decision_to_observation() helper; (5) Verify Observation objects have correct fields: category=DECISION, auto_extracted=True, decay_override='permanent', content matches decision.content, context matches decision.rationale; (6) Verify that the Observation objects would be acceptable to the index_note method (basic validation). This ensures the AI extraction workflow integrates properly with existing observation handling code. Test both cases: decisions with rationale and without.",
+            "status": "pending",
+            "testStrategy": "Run pytest on integration test. Verify it exercises both extract_decisions() and _ai_decision_to_observation(). Check that Observation objects match expected schema. Optionally: actually pass the observations to a test SearchIndex instance to verify they can be indexed (requires test database fixture). Use assertions to validate all critical fields.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "31",
+        "title": "Create Decay Management API Endpoints",
+        "description": "Add new API router for decay management with endpoints: POST /api/notes/decay/run (trigger decay), GET /api/notes/decay/stats (breakdown), PUT /api/notes/{id}/decay (manual override).",
+        "details": "Create `backend/app/api/decay.py`:\n\n```python\nfrom fastapi import APIRouter, Depends, HTTPException, status\nfrom pydantic import BaseModel, Field\n\nfrom app.api.dependencies import get_search_index\nfrom app.services.search_index import SearchIndex, DecayClass\n\nrouter = APIRouter(prefix=\"/api/notes/decay\", tags=[\"decay\"])\n\nclass DecayRunResponse(BaseModel):\n    decayed: int\n    protected: int\n    expired: int\n    message: str\n\nclass DecayStats(BaseModel):\n    by_class: dict[str, int]\n    expired_count: int\n    low_confidence_count: int\n    decision_protected_count: int\n    average_confidence: float\n\nclass DecayOverrideRequest(BaseModel):\n    decay_class: DecayClass | None = None\n    confidence: float | None = Field(default=None, ge=0.0, le=1.0)\n\n@router.post(\"/run\", response_model=DecayRunResponse)\nasync def run_decay(\n    search_index: SearchIndex = Depends(get_search_index),\n) -> DecayRunResponse:\n    \"\"\"Trigger confidence decay processing.\"\"\"\n    if not search_index.db:\n        await search_index.initialize()\n    \n    stats = await search_index.decay_confidence()\n    \n    return DecayRunResponse(\n        decayed=stats['decayed'],\n        protected=stats['protected'],\n        expired=stats['expired'],\n        message=f\"Processed: {stats['decayed']} decayed, {stats['protected']} protected, {stats['expired']} expired\",\n    )\n\n@router.get(\"/stats\", response_model=DecayStats)\nasync def get_decay_stats(\n    search_index: SearchIndex = Depends(get_search_index),\n) -> DecayStats:\n    \"\"\"Get decay statistics breakdown.\"\"\"\n    if not search_index.db:\n        await search_index.initialize()\n    \n    # Count by decay class\n    cursor = await search_index.db.execute(\n        \"SELECT decay_class, COUNT(*) as count FROM notes GROUP BY decay_class\"\n    )\n    by_class = {row['decay_class']: row['count'] for row in await cursor.fetchall()}\n    \n    # Expired count\n    cursor = await search_index.db.execute(\n        \"SELECT COUNT(*) FROM notes WHERE expires_at < datetime('now')\"\n    )\n    expired_count = (await cursor.fetchone())[0]\n    \n    # Low confidence count\n    cursor = await search_index.db.execute(\n        \"SELECT COUNT(*) FROM notes WHERE confidence < 0.5\"\n    )\n    low_confidence_count = (await cursor.fetchone())[0]\n    \n    # Decision-protected count\n    cursor = await search_index.db.execute(\"\"\"\n        SELECT COUNT(DISTINCT note_id) FROM observations \n        WHERE decay_override = 'permanent'\n    \"\"\")\n    decision_protected = (await cursor.fetchone())[0]\n    \n    # Average confidence\n    cursor = await search_index.db.execute(\"SELECT AVG(confidence) FROM notes\")\n    avg_confidence = (await cursor.fetchone())[0] or 1.0\n    \n    return DecayStats(\n        by_class=by_class,\n        expired_count=expired_count,\n        low_confidence_count=low_confidence_count,\n        decision_protected_count=decision_protected,\n        average_confidence=round(avg_confidence, 4),\n    )\n\n@router.put(\"/{note_id}\", response_model=dict)\nasync def override_decay(\n    note_id: int,\n    request: DecayOverrideRequest,\n    search_index: SearchIndex = Depends(get_search_index),\n) -> dict:\n    \"\"\"Manually override decay class/confidence for a note.\"\"\"\n    # Implementation: UPDATE notes SET decay_class=?, confidence=?, expires_at=? WHERE id=?\n    ...\n```\n\nRegister in `main.py`:\n```python\nfrom app.api.decay import router as decay_router\napp.include_router(decay_router)\n```",
+        "testStrategy": "1. Test POST /decay/run returns correct counts\n2. Test GET /decay/stats returns all breakdown fields\n3. Test PUT /decay/{id} updates decay_class and recalculates expires_at\n4. Test PUT /decay/{id} with invalid decay_class returns 422\n5. Test confidence override is bounded 0.0-1.0\n6. Test endpoints work with empty database\n7. Test authentication/authorization (if enabled)",
+        "priority": "medium",
+        "dependencies": [
+          "28"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create decay.py router file with Pydantic response models",
+            "description": "Create backend/app/api/decay.py with router setup and three Pydantic response models: DecayRunResponse (decayed/protected/expired/message), DecayStats (by_class/expired_count/low_confidence_count/decision_protected_count/average_confidence), and DecayOverrideRequest (decay_class/confidence fields).",
+            "dependencies": [],
+            "details": "Create the file at backend/app/api/decay.py following the existing router pattern from notes.py. Import FastAPI components (APIRouter, Depends, HTTPException, status), Pydantic (BaseModel, Field), and dependencies (get_search_index). Define router with prefix='/api/notes/decay' and tags=['decay']. Create three Pydantic models matching the types specified in design.md: DecayRunResponse with int fields for counts and str message, DecayStats with dict[str, int] for by_class breakdown and float for average_confidence, DecayOverrideRequest with optional DecayClass enum and bounded confidence (0.0-1.0) using Field validators.\n<info added on 2026-02-14T20:44:23.988Z>\nI'll analyze the codebase to provide accurate, implementation-specific guidance for this subtask.Now I'll check the existing API structure and read the dependencies file to understand the routing pattern:Based on my analysis of the codebase and the reference documents, I can provide a specific implementation-aware update for this subtask. The key files to reference are:\n\n1. **Design.md section**: \"New API Endpoints\" table (lines 197-204) specifying the decay.py router structure\n2. **Implementation.md Phase 6**: \"New API Endpoints\" section (lines 295-356) with detailed implementation guidance\n3. **Existing pattern**: backend/app/api/notes.py (lines 1-42) showing the router structure with FastAPI, Pydantic, and dependencies\n\nCreate decay router file backend/app/api/decay.py with FastAPI router configuration (prefix='/api/notes/decay', tags=['decay']). Define three Pydantic response models matching design.md specification: DecayRunResponse (fields: decayed, protected, expired, message as integers/string), DecayStats (fields: by_class as dict[str,int], expired_count, low_confidence_count, decision_protected_count, average_confidence), DecayOverrideRequest (fields: optional decay_class as Literal enum, confidence as float with Field(ge=0.0, le=1.0) validator). Import pattern from notes.py: APIRouter, Depends, HTTPException, status from fastapi; BaseModel, Field from pydantic; get_search_index from dependencies. Router will be registered in main.py following pattern at lines 94-102. Reference implementation.md Phase 6 lines 307-323 for endpoint implementation details.\n</info added on 2026-02-14T20:44:23.988Z>",
+            "status": "pending",
+            "testStrategy": "Verify file creates without import errors. Test Pydantic models validate correctly: DecayOverrideRequest should reject confidence values outside 0.0-1.0 range (test with -0.1 and 1.5). Confirm router object instantiates with correct prefix and tags attributes.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement POST /api/notes/decay/run endpoint",
+            "description": "Add run_decay() endpoint handler that triggers confidence decay processing via SearchIndex.decay_confidence() and returns structured response with counts of decayed/protected/expired notes.",
+            "dependencies": [
+              1
+            ],
+            "details": "In backend/app/api/decay.py, implement @router.post('/run', response_model=DecayRunResponse) async function. Use Depends(get_search_index) for dependency injection. Check if search_index.db is initialized (if not, call await search_index.initialize()). Call await search_index.decay_confidence() to get stats dict with keys 'decayed', 'protected', 'expired'. Return DecayRunResponse with these values plus a formatted message string. Follow the pattern from notes.py:44-50 for index initialization. Handle any exceptions and convert to HTTPException with appropriate status codes.",
+            "status": "pending",
+            "testStrategy": "Test endpoint returns 200 with valid DecayRunResponse structure. Mock search_index.decay_confidence() to return test stats {'decayed': 5, 'protected': 3, 'expired': 2}. Verify response.decayed=5, response.protected=3, response.expired=2, response.message contains all three counts. Test behavior when SearchIndex not initialized (should auto-initialize). Test error handling when decay_confidence() raises exception.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement GET /api/notes/decay/stats endpoint",
+            "description": "Add get_decay_stats() endpoint that queries the notes and observations tables to return decay statistics breakdown: counts by decay_class, expired notes count, low confidence notes count, decision-protected notes count, and average confidence score.",
+            "dependencies": [
+              1
+            ],
+            "details": "In backend/app/api/decay.py, implement @router.get('/stats', response_model=DecayStats) async function. Use search_index.db.execute() for five SQL queries: 1) GROUP BY decay_class to get by_class counts dict, 2) COUNT notes WHERE expires_at < datetime('now') for expired_count, 3) COUNT notes WHERE confidence < 0.5 for low_confidence_count, 4) COUNT DISTINCT note_id FROM observations WHERE decay_override = 'permanent' for decision_protected_count, 5) AVG(confidence) FROM notes for average_confidence (default to 1.0 if NULL). Follow the async cursor pattern: cursor = await search_index.db.execute(sql), then await cursor.fetchone()/fetchall(). Round average_confidence to 4 decimal places. Return DecayStats with all fields populated.",
+            "status": "pending",
+            "testStrategy": "Test endpoint returns 200 with valid DecayStats structure. Populate test database with notes in different decay_class values (permanent=2, stable=5, active=3), some expired notes (3), some with confidence<0.5 (4), and observations with decay_override='permanent' (2 unique note_ids). Verify response.by_class={'permanent': 2, 'stable': 5, 'active': 3}, response.expired_count=3, response.low_confidence_count=4, response.decision_protected_count=2, response.average_confidence is float rounded to 4 places. Test empty database returns sensible defaults (average_confidence=1.0).",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Implement PUT /api/notes/{note_id}/decay endpoint for manual override",
+            "description": "Add override_decay() endpoint that allows manual override of a note's decay_class and/or confidence value, recalculating expires_at timestamp based on the new decay_class TTL rules from design.md.",
+            "dependencies": [
+              1
+            ],
+            "details": "In backend/app/api/decay.py, implement @router.put('/{note_id}', response_model=dict) async function with note_id: int path parameter and DecayOverrideRequest body. Validate note exists with SELECT query. If request.decay_class is provided, calculate new expires_at using TTL rules from design.md (permanent=NULL, stable=90 days, active=14 days, session=24h, checkpoint=4h). If request.confidence is provided, validate 0.0 <= confidence <= 1.0 (already enforced by Pydantic Field). Build UPDATE statement: 'UPDATE notes SET decay_class=?, confidence=?, expires_at=? WHERE id=?' with only non-None fields. Return dict with updated note_id, decay_class, confidence, expires_at. Raise HTTPException 404 if note_id doesn't exist, 422 if invalid decay_class value.",
+            "status": "pending",
+            "testStrategy": "Test successful override: PUT /api/notes/1/decay with {decay_class: 'active', confidence: 0.8} returns updated values. Verify database UPDATE occurred: SELECT decay_class, confidence, expires_at FROM notes WHERE id=1 shows new values. Test expires_at calculation: setting decay_class='active' should set expires_at to now+14 days, 'stable' to now+90 days, 'permanent' to NULL. Test 404 error for non-existent note_id. Test 422 error for invalid decay_class='invalid'. Test confidence bounds: reject confidence=1.5, accept confidence=0.0 and confidence=1.0. Test partial update: only decay_class without confidence, and vice versa.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Register decay router in main.py",
+            "description": "Import the decay router in backend/app/main.py and register it with app.include_router() following the existing pattern for other routers like notes_router and ai_router.",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "In backend/app/main.py, add import statement at top of file: 'from app.api.decay import router as decay_router' (insert after existing router imports around line 10-18). Add router registration line after the existing include_router calls (after line 101, before v1_router registration): 'app.include_router(decay_router)'. Follow the exact pattern of existing router registrations - single line with no additional arguments (prefix and tags already defined in the router object). Maintain alphabetical ordering preference if present, otherwise add after mcp_router. No other changes needed - FastAPI will automatically discover all endpoints defined in the decay router.",
+            "status": "pending",
+            "testStrategy": "Start FastAPI application and verify decay endpoints are registered: check FastAPI interactive docs at /docs shows three new endpoints under 'decay' tag: POST /api/notes/decay/run, GET /api/notes/decay/stats, PUT /api/notes/{note_id}/decay. Test each endpoint is callable: POST /decay/run returns DecayRunResponse, GET /decay/stats returns DecayStats, PUT /decay/1 with valid body returns updated note. Verify endpoints respect existing middleware (auth, CORS, rate limiting). Test application starts without import errors or router registration conflicts.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "32",
+        "title": "Create Decision Extraction API Endpoints",
+        "description": "Add endpoints for on-demand decision extraction: POST /api/notes/{id}/extract-decisions (single note) and POST /api/notes/extract-decisions (bulk with filters). Support regex, AI, or both methods with dry_run option.",
+        "details": "Add to `api/notes.py` or create `api/decisions.py`:\n\n```python\nfrom pydantic import BaseModel, Field\nfrom typing import Literal\n\nclass ExtractDecisionsRequest(BaseModel):\n    method: Literal['regex', 'ai', 'both'] = Field(default='regex')\n    dry_run: bool = Field(default=False)\n\nclass ExtractDecisionsResponse(BaseModel):\n    extracted: int\n    decisions: list[dict]  # Preview of extracted decisions\n    dry_run: bool\n\nclass BulkExtractRequest(BaseModel):\n    method: Literal['regex', 'ai', 'both'] = Field(default='regex')\n    vault: str | None = None\n    project: str | None = None\n    dry_run: bool = Field(default=False)\n    reprocess: bool = Field(default=False)  # Re-extract even if already processed\n\nclass BulkExtractResponse(BaseModel):\n    notes_scanned: int\n    extracted: int\n    decisions: list[dict]\n    dry_run: bool\n\n@router.post(\"/{note_id}/extract-decisions\", response_model=ExtractDecisionsResponse)\nasync def extract_decisions_single(\n    note_id: int,\n    request: ExtractDecisionsRequest,\n    search_index: SearchIndex = Depends(get_search_index),\n    parser: MarkdownParser = Depends(get_markdown_parser),\n    ai_processor: AIProcessor = Depends(get_ai_processor),\n) -> ExtractDecisionsResponse:\n    \"\"\"Extract decisions from a single note.\"\"\"\n    # Get note content\n    note = await search_index.get_note_by_id(note_id)\n    if not note:\n        raise HTTPException(status_code=404, detail=\"Note not found\")\n    \n    # Get existing observations for deduplication\n    existing_obs = await search_index.get_observations(note_id)\n    \n    decisions = []\n    \n    # Regex extraction\n    if request.method in ('regex', 'both'):\n        regex_decisions = parser.extract_decisions_from_prose(\n            note['content'], \n            existing_obs\n        )\n        decisions.extend([{'content': d.content, 'method': 'regex'} for d in regex_decisions])\n    \n    # AI extraction\n    if request.method in ('ai', 'both'):\n        ai_decisions = await ai_processor.extract_decisions(\n            note['content'],\n            note['title']\n        )\n        decisions.extend([{\n            'content': d.content, \n            'rationale': d.rationale,\n            'confidence': d.confidence,\n            'method': 'ai'\n        } for d in ai_decisions])\n    \n    # Store if not dry run\n    if not request.dry_run:\n        for decision in decisions:\n            await search_index.db.execute(\"\"\"\n                INSERT INTO observations(\n                    note_id, category, content, context, auto_extracted, decay_override\n                ) VALUES (?, 'decision', ?, ?, 1, 'permanent')\n            \"\"\", (note_id, decision['content'], decision.get('rationale')))\n        await search_index.db.commit()\n    \n    return ExtractDecisionsResponse(\n        extracted=len(decisions),\n        decisions=decisions[:10],  # Limit preview\n        dry_run=request.dry_run,\n    )\n\n@router.post(\"/extract-decisions\", response_model=BulkExtractResponse)\nasync def extract_decisions_bulk(\n    request: BulkExtractRequest,\n    search_index: SearchIndex = Depends(get_search_index),\n    parser: MarkdownParser = Depends(get_markdown_parser),\n    ai_processor: AIProcessor = Depends(get_ai_processor),\n) -> BulkExtractResponse:\n    \"\"\"Bulk decision extraction with filters.\"\"\"\n    # Query notes with filters\n    # Iterate and extract\n    # Return summary\n    ...\n```",
+        "testStrategy": "1. Test single note extraction with regex method\n2. Test single note extraction with AI method\n3. Test single note extraction with both methods\n4. Test dry_run=true returns decisions but doesn't persist\n5. Test bulk extraction with vault filter\n6. Test bulk extraction with project filter\n7. Test 404 for non-existent note_id\n8. Test deduplication: existing decisions not re-extracted\n9. Test cost control: AI extractions limited appropriately",
+        "priority": "medium",
+        "dependencies": [
+          "29",
+          "30"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define Pydantic request/response models for decision extraction endpoints",
+            "description": "Create ExtractDecisionsRequest, ExtractDecisionsResponse, BulkExtractRequest, and BulkExtractResponse models in backend/app/api/models.py following existing patterns.",
+            "dependencies": [],
+            "details": "Add the following models to backend/app/api/models.py:\n\n1. ExtractDecisionsRequest(BaseModel):\n   - method: Literal['regex', 'ai', 'both'] = 'regex'\n   - dry_run: bool = False\n\n2. ExtractDecisionsResponse(BaseModel):\n   - extracted: int (number of decisions extracted)\n   - decisions: list[dict] (preview of extracted decisions, limited to 10)\n   - dry_run: bool\n\n3. BulkExtractRequest(BaseModel):\n   - method: Literal['regex', 'ai', 'both'] = 'regex'\n   - vault: str | None = None\n   - project: str | None = None\n   - dry_run: bool = False\n   - reprocess: bool = False (re-extract even if already processed)\n\n4. BulkExtractResponse(BaseModel):\n   - notes_scanned: int\n   - extracted: int\n   - decisions: list[dict] (preview limited to 10)\n   - dry_run: bool\n\nFollow the same structure and style as existing models like ExtractEntitiesRequest/Response (lines 729-835 in notes.py). Use Field(...) for required fields and Field(default=X) for optional fields with descriptive documentation.\n<info added on 2026-02-14T20:45:01.403Z>\nI'll analyze the codebase to understand the current API structure and then provide the appropriate update for the subtask.Let me use alternative tools to read the design documents:Based on the design document and implementation plan, I need to reference the specific API endpoint details. Let me check the implementation plan's Phase 6 section more carefully:\n\nFrom the design.md (lines 196-212) and implementation.md (lines 295-356), I can see the complete specification for the new API endpoints for decision extraction:\n\n**New API Endpoints for Decision Extraction:**\n- `POST /api/notes/{note_id}/extract-decisions` - Extract decisions from single note\n- `POST /api/notes/extract-decisions` - Bulk decision extraction with filters\n\nThe implementation plan Phase 6 (lines 324-336) provides the specific details for these endpoints including request parameters and response structure.\n\nDesign document table \"New API Endpoints\" (lines 196-204) and \"Modified Existing Endpoints\" (lines 206-212) provide the complete API contract.\n\nHere is the new text content that should be appended to the subtask details:\n\nAPI Endpoint Specifications (from design.md lines 196-212 and implementation.md lines 324-336):\n\nSingle note extraction endpoint:\nPOST /api/notes/{note_id}/extract-decisions\nQuery params: method=regex|ai|both (default: regex), dry_run=false\nReturns: ExtractDecisionsResponse with extracted count and decisions preview\n\nBulk extraction endpoint:\nPOST /api/notes/extract-decisions\nQuery params: vault, project, method, dry_run, reprocess (re-extract even if already processed)\nReturns: BulkExtractResponse with notes_scanned, extracted count, and decisions preview\n\nImplementation requirements (from implementation.md Phase 6):\n- Add endpoints to existing api/notes.py or create new api/decisions.py router\n- Reads note content, runs extraction method(s), stores new observations\n- Supports regex, AI, or both methods\n- Dry run mode returns decisions without persisting\n- Iteration over matching notes for bulk operation\n- Returns preview list limited to 10 decisions\n- Integration with modified search endpoint to pass include_expired and return score_breakdown\n</info added on 2026-02-14T20:45:01.403Z>",
+            "status": "pending",
+            "testStrategy": "1. Import models in test file and instantiate with valid data\n2. Test default values (method='regex', dry_run=False, reprocess=False)\n3. Test validation: method must be one of regex/ai/both\n4. Test optional fields can be None (vault, project)\n5. Verify Field descriptions are present",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement extract_decisions_from_prose method in MarkdownParser",
+            "description": "Add regex-based decision extraction method to MarkdownParser that scans prose content for decision patterns and returns Observation objects.",
+            "dependencies": [
+              1
+            ],
+            "details": "In backend/app/services/markdown_parser.py, add a new method `extract_decisions_from_prose(content: str, existing_observations: list) -> list[Observation]`:\n\n1. Define regex patterns for decision language:\n   - 'decided/chose/picked/selected X because/since/for/due to Y'\n   - 'use/chose/prefer X over/instead of Y (because Z)'\n   - 'always/never/must/should always/should never X'\n   - 'went with/sticking with X for/due to Y'\n\n2. Get code block ranges using existing _get_code_block_ranges() method to skip code\n3. Skip existing observation lines (lines matching OBSERVATION_PATTERN)\n4. For each match:\n   - Extract the full sentence containing the decision\n   - Create Observation with category='decision', auto_extracted=True\n   - Check for duplicates against existing_observations by content similarity\n5. Return list of unique Observation objects\n\nReference existing extract_observations() method (lines 84, 31-34) for code structure patterns. Use the OBSERVATION_PATTERN regex at line 31-34 to skip existing observation lines.",
+            "status": "pending",
+            "testStrategy": "1. Test with sample text containing 'decided to use X because Y'\n2. Test skipping code blocks containing decision keywords\n3. Test skipping existing observation lines\n4. Test deduplication against existing observations\n5. Test multiple patterns in one text\n6. Verify Observation objects have category='decision' and auto_extracted=True",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement extract_decisions method in AIProcessor",
+            "description": "Add AI-based decision extraction method to AIProcessor that uses Claude to detect implicit decisions and extract rationale.",
+            "dependencies": [
+              1
+            ],
+            "details": "In backend/app/services/ai_processor.py, add method `async def extract_decisions(content: str, title: str) -> list[dict]`:\n\n1. Create system prompt:\n   - \"You are analyzing technical notes to extract decisions. Identify explicit and implicit decisions made.\"\n   - \"For each decision: extract the decision text, rationale (why it was made), and confidence (0.0-1.0).\"\n   - \"Return JSON array: [{\"content\": \"decision text\", \"rationale\": \"reason\", \"confidence\": 0.9}, ...]\"\n\n2. Build user prompt with note title and content\n3. Call _call_claude() with system_prompt, user_prompt, max_tokens=2048\n4. Parse JSON response into list of decision dicts\n5. Validate each dict has content, rationale, confidence fields\n6. Handle API errors and return empty list on failure\n\nReference extract_entities() method (lines 796-802 in notes.py) for similar AI extraction pattern. Use existing _call_claude() infrastructure (lines 65-100 in ai_processor.py).",
+            "status": "pending",
+            "testStrategy": "1. Test with note containing explicit decision ('decided to use X')\n2. Test with note containing implicit decision (pattern without trigger words)\n3. Test confidence scoring (0.0-1.0 range)\n4. Test rationale extraction from context\n5. Test JSON parsing error handling\n6. Test AI unavailable scenario (returns empty list)\n7. Mock _call_claude to avoid API costs in tests",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Implement POST /api/notes/{note_id}/extract-decisions endpoint",
+            "description": "Create single-note decision extraction endpoint in backend/app/api/notes.py that supports regex, AI, or both methods with dry_run option.",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Add endpoint to backend/app/api/notes.py after the entity extraction endpoints (after line 977):\n\n```python\n@router.post(\"/{note_id}/extract-decisions\", response_model=ExtractDecisionsResponse)\nasync def extract_decisions_single(\n    note_id: int,\n    request: ExtractDecisionsRequest,\n    search_index: SearchIndex = Depends(get_search_index),\n    parser: MarkdownParser = Depends(get_markdown_parser),\n    ai_processor: AIProcessor = Depends(get_ai_processor),\n    vault_manager: VaultManager = Depends(get_vault_manager),\n) -> ExtractDecisionsResponse:\n```\n\n1. Get note by ID, raise 404 if not found\n2. Get full content from vault_manager\n3. Get existing observations from search_index (need to check if method exists)\n4. Extract decisions based on method:\n   - 'regex': call parser.extract_decisions_from_prose()\n   - 'ai': call ai_processor.extract_decisions()\n   - 'both': combine results from both methods\n5. Format decisions as list[dict] with content, method, rationale (if AI), confidence\n6. If not dry_run: store in observations table with category='decision', auto_extracted=1, decay_override='permanent'\n7. Return ExtractDecisionsResponse with count, preview (first 10), dry_run flag\n\nReference extract_entities() endpoint (lines 729-835) for similar structure.",
+            "status": "pending",
+            "testStrategy": "1. Test POST with method='regex' extracts decisions\n2. Test POST with method='ai' uses AI extraction\n3. Test POST with method='both' combines results\n4. Test dry_run=true doesn't persist to database\n5. Test dry_run=false persists observations\n6. Test 404 for invalid note_id\n7. Test decision preview limited to 10 items\n8. Test stored observations have decay_override='permanent'",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Implement POST /api/notes/extract-decisions bulk endpoint",
+            "description": "Create bulk decision extraction endpoint that processes multiple notes with vault/project filters and returns summary statistics.",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "details": "Add bulk endpoint to backend/app/api/notes.py after the single-note endpoint:\n\n```python\n@router.post(\"/extract-decisions\", response_model=BulkExtractResponse)\nasync def extract_decisions_bulk(\n    request: BulkExtractRequest,\n    search_index: SearchIndex = Depends(get_search_index),\n    parser: MarkdownParser = Depends(get_markdown_parser),\n    ai_processor: AIProcessor = Depends(get_ai_processor),\n    vault_manager: VaultManager = Depends(get_vault_manager),\n) -> BulkExtractResponse:\n```\n\n1. Build SearchQuery with vault/project filters, query='*' to match all\n2. Call search_index.search() to get filtered notes\n3. For each note:\n   - Skip if already processed and reprocess=False (check for auto_extracted decisions)\n   - Get full content from vault_manager\n   - Get existing observations\n   - Extract decisions using specified method (regex/ai/both)\n   - If not dry_run: persist to observations table\n   - Accumulate counts and preview decisions (limit to 10 total)\n4. Return BulkExtractResponse with notes_scanned, extracted count, decisions preview, dry_run flag\n\nReference list_notes() endpoint (lines 52-116) for query building pattern. Use similar error handling as search_notes() (lines 552-606).",
+            "status": "pending",
+            "testStrategy": "1. Test bulk extraction with vault filter\n2. Test bulk extraction with project filter\n3. Test bulk extraction with both filters\n4. Test reprocess=false skips already-processed notes\n5. Test reprocess=true re-extracts from all notes\n6. Test dry_run=true doesn't persist\n7. Test notes_scanned count matches query results\n8. Test extracted count reflects actual extractions\n9. Test decision preview limited to 10 across all notes\n10. Test empty result set (no matching notes)",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "33",
+        "title": "Implement Backfill Migration for Existing Notes",
+        "description": "Create a one-time backfill that runs on startup after schema migration: classify all existing notes, calculate expiry, set last_accessed_at, and run regex decision extraction. Must complete in <10 seconds for 1000 notes.",
+        "details": "Add to `search_index.py`:\n\n```python\nasync def _backfill_decay_and_decisions(self, parser: MarkdownParser) -> None:\n    \"\"\"Backfill decay classification and decision extraction for existing notes.\n    \n    Runs once after migration. Guards against re-running.\n    Target: <10 seconds for 1000 notes.\n    \"\"\"\n    # Check if already backfilled (look for any non-stable decay_class)\n    cursor = await self.db.execute(\n        \"SELECT COUNT(*) FROM notes WHERE decay_class != 'stable' OR last_accessed_at IS NOT NULL\"\n    )\n    count = (await cursor.fetchone())[0]\n    if count > 0:\n        logger.info(\"Decay backfill already completed, skipping\")\n        return\n    \n    logger.info(\"Starting decay backfill for existing notes...\")\n    start_time = time.time()\n    \n    # Get all notes with their tags\n    cursor = await self.db.execute(\"\"\"\n        SELECT n.id, n.note_type, n.content, n.indexed_at,\n               GROUP_CONCAT(t.tag) as tags\n        FROM notes n\n        LEFT JOIN note_tags t ON n.id = t.note_id\n        GROUP BY n.id\n    \"\"\")\n    notes = await cursor.fetchall()\n    \n    # Get existing observations per note for deduplication\n    cursor = await self.db.execute(\n        \"SELECT note_id, content FROM observations WHERE category = 'decision'\"\n    )\n    existing_decisions = {}\n    for row in await cursor.fetchall():\n        existing_decisions.setdefault(row['note_id'], set()).add(row['content'].lower())\n    \n    # Process in batches for performance\n    batch_size = 100\n    total_decisions = 0\n    \n    for i in range(0, len(notes), batch_size):\n        batch = notes[i:i+batch_size]\n        \n        for note in batch:\n            note_id = note['id']\n            tags = note['tags'].split(',') if note['tags'] else []\n            content = note['content'] or ''\n            \n            # Classify decay\n            decay_class = classify_decay(\n                note['note_type'] or 'note',\n                tags,\n                {},  # No frontmatter for existing notes\n                content,\n            )\n            expires_at = calculate_expiry(decay_class)\n            last_accessed_at = note['indexed_at']\n            \n            # Update note\n            await self.db.execute(\"\"\"\n                UPDATE notes SET\n                    decay_class = ?,\n                    expires_at = ?,\n                    last_accessed_at = ?\n                WHERE id = ?\n            \"\"\", (decay_class, expires_at, last_accessed_at, note_id))\n            \n            # Extract decisions (using simple regex, skip AI for backfill)\n            existing_contents = existing_decisions.get(note_id, set())\n            decisions = self._extract_decisions_simple(content, existing_contents)\n            \n            for decision in decisions:\n                await self.db.execute(\"\"\"\n                    INSERT INTO observations(\n                        note_id, category, content, auto_extracted, decay_override\n                    ) VALUES (?, 'decision', ?, 1, 'permanent')\n                \"\"\", (note_id, decision))\n                total_decisions += 1\n        \n        await self.db.commit()\n    \n    elapsed = time.time() - start_time\n    logger.info(\n        f\"Backfill complete: {len(notes)} notes classified, \"\n        f\"{total_decisions} decisions extracted in {elapsed:.2f}s\"\n    )\n\ndef _extract_decisions_simple(self, content: str, existing: set) -> list[str]:\n    \"\"\"Simple regex decision extraction for backfill (no parser overhead).\"\"\"\n    decisions = []\n    for line in content.split('\\n'):\n        for pattern in DECISION_PATTERNS:\n            if pattern.search(line):\n                if line.lower() not in existing:\n                    decisions.append(line.strip())\n                break\n    return decisions\n```\n\nCall from `initialize()` after migration:\n```python\nasync def initialize(self) -> None:\n    # ... existing initialization ...\n    await self._migrate_decay_schema()\n    await self._backfill_decay_and_decisions(MarkdownParser())\n```",
+        "testStrategy": "1. Test backfill on fresh database with sample notes\n2. Test idempotency: running twice doesn't duplicate observations or re-classify\n3. Test that existing manual decision observations aren't duplicated\n4. Test decay_class is set for all notes after backfill\n5. Test last_accessed_at is set to indexed_at\n6. Performance test: verify <10 seconds for 1000 notes\n7. Test backfill guard: notes with non-stable decay_class skip backfill",
+        "priority": "high",
+        "dependencies": [
+          "26",
+          "29"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement backfill guard check to prevent re-running",
+            "description": "Add logic to detect if backfill has already completed by checking for non-default decay_class values or non-null last_accessed_at timestamps in the notes table.",
+            "dependencies": [],
+            "details": "Create the backfill guard query that checks if any notes have been classified (decay_class != 'stable' OR last_accessed_at IS NOT NULL). If count > 0, log 'Decay backfill already completed, skipping' and return early. This ensures idempotency - the backfill only runs once after the schema migration, never on subsequent startups. The guard should execute before any expensive operations to minimize overhead on normal startups.\n<info added on 2026-02-14T20:45:37.719Z>\nI'll analyze the codebase to understand the current implementation and the referenced design documents.Based on my analysis of the codebase and the referenced design documents, here is the new text that should be appended to subtask 33.1:\n\n**Implementation Location**: Add to `backend/app/services/search_index.py` in the `_backfill_decay_and_decisions()` method (Phase 8 of implementation plan). The guard check should execute BEFORE the main backfill loops that classify notes and extract decisions.\n\n**Guard Query Design** (per design.md line 228 and implementation.md lines 413-428): Query for any notes where `decay_class != 'stable'` OR `last_accessed_at IS NOT NULL`. Default values after schema migration are `decay_class='stable'` (schema default) and `last_accessed_at=NULL`. Any deviation indicates backfill has already run or users have manually classified notes.\n\n**SQL Implementation**:\n```python\ncursor = await self.db.execute(\n    \"SELECT COUNT(*) FROM notes WHERE decay_class != 'stable' OR last_accessed_at IS NOT NULL\"\n)\ncount = (await cursor.fetchone())[0]\nif count > 0:\n    logger.info(f\"Decay backfill already completed ({count} notes classified), skipping\")\n    return\n```\n\n**Performance Consideration**: This guard query uses indexed columns (`idx_notes_decay_class`, `idx_notes_last_accessed` added in Phase 1) and executes in <1ms even for 10,000+ notes, ensuring minimal overhead on normal application startups.\n\n**Integration Point**: Call site is in `initialize()` method after `_create_schema()` completes and decay columns exist. The backfill method should be wrapped in a try/except to prevent startup failures if backfill encounters errors on legacy data.\n</info added on 2026-02-14T20:45:37.719Z>",
+            "status": "pending",
+            "testStrategy": "Test with fresh database (backfill runs), then restart (backfill skipped). Verify log messages. Test with partially backfilled database (some notes have decay_class set) to ensure guard works correctly.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Fetch and batch-process all existing notes for classification",
+            "description": "Query all notes with their tags from the database using a LEFT JOIN on note_tags, then process them in batches of 100 for performance optimization.",
+            "dependencies": [
+              1
+            ],
+            "details": "Execute SQL query: SELECT n.id, n.note_type, n.content, n.indexed_at, GROUP_CONCAT(t.tag) as tags FROM notes n LEFT JOIN note_tags t ON n.id = t.note_id GROUP BY n.id. Process results in batches of 100 to balance memory usage and commit frequency. For each note, split the comma-separated tags string into a list (or empty list if NULL). Store the indexed_at timestamp for later use as last_accessed_at. This step prepares all data needed for decay classification without making individual queries per note.",
+            "status": "pending",
+            "testStrategy": "Test with 0 notes, 1 note, 50 notes, and 1000+ notes. Verify batching works correctly. Test notes with 0 tags, 1 tag, and multiple tags. Measure performance - should handle 1000 notes in <5 seconds.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Classify decay and calculate expiry for each note",
+            "description": "For each note in the batch, call classify_decay() with note_type, tags, empty frontmatter dict, and content. Then call calculate_expiry() with the decay_class to get expires_at timestamp.",
+            "dependencies": [
+              2
+            ],
+            "details": "Import classify_decay and calculate_expiry from Task 26's implementation. For each note: decay_class = classify_decay(note['note_type'] or 'note', tags, {}, content). Then: expires_at = calculate_expiry(decay_class). Set last_accessed_at = note['indexed_at'] (the original indexing timestamp). Execute UPDATE notes SET decay_class=?, expires_at=?, last_accessed_at=? WHERE id=? for each note. Since classify_decay() hasn't been implemented yet, this subtask depends on Task 26 completion. The empty frontmatter dict {} is used because existing notes don't have decay_class in frontmatter - that's a new feature.",
+            "status": "pending",
+            "testStrategy": "Unit test classify_decay with various note_types and tags. Test calculate_expiry for all decay classes. Test UPDATE SQL with sample note IDs. Verify expires_at is NULL for permanent, valid timestamps for others. Verify last_accessed_at equals indexed_at.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Extract decisions using simple regex and deduplicate",
+            "description": "Implement _extract_decisions_simple() method that uses regex patterns to find decision language in note content, skipping lines already in the existing_decisions set to avoid duplicates.",
+            "dependencies": [
+              2
+            ],
+            "details": "Create _extract_decisions_simple(self, content: str, existing: set) -> list[str] method. Split content into lines. For each line, test against DECISION_PATTERNS (from Task 26). If pattern matches and line.lower() not in existing set, append line.strip() to decisions list. Before processing notes, pre-fetch existing decision observations: SELECT note_id, content FROM observations WHERE category='decision', then build a dict mapping note_id -> set of lowercased content strings. This deduplication prevents creating duplicate observations for decisions that might already exist (from manual entry or previous runs). The simple regex approach avoids AI overhead during backfill.",
+            "status": "pending",
+            "testStrategy": "Test regex patterns against sample decision text from design.md. Test deduplication with existing decisions. Test with notes containing no decisions, 1 decision, multiple decisions. Verify code blocks are NOT scanned for decisions.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Insert extracted decisions and commit batches",
+            "description": "For each extracted decision, insert a new observation row with category='decision', auto_extracted=1, decay_override='permanent'. Commit after each batch of 100 notes. Log final statistics.",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "For each decision string returned by _extract_decisions_simple(), execute: INSERT INTO observations(note_id, category, content, auto_extracted, decay_override) VALUES (?, 'decision', ?, 1, 'permanent'). Track total_decisions counter. After processing each batch of 100 notes, call await self.db.commit() to persist changes. At the end, log: 'Backfill complete: {len(notes)} notes classified, {total_decisions} decisions extracted in {elapsed:.2f}s'. Call this method from initialize() after _migrate_decay_schema() completes. Pass MarkdownParser() instance for potential future use (even though current implementation doesn't need it).",
+            "status": "pending",
+            "testStrategy": "Test INSERT SQL with sample decisions. Test commit batching. Test total performance: 781 notes should complete in <10 seconds. Test logging output. Integration test: verify decisions appear in observations table with correct flags. Verify _backfill_decay_and_decisions is called from initialize().",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "34",
+        "title": "Per-Turn Context Injection via MCP Hooks",
+        "description": "Enhance the MCP hooks system to automatically search memories relevant to the current user prompt and inject them as structured context before the AI responds. Inspired by SuperMemory's OpenClaw plugin which uses a before_agent_start hook to semantic-search and inject context as XML blocks.",
+        "details": "Implement automatic per-turn memory recall that enriches every AI conversation turn with relevant memories.\n\n**Current State**: Obsidian-Memory only loads context at session start via `build_context`. It does not enrich individual turns with relevant memories.\n\n**Target Architecture**:\n1. Add a `UserPromptSubmit` hook (or enhance existing MCP hook lifecycle) that:\n   - Extracts the user's current prompt text\n   - Performs semantic search against the memory search index\n   - Formats matching results as a structured context block\n   - Injects the context into the conversation before AI processing\n\n2. **Context Block Format** (structured XML or markdown):\n   ```\n   <!-- memory-context-start -->\n   ## User Profile\n   [Static facts and preferences]\n   \n   ## Relevant Memories\n   - [note title] (relevance: 0.85): snippet...\n   - [note title] (relevance: 0.72): snippet...\n   \n   ## Recent Session Context\n   [Current session observations]\n   <!-- memory-context-end -->\n   ```\n\n3. **Configuration Options** (in MCP server config or per-project):\n   - `auto_recall`: bool (default: true) - enable/disable automatic recall\n   - `max_recall_results`: int (default: 10) - max memories per query\n   - `min_relevance_threshold`: float (default: 0.3) - minimum score to include\n   - `include_profile`: bool (default: true) - include user profile section\n   - `recall_categories`: list - which note types to search (default: all)\n\n4. **Deduplication**: Track which memory IDs have been injected in the current session to avoid repeating the same memories across turns.\n\n5. **Performance**: Search must complete in <200ms to avoid noticeable latency. Cache recent queries. Rate-limit to avoid overwhelming the search index.\n\n**Files to modify/create**:\n- `mcp-server/src/tools/` - New recall hook handler\n- `backend/app/api/v1/search.py` - Optimize search endpoint for per-turn use\n- `mcp-server/src/config.ts` or equivalent - Add recall configuration\n\n**Reference**: SuperMemory's `hooks/recall.ts` builds `<supermemory-context>` XML with User Profile, Recent Context, and Relevant Memories sections, deduplicating across categories.",
+        "testStrategy": "1. Unit test: Mock search index, verify hook formats context block correctly\n2. Unit test: Verify deduplication - same memory not injected twice in a session\n3. Unit test: Verify config parsing (auto_recall, max_results, threshold)\n4. Integration test: Submit a prompt, verify search is called and results injected\n5. Performance test: Measure end-to-end latency with 1000 notes in index, assert <200ms\n6. Edge case: Empty search results should inject minimal/no context block\n7. Edge case: Disabled auto_recall should skip injection entirely",
+        "priority": "high",
+        "dependencies": [
+          "29"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design and implement recall configuration schema",
+            "description": "Create configuration schema for per-turn context injection with sensible defaults (auto_recall, max_recall_results, min_relevance_threshold, include_profile, recall_categories)",
+            "dependencies": [],
+            "details": "Add recall configuration to backend/app/config.py Settings class using pydantic:\n- auto_recall: bool (default: true) - enable/disable automatic recall\n- max_recall_results: int (default: 10) - max memories per query\n- min_relevance_threshold: float (default: 0.3) - minimum score to include\n- include_profile: bool (default: true) - include user profile section\n- recall_categories: list[str] (default: all note types) - which note types to search\n\nExport settings via backend API endpoint GET /api/v1/config/recall so MCP server can fetch configuration dynamically. Add corresponding TypeScript interface in mcp-server/src/client.ts for type safety.",
+            "status": "pending",
+            "testStrategy": "1. Unit test: Verify Settings.recall_config loads defaults correctly\n2. Unit test: Verify custom .env values override defaults\n3. Integration test: GET /api/v1/config/recall returns valid JSON schema\n4. Type test: Verify TypeScript RecallConfig interface matches Python schema",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Optimize search endpoint for per-turn latency requirements",
+            "description": "Enhance backend/app/services/search_index.py SearchIndex.search() method to support <200ms query latency through caching and query optimization",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement performance optimizations in SearchIndex.search():\n1. Add LRU cache (functools.lru_cache) for repeated queries with TTL of 60 seconds\n2. Add query result size limit parameter (default: 10 results) to reduce result processing overhead\n3. Optimize FTS5 snippet generation - use _manual_snippet() only when necessary, prefer database-level snippet()\n4. Add query execution timing logging to identify slow queries (>200ms threshold)\n5. Implement early termination for similarity searches when min_relevance_threshold not met\n6. Create new lightweight search_for_recall() method that returns minimal fields (id, title, content snippet, score) instead of full note objects\n\nExpose search_for_recall() via new API endpoint POST /api/v1/search/recall with request body {query: string, limit: int, threshold: float}.",
+            "status": "pending",
+            "testStrategy": "1. Performance test: Measure search_for_recall() latency with 10k indexed notes - must be <200ms p95\n2. Unit test: Verify LRU cache hit rate >80% for repeated queries\n3. Unit test: Verify early termination when no results meet threshold\n4. Load test: 100 concurrent recall requests should maintain <200ms p95\n5. Integration test: Verify /api/v1/search/recall returns only required fields",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Create context block formatter with structured XML/markdown output",
+            "description": "Implement formatter that builds structured context blocks with User Profile, Relevant Memories, and Recent Session Context sections in XML format",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Create mcp-server/src/formatters/recall.ts with buildRecallContext() function:\n\n```typescript\ninterface RecallResult {\n  memories: Array<{id: number, title: string, snippet: string, score: number}>;\n  profile?: {facts: string[], preferences: string[]};\n  session_context?: string;\n}\n\nfunction buildRecallContext(result: RecallResult): string {\n  // Build structured block:\n  // <!-- memory-context-start -->\n  // ## User Profile\n  // [Static facts and preferences from profile note]\n  // \n  // ## Relevant Memories\n  // - [note title] (relevance: 0.85): snippet...\n  // - [note title] (relevance: 0.72): snippet...\n  // \n  // ## Recent Session Context  \n  // [Current session observations]\n  // <!-- memory-context-end -->\n}\n```\n\nSupport both XML-style comment markers (for HTML/markdown injection) and plain markdown section headers. Include metadata: total_memories, search_query, timestamp.\n\nAdd unit tests in mcp-server/tests/recall-formatter.test.ts.",
+            "status": "pending",
+            "testStrategy": "1. Unit test: buildRecallContext() with no memories returns empty context block\n2. Unit test: buildRecallContext() with 5 memories formats correctly with scores\n3. Unit test: buildRecallContext() includes profile section when profile provided\n4. Unit test: buildRecallContext() truncates long snippets to 150 chars\n5. Unit test: buildRecallContext() escapes XML special characters in content\n6. Snapshot test: Verify context block format matches SuperMemory reference format",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Implement MCP hook handler for UserPromptSubmit event",
+            "description": "Create MCP server hook handler that intercepts user prompts, performs semantic search, and injects formatted context before AI processing",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Create mcp-server/src/hooks/recall.ts with UserPromptSubmit hook handler:\n\n1. Register new hook in MCP server lifecycle (mcp-server/src/index.ts):\n   - Hook into message interception before tool dispatch\n   - Extract user prompt text from request\n   \n2. Implement recallAndInject() function:\n   - Call POST /api/v1/search/recall with user prompt as query\n   - Fetch recall config from GET /api/v1/config/recall\n   - Filter results by min_relevance_threshold\n   - Format results using buildRecallContext()\n   - Prepend context block to user message\n   \n3. Handle errors gracefully:\n   - If search fails, log error but don't block user prompt\n   - If search times out (>500ms), return empty context\n   - Rate limit: max 1 recall per 2 seconds per session\n\n4. Add hook registration in mcp-server/src/index.ts createServer():\n```typescript\nserver.onUserPromptSubmit(async (prompt, sessionId) => {\n  const context = await recallAndInject(prompt, sessionId);\n  return context ? `${context}\\n\\n${prompt}` : prompt;\n});\n```\n\nNote: MCP SDK may not have built-in UserPromptSubmit hook - may need to implement via message interception or transport-layer middleware.",
+            "status": "pending",
+            "testStrategy": "1. Integration test: Submit prompt, verify search API called with correct query\n2. Integration test: Verify context block prepended to prompt\n3. Unit test: recallAndInject() respects min_relevance_threshold filter\n4. Unit test: recallAndInject() returns empty context on search timeout\n5. Integration test: Rate limiter prevents >1 recall per 2 seconds\n6. Error test: Search API failure doesn't block prompt submission",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Implement session-level deduplication tracking for injected memories",
+            "description": "Create session-based tracking system to prevent the same memory from being injected multiple times in a single conversation session",
+            "dependencies": [
+              4
+            ],
+            "details": "Implement deduplication in mcp-server/src/hooks/recall.ts:\n\n1. Create SessionRecallState class:\n```typescript\nclass SessionRecallState {\n  private injectedMemoryIds: Map<string, Set<number>> = new Map();\n  \n  hasInjected(sessionId: string, memoryId: number): boolean\n  markInjected(sessionId: string, memoryId: number): void\n  clearSession(sessionId: string): void\n  pruneStale(): void // Remove sessions older than 24 hours\n}\n```\n\n2. Integrate with recallAndInject():\n   - Before formatting context, filter out memories already injected in this session\n   - After injecting context, mark all included memory IDs as injected\n   - Log deduplication statistics (e.g., \"Filtered 3/10 memories already shown\")\n\n3. Add session lifecycle management:\n   - Clear injected IDs when session ends (session_context tool with status=ended)\n   - Periodically prune stale sessions (>24 hours old) every hour\n   - Store in-memory only (no persistence needed - sessions are ephemeral)\n\n4. Add optional reset_recall_history parameter to build_context tool to force re-injection\n\n5. Expose deduplication stats via new tool recall_stats returning {session_id, total_injections, unique_memories, deduplication_rate}",
+            "status": "pending",
+            "testStrategy": "1. Unit test: SessionRecallState tracks injected IDs per session correctly\n2. Unit test: hasInjected() returns true for previously injected memory\n3. Integration test: Same memory not injected twice in same session\n4. Integration test: Memory CAN be injected in different sessions\n5. Unit test: pruneStale() removes sessions older than 24 hours\n6. Integration test: recall_stats tool returns accurate deduplication metrics\n7. Performance test: Deduplication check completes in <10ms with 1000 tracked memories",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-02-17T18:58:01.808696+00:00"
+      },
+      {
+        "id": "35",
+        "title": "User Profile Synthesis System",
+        "description": "Build a local user/project profile system that automatically extracts and maintains a structured profile of facts, preferences, and patterns from stored memories. Inspired by SuperMemory's getProfile() API with static (persistent) and dynamic (recent) profile sections.",
+        "details": "Create an AI-powered profile synthesis system that periodically scans memories and builds a queryable profile.\n\n**Current State**: Obsidian-Memory stores rich structured data (notes, observations, sessions, decisions) but doesn't synthesize it into a high-level profile for quick context injection.\n\n**Target Architecture**:\n\n1. **Profile Note Type**: Create a new `profile` note type (or dedicated storage):\n   ```yaml\n   ---\n   title: \"Project Profile: Brain\"\n   note_type: profile\n   project: Brain\n   profile_version: 3\n   last_synthesized: 2026-02-17T12:00:00Z\n   ---\n   ## Static Profile (Stable Facts)\n   - User prefers Python for backend development\n   - Uses Docker for all deployments\n   - Vault path convention: /home/redleif/vaults/\n   \n   ## Dynamic Profile (Recent Patterns)\n   - Currently focused on memory decay scoring feature\n   - Recent decisions favor SQLite over Postgres for simplicity\n   - Active projects: Obsidian-Memory, CoparentingSystem\n   \n   ## Key Entities\n   - Tools: FastAPI, Docker, SilverBullet, Claude Code\n   - Projects: Obsidian-Memory (781 notes), CoparentingSystem (74 notes)\n   ```\n\n2. **AI Processor Method**: New method `synthesize_profile(project: str)`:\n   - Query recent notes, sessions, decisions, and observations for the project\n   - Send to LLM with extraction prompt: \"Extract stable user preferences, current focus areas, key entities, and behavioral patterns\"\n   - Parse LLM response into structured profile sections\n   - Store as a profile note with version tracking\n\n3. **Frequency Control**:\n   - Rebuild profile every N writes (configurable, default: 50)\n   - Track write count since last synthesis in a metadata field\n   - Run asynchronously (background task) to not block writes\n\n4. **API & MCP Integration**:\n   - `GET /api/profile/{project}` - Return current profile\n   - `POST /api/profile/{project}/synthesize` - Trigger manual rebuild\n   - MCP tool: `get_profile` - Retrieve profile for injection into context\n\n5. **Per-Project Scoping**: Each project gets its own profile note. Unscoped notes contribute to a \"default\" profile.\n\n**Files to create/modify**:\n- `backend/app/services/profile_synthesizer.py` - New service\n- `backend/app/api/v1/profile.py` - New API routes\n- `mcp-server/src/tools/profile.ts` or equivalent - New MCP tool\n- `backend/app/models/` - Profile model if needed\n\n**Reference**: SuperMemory's `client.ts:getProfile()` returns `{ static: string, dynamic: string }` built server-side.",
+        "testStrategy": "1. Unit test: Profile synthesis with mock LLM returns valid structured profile\n2. Unit test: Frequency control - profile only rebuilds after N writes\n3. Unit test: Per-project scoping - separate profiles for different projects\n4. Integration test: Write 50 notes, verify profile auto-synthesizes\n5. API test: GET /api/profile/{project} returns current profile\n6. API test: POST /api/profile/{project}/synthesize triggers manual rebuild\n7. Edge case: New project with zero notes returns empty profile template\n8. Edge case: LLM failure gracefully falls back to last known profile",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define profile note type and database schema",
+            "description": "Extend NoteType enum with 'profile' value and define ProfileNote Pydantic model with static/dynamic sections, version tracking, and per-project scoping.",
+            "dependencies": [],
+            "details": "1. Add `PROFILE = \"profile\"` to `NoteType` enum in backend/app/models/note.py:9-18\n2. Create `backend/app/models/profile.py` with ProfileNote model:\n   - Fields: project (str), static_facts (list[str]), dynamic_patterns (list[str]), key_entities (dict[str, list[str]]), profile_version (int), last_synthesized (datetime), synthesis_note_count (int)\n   - Inherit from BaseModel\n3. Add profile-specific validation: require project field for profile notes\n4. Database migration (if needed): Ensure note_type='profile' is valid in notes table constraints\n5. Update backend/app/models/__init__.py to export ProfileNote",
+            "status": "done",
+            "testStrategy": "1. Unit test: ProfileNote model instantiation with valid data\n2. Unit test: Validation fails if project is missing\n3. Unit test: NoteType.PROFILE serializes correctly\n4. Integration test: Create a profile note via VaultManager and verify storage",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:17:22.962Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement AI profile synthesis method in AIProcessor",
+            "description": "Add synthesize_profile() async method to AIProcessor that queries recent notes/sessions/decisions, sends to Claude with extraction prompt, and returns structured ProfileNote.",
+            "dependencies": [
+              1
+            ],
+            "details": "1. Add to backend/app/services/ai_processor.py:\n   - `async def synthesize_profile(self, project: str, vault_manager: VaultManager, search_index: SearchIndex, note_limit: int = 100) -> ProfileNote`\n2. Query logic:\n   - Use search_index to get recent N notes filtered by project (consider note types: note, decision, session, observation)\n   - Sort by updated_at descending\n   - Extract content from ParsedNote objects\n3. LLM Prompt Design:\n   - System prompt: \"Extract stable user preferences (static), recent focus areas (dynamic), key entities (tools/projects/people), and behavioral patterns from notes.\"\n   - User prompt: Include note titles, types, timestamps, and truncated content (first 500 chars)\n   - Request JSON response with: static_facts (array), dynamic_patterns (array), key_entities (object with categories), confidence (float)\n4. Parse JSON response using _parse_json_response()\n5. Return ProfileNote with synthesis metadata (note_count, timestamp, version incremented from previous)\n6. Handle AIProcessorUnavailableError gracefully (return minimal profile)",
+            "status": "done",
+            "testStrategy": "1. Unit test: Mock search_index and vault_manager, verify synthesize_profile returns valid ProfileNote\n2. Unit test: LLM prompt includes correct note data and project filter\n3. Unit test: JSON parsing handles both static and dynamic sections\n4. Unit test: Graceful degradation when AI unavailable (returns empty profile)\n5. Integration test: Run on real project with 50+ notes, verify profile extraction\n6. Test content truncation for cost control (truncate long notes to 500 chars)",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:05:27.265Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement frequency control and background task runner",
+            "description": "Add profile synthesis trigger logic that rebuilds profile every N writes (default 50) using background task and tracks write count in metadata.",
+            "dependencies": [
+              2
+            ],
+            "details": "1. Add configuration to backend/app/config.py:\n   - `profile_synthesis_frequency: int = 50` (writes between syntheses)\n   - `profile_synthesis_enabled: bool = True`\n2. Modify VaultManager (vault_manager_pg.py or base class):\n   - Track write count per project in memory or database (simple counter)\n   - After successful write, increment counter for note's project\n   - When counter reaches threshold, trigger background synthesis\n3. Background task pattern:\n   - Use FastAPI BackgroundTasks in write endpoint\n   - Create `async def _synthesize_profile_background(project: str, vault_manager, search_index, ai_processor)`\n   - Write synthesized profile note to vault (path: `.profiles/{project}-profile.md`)\n   - Reset write counter after synthesis\n4. Store write count:\n   - Option A: In-memory dict `{project: count}` (simple, resets on restart)\n   - Option B: Database table `profile_metadata(project, write_count, last_synthesized)`\n   - Recommend Option A for MVP, Option B for production\n5. Handle concurrent writes: Use asyncio.Lock per project to prevent duplicate synthesis",
+            "status": "done",
+            "testStrategy": "1. Unit test: Write count increments correctly per project\n2. Unit test: Synthesis triggered after exactly N writes\n3. Unit test: Background task completes without blocking write response\n4. Integration test: Write 50 notes, verify profile auto-synthesizes\n5. Integration test: Multiple projects have independent write counters\n6. Test concurrency: Simultaneous writes don't trigger duplicate synthesis",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:08:07.484Z"
+          },
+          {
+            "id": 4,
+            "title": "Create profile API endpoints (GET and POST)",
+            "description": "Add FastAPI endpoints GET /api/v1/profile/{project} to retrieve current profile and POST /api/v1/profile/{project}/synthesize to trigger manual rebuild.",
+            "dependencies": [
+              2
+            ],
+            "details": "1. Create backend/app/api/v1/profile.py:\n   - Import router pattern from notes_pg.py (lines 76-80)\n   - `router = APIRouter(prefix=\"/profile\", tags=[\"Profile\"])`\n2. GET /api/v1/profile/{project}:\n   - Dependency: get_vault_manager_pg, get_search_index_pg, get_current_user_id\n   - Search for profile note with path `.profiles/{project}-profile.md` or note_type='profile' + project match\n   - If not found, return 404 with message \"Profile not synthesized yet\"\n   - Return ProfileNote as JSON\n3. POST /api/v1/profile/{project}/synthesize:\n   - Same dependencies + BackgroundTasks\n   - Manually trigger synthesize_profile() in background task\n   - Return 202 Accepted with message \"Profile synthesis started\"\n4. Response models:\n   - ProfileResponse (extends ProfileNote with additional metadata)\n   - ProfileSynthesisResponse (status, message, estimated_completion)\n5. Error handling:\n   - 401 Unauthorized (no user_id)\n   - 403 Forbidden (project access denied)\n   - 500 Internal Server Error (synthesis failed)\n6. Register router in backend/app/main.py",
+            "status": "done",
+            "testStrategy": "1. API test: GET /api/v1/profile/{project} returns 404 when no profile exists\n2. API test: POST synthesize returns 202 and profile is created in background\n3. API test: GET after POST returns valid ProfileNote\n4. API test: Unauthorized request (no user_id) returns 401\n5. API test: Request for non-existent project returns 404\n6. Integration test: End-to-end flow (write notes, POST synthesize, GET profile)",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:09:47.391Z"
+          },
+          {
+            "id": 5,
+            "title": "Add MCP tool registration for get_profile",
+            "description": "Create get_profile MCP tool in mcp-server/src/tools.ts and implement handler in handlers.ts to retrieve profile for context injection.",
+            "dependencies": [
+              4
+            ],
+            "details": "1. Add tool definition to mcp-server/src/tools.ts (follow mem_read pattern, lines 16-54):\n   - name: 'get_profile'\n   - description: \"Retrieve user/project profile with static facts and dynamic patterns for context injection\"\n   - inputSchema: { project (string, required), response_format (enum: json/markdown, default json) }\n   - annotations: readOnlyHint=true, idempotentHint=true\n2. Implement handler in mcp-server/src/handlers.ts:\n   - Add case 'get_profile' in dispatchToolCall (line 527+)\n   - Make HTTP GET request to `${API_BASE_URL}/api/v1/profile/{project}`\n   - Handle 404 (profile not found) gracefully: return message \"No profile synthesized yet. Create one via POST /api/v1/profile/{project}/synthesize\"\n   - Format response based on response_format:\n     - json: Return full ProfileNote JSON\n     - markdown: Format as readable text with sections \"## Static Profile\", \"## Dynamic Profile\", \"## Key Entities\"\n3. Error handling:\n   - Network errors: Return helpful message\n   - Authentication errors: Pass through with guidance\n4. Add TypeScript types for ProfileNote (mirror Python model)\n5. Update mcp-server/tests/ with get_profile integration test",
+            "status": "done",
+            "testStrategy": "1. Unit test: Tool definition has correct schema and annotations\n2. Integration test: get_profile returns valid ProfileNote JSON\n3. Integration test: Markdown format is human-readable\n4. Integration test: 404 handling when profile doesn't exist\n5. Integration test: Authentication errors handled correctly\n6. End-to-end test: Claude Code can call get_profile and receive profile context",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T22:12:38.078Z"
+          }
+        ],
+        "updatedAt": "2026-02-17T22:12:38.078Z"
+      },
+      {
+        "id": "36",
+        "title": "Session Document Deduplication with Upsert Semantics",
+        "description": "Add upsert semantics to session observation capture to prevent duplicate entries when the same content is captured multiple times within a session. Inspired by SuperMemory's session_key-based customId for upsert operations.",
+        "details": "Implement idempotent session observation capture with deduplication.\n\n**Current State**: `session_observe` always creates new observation entries. Retries, reconnections, or repeated hooks can create duplicate entries for the same logical event.\n\n**Target Architecture**:\n\n1. **Idempotency Key**: Add optional `custom_id` field to session observations:\n   ```python\n   async def session_observe(\n       session_id: str,\n       event_type: str,\n       content: str,\n       metadata: dict = None,\n       custom_id: str = None  # NEW: for upsert semantics\n   ):\n       if custom_id:\n           # Check if observation with this custom_id exists\n           existing = await db.execute(\n               \"SELECT id FROM session_events WHERE custom_id = ?\",\n               (custom_id,)\n           )\n           if existing:\n               # Update existing observation\n               await db.execute(\n                   \"UPDATE session_events SET content = ?, metadata = ?, updated_at = ? WHERE custom_id = ?\",\n                   (content, json.dumps(metadata), now, custom_id)\n               )\n               return existing_id\n       \n       # Normal insert path (backward compatible)\n       ...\n   ```\n\n2. **Deterministic ID Generation**:\n   - Auto-generate custom_id when not provided: `f\"session_{session_id}_{event_type}_{hash(content)[:8]}\"`\n   - Or allow callers to specify their own key for explicit dedup control\n\n3. **Content Similarity Dedup** (optional enhancement):\n   - Before inserting, check if a very similar observation exists in the same session\n   - Use simple string similarity (difflib.SequenceMatcher ratio > 0.95)\n   - If similar, merge/update rather than create duplicate\n\n4. **Schema Changes**:\n   - Add `custom_id TEXT UNIQUE` column to session_events table\n   - Add `updated_at TIMESTAMP` column for tracking upserts\n   - Migration script for existing data\n\n5. **Backward Compatibility**: If no custom_id provided, behavior remains as-is (always insert).\n\n**Files to modify**:\n- `backend/app/services/session_manager.py` or equivalent\n- `backend/app/api/v1/sessions.py` - Update endpoint to accept custom_id\n- `mcp-server/` - Update session_observe MCP tool parameters\n- Schema migration script\n\n**Reference**: SuperMemory's `memory.ts:buildDocumentId()` generates `session_{sessionKey}` for upsert via SDK's `customId` parameter.",
+        "testStrategy": "1. Unit test: First observe creates new entry, second with same custom_id updates it\n2. Unit test: Two observations with different custom_ids create separate entries\n3. Unit test: No custom_id provided = always insert (backward compat)\n4. Unit test: Auto-generated custom_id determinism - same inputs produce same key\n5. Integration test: Rapid duplicate submissions only create one entry\n6. Schema test: Migration adds custom_id column without data loss\n7. Edge case: NULL custom_id observations can coexist freely",
+        "priority": "low",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add custom_id and updated_at fields to SessionEvent model",
+            "description": "Extend the SessionEvent Pydantic model to support upsert semantics by adding optional custom_id and updated_at fields for deduplication tracking.",
+            "dependencies": [],
+            "details": "Modify backend/app/models/session.py to add two new fields to the SessionEvent class:\n\n1. custom_id: str | None = Field(default=None, description=\"Optional unique identifier for deduplication\")\n2. updated_at: datetime | None = Field(default=None, description=\"Last update timestamp for upserted events\")\n\nThe custom_id field will be used to identify duplicate observations within a session. When provided, it enables upsert behavior (update existing event if custom_id matches, insert new event otherwise). When None, the system behaves as before (always appending new events).\n\nThe updated_at field tracks when an event was last modified during an upsert operation, helping with audit trails and debugging.\n\nReference: SuperMemory's buildDocumentId() pattern which uses session_key-based customId for deduplication.\n\nExample updated model:\n```python\nclass SessionEvent(BaseModel):\n    event_type: SessionEventType = Field(..., description=\"Type of event\")\n    content: str = Field(..., description=\"Event content\")\n    timestamp: datetime = Field(default_factory=datetime.now, description=\"Event timestamp\")\n    metadata: dict = Field(default_factory=dict, description=\"Additional event metadata\")\n    custom_id: str | None = Field(default=None, description=\"Optional unique identifier for deduplication\")\n    updated_at: datetime | None = Field(default=None, description=\"Last update timestamp for upserted events\")\n```",
+            "status": "done",
+            "testStrategy": "Unit tests verifying:\n1. SessionEvent can be instantiated with custom_id=None (backward compatibility)\n2. SessionEvent can be instantiated with custom_id=\"test-id-123\"\n3. SessionEvent serialization/deserialization preserves custom_id and updated_at fields\n4. Pydantic validation accepts valid custom_id strings and rejects invalid types",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:17:23.575Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement upsert logic in SessionManager.observe_event()",
+            "description": "Modify the observe_event() method in SessionManager to support upsert semantics when custom_id is provided, updating existing events instead of always appending.",
+            "dependencies": [
+              1
+            ],
+            "details": "Update backend/app/services/session_manager.py to implement upsert behavior in the observe_event() method:\n\n1. Add custom_id parameter to method signature:\n   async def observe_event(self, session_id: str, event_type: SessionEventType, content: str, metadata: dict[str, Any] | None = None, custom_id: str | None = None) -> Session\n\n2. Implement upsert logic:\n   - If custom_id is None: maintain current behavior (append new event)\n   - If custom_id is provided:\n     a. Search session.events for existing event with matching custom_id\n     b. If found: update existing event's content, metadata, and set updated_at=datetime.now()\n     c. If not found: append new event with custom_id and timestamp\n\n3. Preserve event ordering (most recent first or chronological, depending on existing pattern)\n\nExample implementation:\n```python\nif custom_id is not None:\n    # Find existing event with matching custom_id\n    existing_event_idx = next(\n        (i for i, e in enumerate(session.events) if getattr(e, 'custom_id', None) == custom_id),\n        None\n    )\n    if existing_event_idx is not None:\n        # Update existing event\n        session.events[existing_event_idx].content = content\n        session.events[existing_event_idx].metadata = metadata or {}\n        session.events[existing_event_idx].updated_at = datetime.now()\n    else:\n        # Insert new event with custom_id\n        event = SessionEvent(..., custom_id=custom_id)\n        session.events.append(event)\nelse:\n    # Original behavior: always append\n    event = SessionEvent(...)\n    session.events.append(event)\n```",
+            "status": "done",
+            "testStrategy": "Integration tests verifying:\n1. Without custom_id: events are always appended (existing behavior preserved)\n2. With new custom_id: event is inserted\n3. With existing custom_id: event is updated, updated_at is set, original timestamp preserved\n4. Multiple upserts with same custom_id: only one event exists with latest content\n5. Session file persistence correctly saves and loads upserted events",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:22:28.780Z"
+          },
+          {
+            "id": 3,
+            "title": "Create deterministic custom_id generator helper function",
+            "description": "Implement a utility function that generates deterministic custom_id values based on session_id, event_type, and content hash for automatic deduplication.",
+            "dependencies": [
+              1
+            ],
+            "details": "Add a new helper function to backend/app/services/session_manager.py or a new utils module that generates deterministic custom_id values:\n\n```python\nimport hashlib\nfrom app.models.session import SessionEventType\n\ndef generate_custom_id(session_id: str, event_type: SessionEventType, content: str) -> str:\n    \"\"\"Generate deterministic custom_id for session event deduplication.\n    \n    Format: session_{session_id}_{event_type}_{content_hash[:8]}\n    \n    Args:\n        session_id: Session identifier\n        event_type: Type of session event\n        content: Event content to hash\n    \n    Returns:\n        Deterministic custom_id string\n        \n    Example:\n        >>> generate_custom_id(\"abc-123\", SessionEventType.DECISION, \"Use PostgreSQL\")\n        'session_abc-123_decision_a1b2c3d4'\n    \"\"\"\n    content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()[:8]\n    return f\"session_{session_id}_{event_type.value}_{content_hash}\"\n```\n\nThis follows SuperMemory's pattern of combining session context with content fingerprinting for deterministic IDs.\n\nOptionally export this function for use in hooks, MCP tools, or client applications that want to control deduplication behavior.",
+            "status": "done",
+            "testStrategy": "Unit tests verifying:\n1. Same inputs always produce same custom_id (determinism)\n2. Different content produces different custom_id\n3. Different event_types produce different custom_id\n4. Different session_ids produce different custom_id\n5. Content hash collision handling (if needed)\n6. Generated IDs are valid strings and properly formatted",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:22:29.254Z"
+          },
+          {
+            "id": 4,
+            "title": "Update session_observe API endpoint and MCP tool parameters",
+            "description": "Extend the FastAPI endpoint and MCP tool definition to accept the new custom_id parameter and pass it through to the SessionManager.",
+            "dependencies": [
+              2
+            ],
+            "details": "Make the following updates:\n\n**1. Update SessionObserveRequest model** (backend/app/models/session.py):\n```python\nclass SessionObserveRequest(BaseModel):\n    session_id: str = Field(..., description=\"Session ID\")\n    event_type: SessionEventType = Field(..., description=\"Event type\")\n    content: str = Field(..., description=\"Event content\")\n    metadata: dict = Field(default_factory=dict, description=\"Additional metadata\")\n    custom_id: str | None = Field(default=None, description=\"Optional unique ID for deduplication (enables upsert)\")\n```\n\n**2. Update API endpoint** (backend/app/api/sessions.py):\n```python\n@router.post(\"/observe\")\nasync def observe_event(\n    request: SessionObserveRequest,\n    session_manager: SessionManager = Depends(get_session_manager),\n) -> dict[str, Any]:\n    try:\n        session = await session_manager.observe_event(\n            session_id=request.session_id,\n            event_type=request.event_type,\n            content=request.content,\n            metadata=request.metadata,\n            custom_id=request.custom_id,  # Add this line\n        )\n        # ... rest of endpoint\n```\n\n**3. Update MCP tool definition** (mcp-server/src/tools.ts):\n```typescript\n{\n  name: 'session_observe',\n  inputSchema: {\n    properties: {\n      session_id: { type: 'string', ... },\n      event_type: { type: 'string', enum: [...] },\n      content: { type: 'string', ... },\n      metadata: { type: 'object', ... },\n      custom_id: {\n        type: 'string',\n        description: 'Optional unique identifier for deduplication. When provided, enables upsert semantics (updates existing event if custom_id matches, inserts new event otherwise).'\n      }\n    },\n    required: ['session_id', 'event_type', 'content']  // custom_id is optional\n  },\n  annotations: {\n    ...\n    idempotentHint: true  // Update from false since upsert makes it idempotent\n  }\n}\n```",
+            "status": "done",
+            "testStrategy": "Integration tests verifying:\n1. API endpoint accepts custom_id parameter via POST /api/sessions/observe\n2. MCP tool accepts custom_id parameter and passes to backend\n3. API returns appropriate response when upserting (event_count may not increase)\n4. Backward compatibility: requests without custom_id still work\n5. Error handling for invalid custom_id values",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:22:29.406Z"
+          },
+          {
+            "id": 5,
+            "title": "Add backward compatibility tests for existing session workflows",
+            "description": "Create comprehensive test suite ensuring that existing session observation workflows continue to function correctly with the new upsert feature when custom_id is not provided.",
+            "dependencies": [
+              2,
+              4
+            ],
+            "details": "Create test cases in backend/tests/test_session_manager.py and backend/tests/test_sessions_api.py covering:\n\n**1. Backward Compatibility Tests:**\n- Existing sessions created before schema changes can be loaded and updated\n- observe_event() without custom_id parameter maintains append-only behavior\n- Session files without custom_id fields can be deserialized correctly\n- Multiple events with same content but no custom_id create separate entries (original behavior)\n\n**2. Migration Tests:**\n- Existing session JSON files load successfully with new Pydantic model\n- Missing custom_id and updated_at fields default to None\n- Re-saving loaded sessions preserves backward compatibility\n\n**3. Workflow Integration Tests:**\n- Claude Code hooks that call session_observe continue to work\n- Session summarization works with both old (no custom_id) and new (with custom_id) events\n- Session context retrieval includes both old and new event formats\n\n**4. Edge Cases:**\n- Empty custom_id string handled correctly\n- Very long custom_id strings (test limits)\n- Special characters in custom_id\n- Race conditions when multiple processes upsert same custom_id\n\nExample test structure:\n```python\nclass TestSessionBackwardCompatibility:\n    async def test_observe_without_custom_id_appends_events(self):\n        \"\"\"Verify original append-only behavior when custom_id not provided.\"\"\"\n        manager = SessionManager()\n        session = await manager.create_session()\n        \n        await manager.observe_event(session.session_id, SessionEventType.DECISION, \"Decision 1\")\n        await manager.observe_event(session.session_id, SessionEventType.DECISION, \"Decision 1\")  # Same content\n        \n        session = await manager.get_session(session.session_id)\n        assert len(session.events) == 2  # Both events appended\n        assert session.events[0].custom_id is None\n        assert session.events[1].custom_id is None\n```",
+            "status": "done",
+            "testStrategy": "Run test suite with:\n1. pytest backend/tests/test_session_manager.py -v\n2. pytest backend/tests/test_sessions_api.py -v\n3. Manual testing with existing Claude Code workflows\n4. Load testing with large session files (100+ events)\n5. Verify no breaking changes in MCP tool usage from Claude Code perspective",
+            "parentId": "undefined",
+            "updatedAt": "2026-02-17T21:24:31.731Z"
+          }
+        ],
+        "updatedAt": "2026-02-17T21:24:31.731Z"
+      },
+      {
+        "id": "37",
+        "title": "Feedback Loop Prevention in Context Injection",
+        "description": "Implement safeguards to prevent previously injected memory context from being re-captured and stored back as new memories, creating circular reference loops. Must be implemented alongside or before enabling per-turn context injection.",
+        "details": "Prevent feedback loops where injected context gets re-stored as new memories.\n\n**Problem**: When per-turn context injection (task 34) injects memory blocks into AI conversations, the AI's response may include or reference that injected content. If the capture/observation system then stores the full response, it creates feedback loops where memories reference themselves, leading to context bloat and stale circular references.\n\n**Target Architecture**:\n\n1. **Standard Context Block Format**: Define markers for injected blocks:\n   ```\n   <!-- memory-context-start -->\n   ... injected memories ...\n   <!-- memory-context-end -->\n   ```\n\n2. **Stripping Utility Function**:\n   ```python\n   import re\n   \n   CONTEXT_BLOCK_PATTERN = re.compile(\n       r'<!-- memory-context-start -->.*?<!-- memory-context-end -->',\n       re.DOTALL\n   )\n   \n   def strip_injected_context(content: str) -> str:\n       \"\"\"Remove all injected memory context blocks from content.\"\"\"\n       stripped = CONTEXT_BLOCK_PATTERN.sub('', content)\n       # Clean up extra whitespace left by removal\n       stripped = re.sub(r'\\n{3,}', '\\n\\n', stripped)\n       return stripped.strip()\n   ```\n\n3. **Integration Points** - Apply stripping in:\n   - `session_observe()` - Strip before storing any observation content\n   - Any future auto-capture hooks - Strip before processing\n   - Manual `mem_write` - Strip if content contains context blocks\n\n4. **Content Length Validation**: After stripping, if remaining content is <10 characters, skip capture entirely (the message was essentially just the injected context).\n\n5. **Unit Tests**: Critical edge cases:\n   - Nested context blocks\n   - Malformed/partial tags\n   - Content with no context blocks (passthrough)\n   - Multiple context blocks in one message\n   - Context blocks with special regex characters inside\n\n**Files to create/modify**:\n- `backend/app/utils/context_stripping.py` - New utility module\n- `backend/app/services/session_manager.py` - Apply stripping in observe\n- `mcp-server/` - Apply stripping in capture hooks\n\n**Reference**: SuperMemory's `hooks/capture.ts` strips `<supermemory-context>` tags before storing, and skips messages shorter than 10 characters after stripping.",
+        "testStrategy": "1. Unit test: strip_injected_context removes single block correctly\n2. Unit test: strip_injected_context removes multiple blocks\n3. Unit test: Nested blocks handled (inner block removed)\n4. Unit test: Malformed tags (missing end tag) - graceful handling\n5. Unit test: Content with no blocks passes through unchanged\n6. Unit test: Content that is ONLY a context block returns empty string\n7. Unit test: <10 char threshold triggers skip\n8. Integration test: session_observe with injected content stores only original content\n9. Integration test: End-to-end - inject context, capture response, verify no loop",
+        "priority": "medium",
+        "dependencies": [
+          "34"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define standard context block format and markers",
+            "description": "Establish the HTML comment markers that will wrap injected memory context blocks in AI conversation content, ensuring they're easily identifiable and strippable.",
+            "dependencies": [],
+            "details": "Create constants for context block markers:\n- Opening marker: `<!-- memory-context-start -->`\n- Closing marker: `<!-- memory-context-end -->`\n\nThese markers will be used by task 34 (Per-Turn Context Injection) to wrap injected memory blocks. The format follows SuperMemory's pattern of using HTML comments which are:\n1. Language-agnostic (work in markdown, HTML, plain text)\n2. Non-intrusive (don't appear in rendered output)\n3. Regex-friendly (clear delimiters for pattern matching)\n\nDocument the format in a constant or configuration file (e.g., `backend/app/config.py` or create `backend/app/utils/context_markers.py`) so both the injection system (task 34) and stripping system use the same markers.\n\nExample of wrapped content:\n```\n<!-- memory-context-start -->\nRelevant Memory 1: User prefers dark mode\nRelevant Memory 2: Last discussed authentication on 2025-01-15\n<!-- memory-context-end -->\n```",
+            "status": "pending",
+            "testStrategy": "1. Unit test: Verify constants are defined and accessible\n2. Unit test: Verify markers are valid HTML comments (won't break markdown rendering)\n3. Documentation check: Ensure markers are documented for future reference",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement strip_injected_context utility function with regex",
+            "description": "Create a robust utility function that uses regex to remove all injected context blocks from content, handling edge cases like nested blocks, malformed tags, and multiple blocks.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create `backend/app/utils/context_stripping.py` with the following implementation:\n\n```python\nimport re\nfrom typing import Pattern\n\n# Compile regex pattern at module level for performance\nCONTEXT_BLOCK_PATTERN: Pattern[str] = re.compile(\n    r'<!-- memory-context-start -->.*?<!-- memory-context-end -->',\n    re.DOTALL  # Allow . to match newlines for multi-line blocks\n)\n\ndef strip_injected_context(content: str) -> str:\n    \"\"\"Remove all injected memory context blocks from content.\n    \n    Args:\n        content: Raw content that may contain injected context blocks\n        \n    Returns:\n        Content with all context blocks removed and whitespace normalized\n        \n    Examples:\n        >>> strip_injected_context(\"Text <!-- memory-context-start -->context<!-- memory-context-end --> more\")\n        \"Text  more\"\n    \"\"\"\n    if not content:\n        return content\n    \n    # Remove all context blocks\n    stripped = CONTEXT_BLOCK_PATTERN.sub('', content)\n    \n    # Clean up excessive whitespace left by removal\n    # Replace 3+ consecutive newlines with exactly 2 newlines\n    stripped = re.sub(r'\\n{3,}', '\\n\\n', stripped)\n    \n    # Strip leading/trailing whitespace\n    return stripped.strip()\n```\n\nThe regex uses non-greedy matching (`.*?`) to handle multiple blocks correctly. The `re.DOTALL` flag ensures blocks spanning multiple lines are captured.\n\nReference: SuperMemory's `hooks/capture.ts` strips `<supermemory-context>` tags before storing.",
+            "status": "pending",
+            "testStrategy": "1. Unit test: Single context block removal\n2. Unit test: Multiple context blocks in one message\n3. Unit test: Nested blocks (inner block should be removed)\n4. Unit test: Malformed tags (missing end tag) - graceful handling without crashes\n5. Unit test: Content with no blocks (passthrough unchanged)\n6. Unit test: Context blocks with special regex characters inside (e.g., $, *, +)\n7. Unit test: Empty content string handling\n8. Unit test: Whitespace normalization (3+ newlines become 2)",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Integrate stripping into session_observe pipeline",
+            "description": "Modify the session_manager.py observe_event method to automatically strip injected context blocks before storing session events, preventing feedback loops.",
+            "dependencies": [
+              2
+            ],
+            "details": "Update `backend/app/services/session_manager.py`:\n\n1. Import the stripping utility:\n```python\nfrom app.utils.context_stripping import strip_injected_context\n```\n\n2. Modify `observe_event()` method (around line 102-138) to strip content before creating the event:\n```python\nasync def observe_event(\n    self,\n    session_id: str,\n    event_type: SessionEventType,\n    content: str,\n    metadata: dict[str, Any] | None = None,\n) -> Session:\n    \"\"\"Add an observation/event to a session.\n    \n    Args:\n        session_id: Session identifier\n        event_type: Type of event\n        content: Event content (will be stripped of injected context)\n        metadata: Optional metadata\n        \n    Returns:\n        Updated session\n        \n    Raises:\n        ValueError: If session not found\n    \"\"\"\n    session = await self.get_session(session_id)\n    if not session:\n        raise ValueError(f\"Session {session_id} not found\")\n    \n    # Strip injected context to prevent feedback loops\n    cleaned_content = strip_injected_context(content)\n    \n    event = SessionEvent(\n        event_type=event_type,\n        content=cleaned_content,  # Use stripped content\n        timestamp=datetime.now(),\n        metadata=metadata or {},\n    )\n    \n    session.events.append(event)\n    self._sessions[session_id] = session\n    await self._save_session(session)\n    \n    return session\n```\n\n3. Add logging for debugging:\n```python\nif content != cleaned_content:\n    logger.debug(f\"Stripped context blocks from session {session_id} event\")\n```\n\nThis ensures any session observations (manual or automatic) are cleaned before storage.",
+            "status": "pending",
+            "testStrategy": "1. Integration test: Create session, observe event with context blocks, verify stored content is stripped\n2. Integration test: Observe event without context blocks, verify content unchanged\n3. Integration test: Observe multiple events with mixed content (some with blocks, some without)\n4. Unit test: Mock strip_injected_context to verify it's called for every observe_event\n5. Test logging output when stripping occurs",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Add content length validation (skip if <10 chars after strip)",
+            "description": "Implement validation to skip storing observations that become too short after stripping context blocks, as they contain no meaningful content beyond the injected memories.",
+            "dependencies": [
+              3
+            ],
+            "details": "Enhance the `observe_event()` method in `backend/app/services/session_manager.py` to check content length after stripping:\n\n```python\nasync def observe_event(\n    self,\n    session_id: str,\n    event_type: SessionEventType,\n    content: str,\n    metadata: dict[str, Any] | None = None,\n) -> Session:\n    \"\"\"Add an observation/event to a session.\n    \n    Args:\n        session_id: Session identifier\n        event_type: Type of event\n        content: Event content (will be stripped of injected context)\n        metadata: Optional metadata\n        \n    Returns:\n        Updated session (unchanged if content too short after stripping)\n        \n    Raises:\n        ValueError: If session not found\n    \"\"\"\n    session = await self.get_session(session_id)\n    if not session:\n        raise ValueError(f\"Session {session_id} not found\")\n    \n    # Strip injected context to prevent feedback loops\n    cleaned_content = strip_injected_context(content)\n    \n    # Skip if remaining content is too short (threshold: 10 characters)\n    MIN_CONTENT_LENGTH = 10\n    if len(cleaned_content) < MIN_CONTENT_LENGTH:\n        logger.info(\n            f\"Skipping session {session_id} event: content too short after \"\n            f\"stripping context blocks ({len(cleaned_content)} < {MIN_CONTENT_LENGTH} chars)\"\n        )\n        return session  # Return unchanged session\n    \n    event = SessionEvent(\n        event_type=event_type,\n        content=cleaned_content,\n        timestamp=datetime.now(),\n        metadata=metadata or {},\n    )\n    \n    session.events.append(event)\n    self._sessions[session_id] = session\n    await self._save_session(session)\n    \n    return session\n```\n\nThe 10-character threshold follows SuperMemory's pattern and prevents storing essentially empty observations that were just echoes of injected context.\n\nConsider making `MIN_CONTENT_LENGTH` configurable in `app/config.py` if different projects need different thresholds.",
+            "status": "pending",
+            "testStrategy": "1. Unit test: Content with 9 chars after stripping - verify event NOT added to session\n2. Unit test: Content with 10 chars after stripping - verify event IS added\n3. Unit test: Content with 50 chars after stripping - verify event IS added\n4. Integration test: Observe event that's 100% context blocks - verify session unchanged\n5. Integration test: Observe event with \"Hi <!-- context --> there friend\" - verify stored correctly\n6. Test logging output when content is skipped due to length",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Comprehensive unit tests for edge cases",
+            "description": "Create thorough test coverage for the context stripping system, including edge cases like nested blocks, malformed tags, multiple blocks, and special characters.",
+            "dependencies": [
+              2
+            ],
+            "details": "Create `backend/tests/utils/test_context_stripping.py` with comprehensive test coverage:\n\n```python\n\"\"\"Tests for context stripping utility.\"\"\"\n\nimport pytest\nfrom app.utils.context_stripping import strip_injected_context, CONTEXT_BLOCK_PATTERN\n\n\nclass TestStripInjectedContext:\n    \"\"\"Tests for strip_injected_context function.\"\"\"\n\n    def test_single_block_removal(self):\n        \"\"\"Test removing a single context block.\"\"\"\n        content = \"Before <!-- memory-context-start -->injected<!-- memory-context-end --> after\"\n        result = strip_injected_context(content)\n        assert result == \"Before  after\"\n        assert \"injected\" not in result\n\n    def test_multiple_blocks_removal(self):\n        \"\"\"Test removing multiple context blocks.\"\"\"\n        content = (\n            \"Text1 <!-- memory-context-start -->ctx1<!-- memory-context-end --> \"\n            \"Text2 <!-- memory-context-start -->ctx2<!-- memory-context-end --> Text3\"\n        )\n        result = strip_injected_context(content)\n        assert \"ctx1\" not in result\n        assert \"ctx2\" not in result\n        assert \"Text1\" in result and \"Text2\" in result and \"Text3\" in result\n\n    def test_nested_blocks(self):\n        \"\"\"Test handling nested context blocks (inner removed).\"\"\"\n        content = (\n            \"<!-- memory-context-start -->outer <!-- memory-context-start -->inner\"\n            \"<!-- memory-context-end --> still outer<!-- memory-context-end -->\"\n        )\n        result = strip_injected_context(content)\n        # Non-greedy regex should handle this correctly\n        assert \"inner\" not in result\n        assert \"outer\" not in result\n\n    def test_malformed_missing_end_tag(self):\n        \"\"\"Test graceful handling of malformed blocks (missing end tag).\"\"\"\n        content = \"Text <!-- memory-context-start -->unclosed block remains\"\n        result = strip_injected_context(content)\n        # Should not crash, unclosed blocks are left as-is\n        assert \"Text\" in result\n\n    def test_no_blocks_passthrough(self):\n        \"\"\"Test content without blocks passes through unchanged.\"\"\"\n        content = \"This is normal content with no context blocks.\"\n        result = strip_injected_context(content)\n        assert result == content\n\n    def test_special_regex_chars_in_blocks(self):\n        \"\"\"Test blocks containing special regex characters.\"\"\"\n        content = \"Text <!-- memory-context-start -->$100 *.txt foo+bar<!-- memory-context-end --> after\"\n        result = strip_injected_context(content)\n        assert \"$100\" not in result\n        assert \"*.txt\" not in result\n        assert \"foo+bar\" not in result\n        assert \"after\" in result\n\n    def test_empty_content(self):\n        \"\"\"Test handling of empty content.\"\"\"\n        assert strip_injected_context(\"\") == \"\"\n        assert strip_injected_context(None) == None  # Should handle None gracefully\n\n    def test_whitespace_normalization(self):\n        \"\"\"Test excessive newline normalization.\"\"\"\n        content = \"Line1\\n\\n\\n\\n\\nLine2\"  # 5 newlines\n        result = strip_injected_context(content)\n        assert result == \"Line1\\n\\nLine2\"  # Normalized to 2 newlines\n\n    def test_multiline_block(self):\n        \"\"\"Test blocks spanning multiple lines.\"\"\"\n        content = (\n            \"Before\\n<!-- memory-context-start -->\\n\"\n            \"Line 1 of context\\nLine 2 of context\\n\"\n            \"<!-- memory-context-end -->\\nAfter\"\n        )\n        result = strip_injected_context(content)\n        assert \"Line 1 of context\" not in result\n        assert \"Line 2 of context\" not in result\n        assert \"Before\" in result\n        assert \"After\" in result\n\n    def test_only_context_block(self):\n        \"\"\"Test content that is 100% context block.\"\"\"\n        content = \"<!-- memory-context-start -->only context<!-- memory-context-end -->\"\n        result = strip_injected_context(content)\n        assert result == \"\"  # Empty after stripping\n\n    def test_pattern_compiled_once(self):\n        \"\"\"Test that regex pattern is pre-compiled for performance.\"\"\"\n        import re\n        assert isinstance(CONTEXT_BLOCK_PATTERN, re.Pattern)\n```\n\nAlso add integration tests in `backend/tests/services/test_session_manager.py` to verify the full pipeline works correctly with real session operations.",
+            "status": "pending",
+            "testStrategy": "All tests are the testing strategy. Run with:\n```bash\npytest backend/tests/utils/test_context_stripping.py -v\npytest backend/tests/services/test_session_manager.py::test_observe_event_strips_context -v\n```\n\nEnsure 100% code coverage for context_stripping.py module. Use pytest-cov to verify:\n```bash\npytest backend/tests/utils/test_context_stripping.py --cov=app.utils.context_stripping --cov-report=term-missing\n```\n\nTarget: >95% coverage for robustness.",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2026-02-17T18:58:01.808696+00:00"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-02-05T22:03:56.215Z",
-      "taskCount": 15,
-      "completedCount": 15,
+      "lastModified": "2026-02-17T22:12:38.078Z",
+      "taskCount": 28,
+      "completedCount": 22,
       "tags": [
         "master"
       ]

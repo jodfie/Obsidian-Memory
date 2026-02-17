@@ -56,6 +56,7 @@ export interface SearchRequest {
   sort?: string;
   limit?: number;
   offset?: number;
+  include_expired?: boolean;
 }
 
 export class ApiClient {
@@ -290,23 +291,28 @@ export class ApiClient {
     sessionId: string,
     eventType: string,
     content: string,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
+    customId?: string
   ): Promise<{
     session_id: string;
     event_count: number;
     status: string;
   }> {
+    const body: Record<string, unknown> = {
+      session_id: sessionId,
+      event_type: eventType,
+      content,
+      metadata,
+    };
+    if (customId !== undefined) {
+      body.custom_id = customId;
+    }
     const response = await fetch(`${this.baseUrl}/api/sessions/observe`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        session_id: sessionId,
-        event_type: eventType,
-        content,
-        metadata,
-      }),
+      body: JSON.stringify(body),
     });
     if (!response.ok) {
       const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
@@ -606,6 +612,54 @@ export class ApiClient {
       new_note_title: string;
       message: string;
     }>;
+  }
+  /**
+   * Get profile for a project.
+   */
+  async getProfile(project: string): Promise<ProfileResponse> {
+    const response = await fetch(`${this.baseUrl}/api/profile/${encodeURIComponent(project)}`, {
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ProfileNotFoundError(project);
+      }
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
+      throw new Error(`Failed to get profile: ${error.detail || response.statusText}`);
+    }
+    return response.json() as Promise<ProfileResponse>;
+  }
+
+  /**
+   * Trigger profile synthesis for a project.
+   */
+  async synthesizeProfile(project: string): Promise<{ status: string; message: string; project: string }> {
+    const response = await fetch(`${this.baseUrl}/api/profile/${encodeURIComponent(project)}/synthesize`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as { detail?: string };
+      throw new Error(`Failed to trigger synthesis: ${error.detail || response.statusText}`);
+    }
+    return response.json() as Promise<{ status: string; message: string; project: string }>;
+  }
+}
+
+export interface ProfileResponse {
+  project: string;
+  static_facts: string[];
+  dynamic_patterns: string[];
+  key_entities: Record<string, string[]>;
+  profile_version: number;
+  last_synthesized: string | null;
+  synthesis_note_count: number;
+}
+
+export class ProfileNotFoundError extends Error {
+  constructor(project: string) {
+    super(`No profile synthesized yet for project: ${project}`);
+    this.name = 'ProfileNotFoundError';
   }
 }
 

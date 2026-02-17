@@ -28,6 +28,8 @@ from app.models.search import (
     SearchResults,
     SortOrder,
 )
+from app.services.decay_classifier import classify_decay, calculate_expiry
+from app.services.markdown_parser import MarkdownParser
 
 
 def compute_file_hash(content: str) -> str:
@@ -61,6 +63,8 @@ class SearchIndex:
 
         # Create schema
         await self._create_schema()
+        # Apply decay schema migration if needed
+        await self._migrate_decay_schema()
         await self.db.commit()
 
     async def _create_schema(self) -> None:
@@ -327,6 +331,52 @@ class SearchIndex:
             END
         """)
 
+    async def _migrate_decay_schema(self) -> None:
+        """Add decay-related columns if they don't exist (idempotent)."""
+        # Check notes table columns
+        cursor = await self.db.execute("PRAGMA table_info(notes)")
+        existing_cols = {row['name'] for row in await cursor.fetchall()}
+
+        if 'decay_class' not in existing_cols:
+            await self.db.execute(
+                "ALTER TABLE notes ADD COLUMN decay_class TEXT NOT NULL DEFAULT 'stable'"
+            )
+        if 'confidence' not in existing_cols:
+            await self.db.execute(
+                "ALTER TABLE notes ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0"
+            )
+        if 'expires_at' not in existing_cols:
+            await self.db.execute("ALTER TABLE notes ADD COLUMN expires_at TEXT")
+        if 'last_accessed_at' not in existing_cols:
+            await self.db.execute("ALTER TABLE notes ADD COLUMN last_accessed_at TEXT")
+
+        # Check observations table columns
+        cursor = await self.db.execute("PRAGMA table_info(observations)")
+        obs_cols = {row['name'] for row in await cursor.fetchall()}
+
+        if 'decay_override' not in obs_cols:
+            await self.db.execute(
+                "ALTER TABLE observations ADD COLUMN decay_override TEXT DEFAULT NULL"
+            )
+        if 'auto_extracted' not in obs_cols:
+            await self.db.execute(
+                "ALTER TABLE observations ADD COLUMN auto_extracted INTEGER DEFAULT 0"
+            )
+
+        # Create indexes for decay queries
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notes_decay_class ON notes(decay_class)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notes_expires ON notes(expires_at) WHERE expires_at IS NOT NULL"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notes_confidence ON notes(confidence)"
+        )
+        await self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_obs_decay_override ON observations(decay_override) WHERE decay_override IS NOT NULL"
+        )
+
     async def close(self) -> None:
         """Close database connection."""
         if self.db:
@@ -399,6 +449,20 @@ class SearchIndex:
             note.updated_at.isoformat() if note.updated_at else None
         )
 
+        # Auto-classify decay tier
+        frontmatter_extra = {}
+        if hasattr(note, 'decay_class') and note.decay_class != 'stable':
+            # Preserve explicit decay_class from IndexedNote if set
+            frontmatter_extra['decay_class'] = note.decay_class
+        decay_class = classify_decay(
+            note.note_type,
+            note.tags,
+            frontmatter_extra,
+            note.content,
+        )
+        expires_at = calculate_expiry(decay_class)
+        last_accessed_at = datetime.utcnow().isoformat()
+
         # Check if note already exists (for permalink conflict resolution)
         cursor = await self.db.execute(
             "SELECT id FROM notes WHERE vault_name = ? AND relative_path = ?",
@@ -421,8 +485,9 @@ class SearchIndex:
                     """
                     INSERT INTO notes (
                         vault_name, relative_path, permalink, title, note_type,
-                        project, created_at, updated_at, indexed_at, file_hash
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        project, created_at, updated_at, indexed_at, file_hash,
+                        decay_class, confidence, expires_at, last_accessed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(vault_name, relative_path) DO UPDATE SET
                         permalink = excluded.permalink,
                         title = excluded.title,
@@ -431,7 +496,9 @@ class SearchIndex:
                         created_at = excluded.created_at,
                         updated_at = excluded.updated_at,
                         indexed_at = excluded.indexed_at,
-                        file_hash = excluded.file_hash
+                        file_hash = excluded.file_hash,
+                        decay_class = excluded.decay_class,
+                        expires_at = excluded.expires_at
                     """,
                     (
                         note.vault_name,
@@ -444,6 +511,10 @@ class SearchIndex:
                         updated_at_str,
                         indexed_at,
                         note.file_hash,
+                        decay_class,
+                        1.0,
+                        expires_at,
+                        last_accessed_at,
                     ),
                 )
                 break
@@ -510,8 +581,8 @@ class SearchIndex:
         for obs in note.observations:
             await self.db.execute(
                 """
-                INSERT INTO observations(note_id, category, content, context, line_number)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO observations(note_id, category, content, context, line_number, decay_override, auto_extracted)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     note_id,
@@ -519,6 +590,31 @@ class SearchIndex:
                     obs.content,
                     obs.context,
                     obs.line_number,
+                    getattr(obs, 'decay_override', None),
+                    1 if getattr(obs, 'auto_extracted', False) else 0,
+                ),
+            )
+
+        # Extract auto-decisions from prose
+        parser = MarkdownParser()
+        auto_decisions = parser.extract_decisions_from_prose(
+            note.content,
+            note.observations,
+        )
+        for decision in auto_decisions:
+            await self.db.execute(
+                """
+                INSERT INTO observations(note_id, category, content, context, line_number, decay_override, auto_extracted)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    note_id,
+                    decision.category.value,
+                    decision.content,
+                    decision.context,
+                    decision.line_number,
+                    decision.decay_override,
+                    1,
                 ),
             )
 
@@ -1020,18 +1116,23 @@ class SearchIndex:
             where_parts.append("n.created_at <= ?")
             params.append(query.created_before.isoformat())
 
+        # Default decay filters (exclude expired and very-low-confidence notes)
+        include_expired = getattr(query, 'include_expired', False)
+        if not include_expired:
+            where_parts.append(
+                "(n.expires_at IS NULL OR n.expires_at > datetime('now'))"
+            )
+            where_parts.append("COALESCE(n.confidence, 1.0) >= 0.1")
+
         where_clause = " AND ".join(where_parts) if where_parts else "1=1"
 
-        # Build BM25 rank expression (used for both scoring and sorting)
-        # This includes field weights and optional recency boost
+        # Build BM25 rank expression for initial ordering
         rank_expr = self._build_bm25_rank(query) if fts_query else None
 
         # Build ORDER BY clause
         if query.sort == SortOrder.RELEVANCE and fts_query:
-            # Use custom BM25 ranking with field boosts and recency
-            order_by = f"({rank_expr}) ASC"  # Lower score is better
+            order_by = f"({rank_expr}) ASC"  # Lower BM25 = better match
         elif query.sort == SortOrder.RELEVANCE and not fts_query:
-            # No FTS query, fall back to updated_at sorting
             order_by = "n.updated_at DESC"
         elif query.sort == SortOrder.CREATED_DESC:
             order_by = "n.created_at DESC"
@@ -1044,13 +1145,22 @@ class SearchIndex:
         elif query.sort == SortOrder.TITLE_ASC:
             order_by = "n.title ASC"
         else:
-            # Fallback to updated_at (don't use BM25 without FTS)
             order_by = "n.updated_at DESC"
 
-        # Get total count and results - different queries based on whether FTS is used
+        # Composite scoring columns: freshness + decision_boost computed in SQL
+        composite_cols = """
+            n.decay_class,
+            COALESCE(n.confidence, 1.0) as confidence,
+            (1.0 / (1.0 + (julianday('now') - julianday(COALESCE(n.updated_at, n.created_at))) / 30.0)) as freshness,
+            COALESCE(
+                (SELECT 1.0 FROM observations o
+                 WHERE o.note_id = n.id AND o.decay_override = 'permanent' LIMIT 1),
+                0.0
+            ) as decision_boost
+        """
+
         logger.debug(f"FTS query for database: '{fts_query}' (truthy: {bool(fts_query)})")
         if fts_query:
-            # FTS search with bm25 scoring
             count_cursor = await self.db.execute(
                 f"""
                 SELECT COUNT(DISTINCT n.id) as total
@@ -1063,15 +1173,14 @@ class SearchIndex:
             count_row = await count_cursor.fetchone()
             total_count = count_row['total'] if count_row else 0
 
-            # Use the same rank expression for score as used for ordering
-            # This ensures consistent scoring with field boosts and recency
             search_cursor = await self.db.execute(
                 f"""
                 SELECT DISTINCT
                     n.id, n.vault_name, n.relative_path, n.permalink,
                     n.title, n.note_type, n.project,
                     n.created_at, n.updated_at,
-                    ({rank_expr}) as score
+                    ({rank_expr}) as rank,
+                    {composite_cols}
                 FROM notes n
                 INNER JOIN notes_fts ON notes_fts.rowid = n.id
                 WHERE {where_clause}
@@ -1081,7 +1190,6 @@ class SearchIndex:
                 [*params, query.limit, query.offset],
             )
         else:
-            # No FTS search - direct query from notes table
             count_cursor = await self.db.execute(
                 f"""
                 SELECT COUNT(*) as total
@@ -1093,17 +1201,14 @@ class SearchIndex:
             count_row = await count_cursor.fetchone()
             total_count = count_row['total'] if count_row else 0
 
-            # Default sort when no FTS (can't use bm25)
-            if order_by == "bm25(notes_fts) ASC":
-                order_by = "n.updated_at DESC"
-
             search_cursor = await self.db.execute(
                 f"""
                 SELECT
                     n.id, n.vault_name, n.relative_path, n.permalink,
                     n.title, n.note_type, n.project,
                     n.created_at, n.updated_at,
-                    0.0 as score
+                    0.0 as rank,
+                    {composite_cols}
                 FROM notes n
                 WHERE {where_clause}
                 ORDER BY {order_by}
@@ -1112,15 +1217,56 @@ class SearchIndex:
                 [*params, query.limit, query.offset],
             )
 
-        results: list[SearchResult] = []
+        # Collect raw rows for composite scoring normalization
+        raw_rows = []
         async for row in search_cursor:
+            raw_rows.append(dict(row))
+
+        # Normalize BM25 ranks to 0-1 relevance (only meaningful with FTS)
+        if fts_query and raw_rows:
+            ranks = [abs(r['rank']) for r in raw_rows]
+            min_rank = min(ranks)
+            max_rank = max(ranks)
+            rank_range = max_rank - min_rank if max_rank != min_rank else 1.0
+        else:
+            min_rank = max_rank = rank_range = 0.0
+
+        results: list[SearchResult] = []
+        for row in raw_rows:
+            # Normalize relevance: lower BM25 = better = higher relevance score
+            if fts_query and rank_range > 0:
+                relevance = 1.0 - (abs(row['rank']) - min_rank) / rank_range
+            elif fts_query:
+                relevance = 1.0  # Single result or identical ranks
+            else:
+                relevance = 0.0  # No FTS, relevance is meaningless
+
+            freshness = float(row['freshness']) if row['freshness'] else 0.0
+            confidence = float(row['confidence']) if row['confidence'] else 1.0
+            decision_boost = float(row['decision_boost']) if row['decision_boost'] else 0.0
+
+            # Composite formula: relevance*0.50 + freshness*0.25 + confidence*0.15 + decision_boost*0.10
+            composite_score = (
+                relevance * 0.50
+                + freshness * 0.25
+                + confidence * 0.15
+                + decision_boost * 0.10
+            )
+
+            score_breakdown = {
+                'relevance': round(relevance, 4),
+                'freshness': round(freshness, 4),
+                'confidence': round(confidence, 4),
+                'decision_boost': round(decision_boost, 4),
+            }
+
             # Get tags
             tags_cursor = await self.db.execute(
                 "SELECT tag FROM note_tags WHERE note_id = ?", (row['id'],)
             )
             tags = [tag_row['tag'] async for tag_row in tags_cursor]
 
-            # Generate snippet (pass full query object for snippet configuration)
+            # Generate snippet
             snippet = await self._generate_snippet(row['id'], query)
 
             # Parse dates
@@ -1148,18 +1294,33 @@ class SearchIndex:
                     note_type=row['note_type'],
                     project=row['project'],
                     snippet=snippet,
-                    score=float(row['score']),
+                    score=round(composite_score, 4),
+                    score_breakdown=score_breakdown,
+                    decay_class=row['decay_class'],
+                    confidence=round(confidence, 4),
                     created_at=created_at,
                     updated_at=updated_at,
                     tags=tags,
                 )
             )
 
+        # Re-sort by composite score when using relevance sorting
+        if query.sort == SortOrder.RELEVANCE:
+            results.sort(key=lambda r: r.score, reverse=True)
+
         took_ms = (time.time() - start_time) * 1000
 
         # Log slow queries (>100ms)
         if took_ms > 100:
             await self._log_slow_query(query, took_ms, total_count)
+
+        # Refresh access TTL for stable/active notes in results
+        refreshable_ids = [
+            r.note_id for r in results
+            if r.decay_class in ('stable', 'active')
+        ]
+        if refreshable_ids:
+            await self._refresh_access(refreshable_ids)
 
         return SearchResults(
             results=results,
@@ -2353,6 +2514,99 @@ class SearchIndex:
             f"Filters: vault={query.vault}, project={query.project}, "
             f"note_type={query.note_type}, tags={query.tags}"
         )
+
+    async def _refresh_access(self, note_ids: list[int]) -> None:
+        """Refresh TTL for accessed stable/active notes.
+
+        Called after search returns results. Extends expires_at based on
+        decay_class: stable gets +90 days, active gets +14 days.
+        Failures are logged but don't break search results.
+        """
+        if not note_ids or not self.db:
+            return
+
+        try:
+            placeholders = ','.join('?' * len(note_ids))
+            logger.debug(f"Refreshing access for {len(note_ids)} notes")
+            await self.db.execute(f"""
+                UPDATE notes
+                SET last_accessed_at = datetime('now'),
+                    expires_at = CASE decay_class
+                        WHEN 'stable' THEN datetime('now', '+90 days')
+                        WHEN 'active' THEN datetime('now', '+14 days')
+                        ELSE expires_at
+                    END
+                WHERE id IN ({placeholders})
+                  AND decay_class IN ('stable', 'active')
+            """, note_ids)
+            await self.db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to refresh access times: {e}")
+
+    async def decay_confidence(self) -> dict[str, int]:
+        """Decay confidence for notes approaching or past expiry.
+
+        Three-step process:
+        1. Soft decay: notes 75%+ through TTL without recent access get confidence *= 0.5
+        2. Decision-protected floor: notes with permanent observations don't go below 0.5
+        3. Expiry marking: notes past expires_at get confidence = 0.05
+
+        Returns dict with counts: {decayed, protected, expired}
+        """
+        if not self.db:
+            raise RuntimeError("Database not initialized")
+
+        stats = {'decayed': 0, 'protected': 0, 'expired': 0}
+        logger.info("Starting confidence decay run")
+
+        # Step 1: Soft decay - notes 75%+ through TTL without recent access
+        cursor = await self.db.execute("""
+            UPDATE notes
+            SET confidence = MAX(0.1, confidence * 0.5)
+            WHERE expires_at IS NOT NULL
+              AND datetime('now') > datetime(
+                  last_accessed_at,
+                  '+' || CAST(
+                      (julianday(expires_at) - julianday(last_accessed_at)) * 0.75
+                      AS INTEGER
+                  ) || ' days'
+              )
+              AND confidence > 0.1
+              AND id NOT IN (
+                  SELECT DISTINCT note_id FROM observations
+                  WHERE decay_override = 'permanent'
+              )
+        """)
+        stats['decayed'] = cursor.rowcount
+        logger.debug(f"Decay step soft_decay: {cursor.rowcount} notes affected")
+
+        # Step 2: Decision-protected floor
+        cursor = await self.db.execute("""
+            UPDATE notes
+            SET confidence = 0.5
+            WHERE id IN (
+                SELECT DISTINCT note_id FROM observations
+                WHERE decay_override = 'permanent'
+            )
+            AND confidence < 0.5
+        """)
+        stats['protected'] = cursor.rowcount
+        logger.debug(f"Decay step decision_floor: {cursor.rowcount} notes affected")
+
+        # Step 3: Expiry marking
+        cursor = await self.db.execute("""
+            UPDATE notes
+            SET confidence = 0.05
+            WHERE expires_at IS NOT NULL
+              AND expires_at < datetime('now')
+              AND confidence > 0.05
+        """)
+        stats['expired'] = cursor.rowcount
+        logger.debug(f"Decay step expiry_marking: {cursor.rowcount} notes affected")
+
+        await self.db.commit()
+        logger.info(f"Confidence decay complete: {stats}")
+        return stats
 
     async def explain_query(self, query: SearchQuery) -> list[dict[str, Any]]:
         """

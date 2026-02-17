@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +17,7 @@ class NoteType(str, Enum):
     PATTERN = "pattern"
     SESSION = "session"
     RESEARCH = "research"
+    PROFILE = "profile"
 
 
 class ObservationCategory(str, Enum):
@@ -51,6 +53,10 @@ class RelationType(str, Enum):
     IMPLEMENTS = "implements"
     TESTS = "tests"
     DOCUMENTS = "documents"
+
+
+# Five-tier decay classification for memory relevance scoring
+DecayClass = Literal['permanent', 'stable', 'active', 'session', 'checkpoint']
 
 
 class Frontmatter(BaseModel):
@@ -90,6 +96,8 @@ class Observation(BaseModel):
         default=None, description="Additional context in parentheses"
     )
     line_number: int = Field(..., description="Line number for error reporting")
+    decay_override: str | None = Field(default=None, description="Override to 'permanent' for decisions")
+    auto_extracted: bool = Field(default=False, description="True if detected by parser/AI, False if user-written")
 
 
 class Relation(BaseModel):
@@ -151,3 +159,15 @@ class ParsedNote(BaseModel):
         default=False,
         description="Flag indicating if frontmatter has been modified since parsing",
     )
+
+
+class ProfileNote(BaseModel):
+    """Synthesized user/project profile from memory analysis."""
+
+    project: str = Field(..., description="Project this profile belongs to")
+    static_facts: list[str] = Field(default_factory=list, description="Stable, persistent user facts and preferences")
+    dynamic_patterns: list[str] = Field(default_factory=list, description="Recent behavioral patterns and focus areas")
+    key_entities: dict[str, list[str]] = Field(default_factory=dict, description="Categorized key entities (tools, projects, people)")
+    profile_version: int = Field(default=1, description="Profile version number, incremented on each synthesis")
+    last_synthesized: datetime | None = Field(default=None, description="When profile was last synthesized")
+    synthesis_note_count: int = Field(default=0, description="Number of notes analyzed in last synthesis")
