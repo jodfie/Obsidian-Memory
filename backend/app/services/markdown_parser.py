@@ -285,11 +285,8 @@ class MarkdownParser:
                 # Validate category
                 try:
                     category = ObservationCategory(category_str)
-                except ValueError as e:
-                    raise InvalidObservationError(
-                        f"Invalid observation category: {category_str}",
-                        line_number=line_num,
-                    ) from e
+                except ValueError:
+                    continue  # Skip unrecognized observation categories
 
                 # Parse inline tags from content
                 tags = self._parse_inline_tags(content_text)
@@ -392,11 +389,8 @@ class MarkdownParser:
                 # Validate relation type
                 try:
                     relation_type = RelationType(relation_type_str)
-                except ValueError as e:
-                    raise InvalidRelationError(
-                        f"Invalid relation type: {relation_type_str}",
-                        line_number=line_num,
-                    ) from e
+                except ValueError:
+                    continue  # Skip unrecognized relation types
 
                 # Parse target path if present
                 target_path = None

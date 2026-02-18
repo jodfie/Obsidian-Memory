@@ -6,7 +6,14 @@ set -euo pipefail
 
 # ── Config ──────────────────────────────────────────────────────────
 API_URL="${OBSIDIAN_MEMORY_API_URL:-http://localhost:8765}"
+SESSION_FILE="/tmp/obsidian-memory-session.json"
+
+# Load session ID: env var first, then session file fallback
 SESSION_ID="${OBSIDIAN_MEMORY_SESSION_ID:-}"
+if [ -z "$SESSION_ID" ] && [ -f "$SESSION_FILE" ]; then
+  SESSION_ID=$(jq -r '.session_id // empty' "$SESSION_FILE" 2>/dev/null || echo "")
+  API_URL=$(jq -r '.api_url // empty' "$SESSION_FILE" 2>/dev/null || echo "$API_URL")
+fi
 
 # ── Input parsing ───────────────────────────────────────────────────
 INPUT=""

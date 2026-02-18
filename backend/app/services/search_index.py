@@ -2397,15 +2397,32 @@ class SearchIndex:
 
         indexed_at = datetime.utcnow().isoformat()
 
-        # Prepare batch data for notes table
+        # Get existing permalinks from DB for conflict detection
+        cursor = await self.db.execute("SELECT permalink FROM notes WHERE permalink IS NOT NULL")
+        existing_permalinks = {row['permalink'] async for row in cursor}
+
+        # Prepare batch data with permalink deduplication
         notes_data = []
+        seen_permalinks: set[str] = set()
         for note in notes:
             created_at_str = note.created_at.isoformat() if note.created_at else None
             updated_at_str = note.updated_at.isoformat() if note.updated_at else None
+
+            # Deduplicate permalink against DB and within this batch
+            permalink = note.permalink
+            if permalink and (permalink in existing_permalinks or permalink in seen_permalinks):
+                base = permalink
+                suffix = 1
+                while f"{base}-{suffix}" in existing_permalinks or f"{base}-{suffix}" in seen_permalinks:
+                    suffix += 1
+                permalink = f"{base}-{suffix}"
+            if permalink:
+                seen_permalinks.add(permalink)
+
             notes_data.append((
                 note.vault_name,
                 note.relative_path,
-                note.permalink,
+                permalink,
                 note.title,
                 note.note_type,
                 note.project,
