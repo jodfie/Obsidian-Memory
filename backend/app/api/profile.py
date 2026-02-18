@@ -76,13 +76,13 @@ async def get_profile(
     )
     results = await search_index.search(query)
 
-    if not results:
+    if not results.results:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Profile not synthesized yet for project: {project}",
         )
 
-    result = results[0]
+    result = results.results[0]
 
     # Parse the profile data from the note content
     import json
