@@ -65,93 +65,120 @@
     "MAX_MCP_OUTPUT_TOKENS": 64000
   },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/validate-bash.sh"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
-        "matcher": "*",
+        "matcher": "startup",
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/hooks/session-start.sh",
-            "env": {
-              "OBSIDIAN_MEMORY_API_URL": "${OBSIDIAN_MEMORY_API_URL:-http://localhost:8000}",
-              "OBSIDIAN_MEMORY_PROJECT": "${OBSIDIAN_MEMORY_PROJECT:-default}",
-              "OBSIDIAN_MEMORY_SESSION_ID": "${CLAUDE_SESSION_ID}"
-            }
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh",
+            "timeout": 10
           }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/hooks/user-prompt-submit.sh",
-            "env": {
-              "OBSIDIAN_MEMORY_API_URL": "${OBSIDIAN_MEMORY_API_URL:-http://localhost:8000}",
-              "OBSIDIAN_MEMORY_PROJECT": "${OBSIDIAN_MEMORY_PROJECT:-default}",
-              "OBSIDIAN_MEMORY_SESSION_ID": "${CLAUDE_SESSION_ID}"
-            }
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/user-prompt-submit.sh",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-tool-use-bash.sh",
+            "timeout": 5
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "*",
+        "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/hooks/post-tool-use.sh",
-            "env": {
-              "OBSIDIAN_MEMORY_API_URL": "${OBSIDIAN_MEMORY_API_URL:-http://localhost:8000}",
-              "OBSIDIAN_MEMORY_PROJECT": "${OBSIDIAN_MEMORY_PROJECT:-default}",
-              "OBSIDIAN_MEMORY_SESSION_ID": "${CLAUDE_SESSION_ID}"
-            }
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-tool-use-edits.sh",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Grep|Glob|WebSearch|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-tool-use-search.sh",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-tool-failure.sh",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/subagent-start.sh",
+            "async": true,
+            "timeout": 5
           }
         ]
       }
     ],
     "PreCompact": [
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/hooks/pre-compact.sh",
-            "env": {
-              "OBSIDIAN_MEMORY_API_URL": "${OBSIDIAN_MEMORY_API_URL:-http://localhost:8000}",
-              "OBSIDIAN_MEMORY_PROJECT": "${OBSIDIAN_MEMORY_PROJECT:-default}",
-              "OBSIDIAN_MEMORY_SESSION_ID": "${CLAUDE_SESSION_ID}"
-            }
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-compact.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop.sh",
+            "timeout": 10
           }
         ]
       }
     ],
     "SessionEnd": [
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "bash $CLAUDE_PROJECT_DIR/hooks/session-end.sh",
-            "env": {
-              "OBSIDIAN_MEMORY_API_URL": "${OBSIDIAN_MEMORY_API_URL:-http://localhost:8000}",
-              "OBSIDIAN_MEMORY_PROJECT": "${OBSIDIAN_MEMORY_PROJECT:-default}",
-              "OBSIDIAN_MEMORY_SESSION_ID": "${CLAUDE_SESSION_ID}"
-            }
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-end.sh",
+            "async": true,
+            "timeout": 30
           }
         ]
       }

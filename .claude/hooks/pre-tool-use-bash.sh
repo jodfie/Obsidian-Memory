@@ -1,10 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# pre-tool-use-bash.sh — PreToolUse:Bash hook (sync)
+# Validates bash commands against forbidden patterns. Blocks dangerous commands.
+# Merges functionality from the old .claude/scripts/validate-bash.sh
 
-# Read JSON input from stdin
-INPUT=$(cat)
+source "$(dirname "$0")/_lib.sh"
+read_input
 
-# Extract the command from JSON - correct path
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+COMMAND=$(field "tool_input.command")
 
 # If no command found, allow it
 if [ -z "$COMMAND" ]; then
@@ -31,7 +33,7 @@ FORBIDDEN_PATTERNS=(
 for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
   if echo "$COMMAND" | grep -qE "$pattern"; then
     echo "ERROR: Access to '$pattern' is blocked by security policy" >&2
-    exit 2 # Exit code 2 = blocking error
+    exit 2
   fi
 done
 
