@@ -3401,11 +3401,11 @@ class SearchIndex:
         Returns:
             List of inferred relation dicts
         """
-        conditions = ["confidence >= ?"]
+        conditions = ["ir.confidence >= ?"]
         params: list = [min_confidence]
 
         if not include_promoted:
-            conditions.append("is_promoted = 0")
+            conditions.append("ir.is_promoted = 0")
 
         if note_id is not None:
             conditions.append("(source_note_id = ? OR target_note_id = ?)")
@@ -3428,7 +3428,7 @@ class SearchIndex:
             JOIN notes sn ON ir.source_note_id = sn.id
             JOIN notes tn ON ir.target_note_id = tn.id
             WHERE {' AND '.join(conditions)}
-            ORDER BY confidence DESC
+            ORDER BY ir.confidence DESC
             LIMIT ?
         """
 

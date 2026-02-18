@@ -388,7 +388,7 @@ async def get_backlinks(
     # Get notes from index (use reasonable limit for performance)
     from app.models.search import SearchQuery, SortOrder, IndexedNote
 
-    query = SearchQuery(query="", limit=500, sort=SortOrder.UPDATED_DESC)
+    query = SearchQuery(query="*", limit=500, sort=SortOrder.UPDATED_DESC)
     results = await search_index.search(query)
 
     for result in results.results:

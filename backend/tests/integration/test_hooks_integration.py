@@ -453,7 +453,7 @@ async def test_session_end_preserves_events(
     # Add multiple events
     for i in range(10):
         await session_manager.observe_event(
-            session.session_id, SessionEventType.OBSERVATION, f"Event {i}"
+            session.session_id, SessionEventType.OBSERVATION, f"Observation record number {i}"
         )
 
     # End session
@@ -578,7 +578,7 @@ async def test_session_context_with_limit(
     # Add many events
     for i in range(20):
         await session_manager.observe_event(
-            session.session_id, SessionEventType.OBSERVATION, f"Event {i}"
+            session.session_id, SessionEventType.OBSERVATION, f"Observation record number {i}"
         )
 
     # Get context with limit

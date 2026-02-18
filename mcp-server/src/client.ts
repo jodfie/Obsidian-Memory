@@ -305,7 +305,7 @@ export class ApiClient {
       metadata,
     };
     if (customId !== undefined) {
-      body.custom_id = customId;
+      body['custom_id'] = customId;
     }
     const response = await fetch(`${this.baseUrl}/api/sessions/observe`, {
       method: 'POST',

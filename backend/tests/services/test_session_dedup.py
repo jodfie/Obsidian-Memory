@@ -107,8 +107,8 @@ class TestObserveEventBackwardCompat:
     @pytest.mark.asyncio
     async def test_append_without_custom_id(self, session_manager):
         session = await session_manager.create_session(session_id='s1')
-        await session_manager.observe_event('s1', SessionEventType.DECISION, 'A')
-        session = await session_manager.observe_event('s1', SessionEventType.DECISION, 'A')
+        await session_manager.observe_event('s1', SessionEventType.DECISION, 'Alpha observation content')
+        session = await session_manager.observe_event('s1', SessionEventType.DECISION, 'Alpha observation content')
         # Same content but no custom_id -> two separate events
         assert len(session.events) == 2
         assert session.events[0].custom_id is None
@@ -117,9 +117,9 @@ class TestObserveEventBackwardCompat:
     @pytest.mark.asyncio
     async def test_events_without_custom_id_are_independent(self, session_manager):
         await session_manager.create_session(session_id='s1')
-        await session_manager.observe_event('s1', SessionEventType.DECISION, 'A')
-        await session_manager.observe_event('s1', SessionEventType.DECISION, 'B')
-        session = await session_manager.observe_event('s1', SessionEventType.ERROR, 'C')
+        await session_manager.observe_event('s1', SessionEventType.DECISION, 'Alpha observation')
+        await session_manager.observe_event('s1', SessionEventType.DECISION, 'Bravo observation')
+        session = await session_manager.observe_event('s1', SessionEventType.ERROR, 'Charlie error event')
         assert len(session.events) == 3
 
 
@@ -130,42 +130,42 @@ class TestObserveEventUpsert:
     async def test_insert_with_new_custom_id(self, session_manager):
         await session_manager.create_session(session_id='s1')
         session = await session_manager.observe_event(
-            's1', SessionEventType.DECISION, 'A', custom_id='cid-1'
+            's1', SessionEventType.DECISION, 'Alpha decision content', custom_id='cid-1'
         )
         assert len(session.events) == 1
         assert session.events[0].custom_id == 'cid-1'
-        assert session.events[0].content == 'A'
+        assert session.events[0].content == 'Alpha decision content'
 
     @pytest.mark.asyncio
     async def test_update_with_existing_custom_id(self, session_manager):
         await session_manager.create_session(session_id='s1')
         await session_manager.observe_event(
-            's1', SessionEventType.DECISION, 'A', custom_id='cid-1'
+            's1', SessionEventType.DECISION, 'Alpha decision content', custom_id='cid-1'
         )
         session = await session_manager.observe_event(
-            's1', SessionEventType.DECISION, 'A - Updated', custom_id='cid-1'
+            's1', SessionEventType.DECISION, 'Alpha updated content', custom_id='cid-1'
         )
         assert len(session.events) == 1
-        assert session.events[0].content == 'A - Updated'
+        assert session.events[0].content == 'Alpha updated content'
         assert session.events[0].updated_at is not None
 
     @pytest.mark.asyncio
     async def test_upsert_preserves_original_timestamp(self, session_manager):
         await session_manager.create_session(session_id='s1')
         session = await session_manager.observe_event(
-            's1', SessionEventType.DECISION, 'A', custom_id='cid-1'
+            's1', SessionEventType.DECISION, 'Alpha decision content', custom_id='cid-1'
         )
         original_ts = session.events[0].timestamp
         session = await session_manager.observe_event(
-            's1', SessionEventType.DECISION, 'B', custom_id='cid-1'
+            's1', SessionEventType.DECISION, 'Bravo decision content', custom_id='cid-1'
         )
         assert session.events[0].timestamp == original_ts
 
     @pytest.mark.asyncio
     async def test_multiple_different_custom_ids(self, session_manager):
         await session_manager.create_session(session_id='s1')
-        await session_manager.observe_event('s1', SessionEventType.DECISION, 'A', custom_id='cid-1')
-        session = await session_manager.observe_event('s1', SessionEventType.ERROR, 'B', custom_id='cid-2')
+        await session_manager.observe_event('s1', SessionEventType.DECISION, 'Alpha decision content', custom_id='cid-1')
+        session = await session_manager.observe_event('s1', SessionEventType.ERROR, 'Bravo error content', custom_id='cid-2')
         assert len(session.events) == 2
 
     @pytest.mark.asyncio
@@ -173,28 +173,28 @@ class TestObserveEventUpsert:
         await session_manager.create_session(session_id='s1')
         for i in range(10):
             session = await session_manager.observe_event(
-                's1', SessionEventType.OBSERVATION, f'v{i}', custom_id='cid-1'
+                's1', SessionEventType.OBSERVATION, f'Version {i} of the observation', custom_id='cid-1'
             )
         assert len(session.events) == 1
-        assert session.events[0].content == 'v9'
+        assert session.events[0].content == 'Version 9 of the observation'
 
     @pytest.mark.asyncio
     async def test_mixed_custom_id_and_append(self, session_manager):
         await session_manager.create_session(session_id='s1')
-        await session_manager.observe_event('s1', SessionEventType.DECISION, 'no-id-1')
-        await session_manager.observe_event('s1', SessionEventType.DECISION, 'with-id', custom_id='cid')
-        session = await session_manager.observe_event('s1', SessionEventType.DECISION, 'no-id-2')
+        await session_manager.observe_event('s1', SessionEventType.DECISION, 'No ID event first')
+        await session_manager.observe_event('s1', SessionEventType.DECISION, 'Event with custom ID', custom_id='cid')
+        session = await session_manager.observe_event('s1', SessionEventType.DECISION, 'No ID event second')
         assert len(session.events) == 3
 
     @pytest.mark.asyncio
     async def test_upsert_updates_metadata(self, session_manager):
         await session_manager.create_session(session_id='s1')
         await session_manager.observe_event(
-            's1', SessionEventType.DECISION, 'A',
+            's1', SessionEventType.DECISION, 'Alpha decision content',
             metadata={'version': 1}, custom_id='cid-1'
         )
         session = await session_manager.observe_event(
-            's1', SessionEventType.DECISION, 'A',
+            's1', SessionEventType.DECISION, 'Alpha decision content',
             metadata={'version': 2}, custom_id='cid-1'
         )
         assert session.events[0].metadata == {'version': 2}
@@ -207,7 +207,7 @@ class TestSessionPersistence:
     async def test_persist_and_reload_with_custom_id(self, session_manager):
         await session_manager.create_session(session_id='s1')
         await session_manager.observe_event(
-            's1', SessionEventType.DECISION, 'A', custom_id='cid-1'
+            's1', SessionEventType.DECISION, 'Alpha decision content', custom_id='cid-1'
         )
         # Clear cache to force disk reload
         session_manager._sessions.clear()
