@@ -17,6 +17,15 @@ from app.models.search import SearchQuery
 from tests.conftest import index_vault_from_path
 
 
+async def find_note_by_title(search_index: SearchIndex, title: str) -> int:
+    """Search for a note and return the ID of the result matching the exact title."""
+    results = await search_index.search(SearchQuery(query=title))
+    for r in results.results:
+        if r.title == title:
+            return r.note_id
+    raise AssertionError(f"Note with title '{title}' not found in search results")
+
+
 @pytest.fixture
 def vault_config(temp_dir: Path) -> VaultManagerConfig:
     """Create a test vault manager configuration."""
@@ -121,10 +130,8 @@ type: note
         # Index all notes from vault path
         await index_vault_from_path(search_index, vault_path, "test_vault")
 
-        # Get target note ID
-        results = await search_index.search(SearchQuery(query="Target Note"))
-        assert results.results
-        target_id = results.results[0].note_id
+        # Get target note ID (match exact title to avoid FTS ordering issues)
+        target_id = await find_note_by_title(search_index, "Target Note")
 
         # Get backlinks
         with patch("app.api.graph.cache") as mock_cache:
@@ -196,10 +203,8 @@ See also: [[Wiki Target]]
         # Index all notes from vault path
         await index_vault_from_path(search_index, vault_path, "test_vault")
 
-        # Get target note ID
-        results = await search_index.search(SearchQuery(query="Wiki Target"))
-        assert results.results
-        target_id = results.results[0].note_id
+        # Get target note ID (match exact title to avoid FTS ordering issues)
+        target_id = await find_note_by_title(search_index, "Wiki Target")
 
         # Get backlinks
         with patch("app.api.graph.cache") as mock_cache:
@@ -261,10 +266,8 @@ Also see [[Mixed Target]] for more details.
         # Index notes
         await index_vault_from_path(search_index, vault_path, "test_vault")
 
-        # Get target note ID
-        results = await search_index.search(SearchQuery(query="Mixed Target"))
-        assert results.results
-        target_id = results.results[0].note_id
+        # Get target note ID (match exact title to avoid FTS ordering issues)
+        target_id = await find_note_by_title(search_index, "Mixed Target")
 
         # Get backlinks
         with patch("app.api.graph.cache") as mock_cache:
@@ -329,10 +332,8 @@ See [[Weight Target]].
         # Index notes
         await index_vault_from_path(search_index, vault_path, "test_vault")
 
-        # Get target note ID
-        results = await search_index.search(SearchQuery(query="Weight Target"))
-        assert results.results
-        target_id = results.results[0].note_id
+        # Get target note ID (match exact title to avoid FTS ordering issues)
+        target_id = await find_note_by_title(search_index, "Weight Target")
 
         # Get backlinks
         with patch("app.api.graph.cache") as mock_cache:
@@ -376,10 +377,8 @@ This note has no incoming links.
         # Index note
         await index_vault_from_path(search_index, vault_path, "test_vault")
 
-        # Get note ID
-        results = await search_index.search(SearchQuery(query="Isolated Note"))
-        assert results.results
-        isolated_id = results.results[0].note_id
+        # Get note ID (match exact title to avoid FTS ordering issues)
+        isolated_id = await find_note_by_title(search_index, "Isolated Note")
 
         # Get backlinks
         with patch("app.api.graph.cache") as mock_cache:
@@ -426,10 +425,8 @@ This note references itself: [[Self Reference]]
         # Index note
         await index_vault_from_path(search_index, vault_path, "test_vault")
 
-        # Get note ID
-        results = await search_index.search(SearchQuery(query="Self Reference"))
-        assert results.results
-        self_id = results.results[0].note_id
+        # Get note ID (match exact title to avoid FTS ordering issues)
+        self_id = await find_note_by_title(search_index, "Self Reference")
 
         # Get backlinks
         with patch("app.api.graph.cache") as mock_cache:

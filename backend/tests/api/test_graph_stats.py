@@ -16,6 +16,15 @@ from app.models.search import SearchQuery, SearchResult
 from tests.conftest import index_vault_from_path
 
 
+async def find_note_by_title(search_index: SearchIndex, title: str) -> int:
+    """Search for a note and return the ID of the result matching the exact title."""
+    results = await search_index.search(SearchQuery(query=title))
+    for r in results.results:
+        if r.title == title:
+            return r.note_id
+    raise AssertionError(f"Note with title '{title}' not found in search results")
+
+
 @pytest.fixture
 def vault_config(temp_dir: Path) -> VaultManagerConfig:
     """Create a test vault manager configuration."""
@@ -249,10 +258,9 @@ No connections here.
 
         # Index the note from vault path
         await index_vault_from_path(search_index, vault_path, "test_vault")
-        search_results = await search_index.search(SearchQuery(query="Isolated"))
+        node_id = await find_note_by_title(search_index, "Isolated Note")
 
-        if search_results.results:
-            node_id = search_results.results[0].note_id
+        if node_id:
 
             with patch("app.api.graph.cache") as mock_cache:
                 mock_cache.get.return_value = None
@@ -333,10 +341,9 @@ This feature is enabled by [[Knowledge Hub]].
 
         # Index all notes from vault path
         await index_vault_from_path(search_index, vault_path, "test_vault")
-        search_results = await search_index.search(SearchQuery(query="Knowledge Hub"))
+        hub_id = await find_note_by_title(search_index, "Knowledge Hub")
 
-        if search_results.results:
-            hub_id = search_results.results[0].note_id
+        if hub_id:
 
             with patch("app.api.graph.cache") as mock_cache:
                 mock_cache.get.return_value = None

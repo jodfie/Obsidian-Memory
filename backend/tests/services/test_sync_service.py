@@ -86,15 +86,26 @@ async def test_add_remote(sync_service: SyncService):
 @pytest.mark.asyncio
 async def test_commit_changes(sync_service: SyncService, temp_vault: Path):
     """Test committing changes."""
+    import subprocess
     try:
         await sync_service.init_repo()
-        
+
+        # Configure git user for the temp repo (may not be set in containers)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=str(temp_vault), check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"],
+            cwd=str(temp_vault), check=True, capture_output=True,
+        )
+
         # Create a test file
         test_file = temp_vault / "test.md"
         test_file.write_text("# Test\n\nContent")
-        
+
         await sync_service.commit_changes("Test commit")
-        
+
         status = await sync_service.get_status()
         # After commit, should have no modified files
         assert len(status["modified_files"]) == 0
