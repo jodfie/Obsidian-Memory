@@ -1,0 +1,29 @@
+{
+  "name": "obsidian-memory-codex",
+  "version": "0.1.0",
+  "description": "Obsidian-Memory integration for Codex CLI — search, write, and recall notes via REST API",
+  "author": "jodfie",
+  "license": "MIT",
+  "homepage": "https://github.com/jodfie/Obsidian-Memory",
+  "keywords": ["memory", "knowledge", "obsidian", "notes", "codex"],
+  "sbom": {
+    "files": [
+      "SKILL.md",
+      "skill.json",
+      "scripts/_lib.sh",
+      "scripts/search.sh",
+      "scripts/write_note.sh",
+      "scripts/read_note.sh",
+      "scripts/session_log.sh",
+      "scripts/recall.sh"
+    ]
+  },
+  "openclaw": {
+    "emoji": "🧠",
+    "category": "memory",
+    "requires": {
+      "bins": ["curl", "jq"]
+    },
+    "triggers": ["memory search", "recall", "remember", "note", "knowledge"]
+  }
+}

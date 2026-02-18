@@ -1,0 +1,31 @@
+{
+  "name": "obsidian-memory-openclaw",
+  "version": "0.1.0",
+  "description": "Full Obsidian-Memory integration for OpenClaw agents — knowledge management, graph traversal, session tracking, and agent memory workflows",
+  "author": "jodfie",
+  "license": "MIT",
+  "homepage": "https://github.com/jodfie/Obsidian-Memory",
+  "keywords": ["memory", "knowledge", "obsidian", "notes", "agent", "openclaw", "graph"],
+  "sbom": {
+    "files": [
+      "SKILL.md",
+      "skill.json",
+      "scripts/_lib.sh",
+      "scripts/search.sh",
+      "scripts/write_note.sh",
+      "scripts/read_note.sh",
+      "scripts/session_log.sh",
+      "scripts/recall.sh",
+      "scripts/build_context.sh",
+      "references/agent-integration.md"
+    ]
+  },
+  "openclaw": {
+    "emoji": "🧠",
+    "category": "memory",
+    "requires": {
+      "bins": ["curl", "jq"]
+    },
+    "triggers": ["memory", "recall", "remember", "knowledge", "notes", "session", "context", "graph"]
+  }
+}
