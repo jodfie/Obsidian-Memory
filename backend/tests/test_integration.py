@@ -548,28 +548,23 @@ Content
 
     @pytest.mark.asyncio
     async def test_error_handling_invalid_observation(self):
-        """Test graceful error handling for invalid observation category."""
+        """Test that invalid observation categories are silently skipped."""
         from app.services.markdown_parser import MarkdownParser
-        from app.services.exceptions import InvalidObservationError
 
         parser = MarkdownParser()
 
         invalid_obs = """---
 title: Test
 ---
-- [invalid_category] This should fail
+- [invalid_category] This should be skipped
 """
-        with pytest.raises(InvalidObservationError) as exc_info:
-            parser.parse(invalid_obs)
-
-        # Error should mention the invalid category
-        assert "invalid_category" in str(exc_info.value).lower()
+        result = parser.parse(invalid_obs)
+        assert len(result.observations) == 0
 
     @pytest.mark.asyncio
     async def test_error_handling_invalid_relation(self):
-        """Test graceful error handling for invalid relation type."""
+        """Test that invalid relation types are silently skipped."""
         from app.services.markdown_parser import MarkdownParser
-        from app.services.exceptions import InvalidRelationError
 
         parser = MarkdownParser()
 
@@ -578,8 +573,5 @@ title: Test
 ---
 - invalid_relation [[Target]]
 """
-        with pytest.raises(InvalidRelationError) as exc_info:
-            parser.parse(invalid_rel)
-
-        # Error should mention the invalid relation type
-        assert "invalid_relation" in str(exc_info.value).lower()
+        result = parser.parse(invalid_rel)
+        assert len(result.relations) == 0

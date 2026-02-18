@@ -11,8 +11,6 @@ from app.models.note import (
 )
 from app.services.exceptions import (
     FrontmatterError,
-    InvalidObservationError,
-    InvalidRelationError,
 )
 from app.services.markdown_parser import MarkdownParser
 
@@ -144,11 +142,11 @@ def test_extract_observations_with_context(parser: MarkdownParser) -> None:
 
 
 def test_extract_observations_invalid_category(parser: MarkdownParser) -> None:
-    """Test extracting observation with invalid category."""
-    content = """- [invalid] This should fail
+    """Test that invalid observation categories are silently skipped."""
+    content = """- [invalid] This should be skipped
 """
-    with pytest.raises(InvalidObservationError):
-        parser.extract_observations(content)
+    observations = parser.extract_observations(content)
+    assert len(observations) == 0
 
 
 def test_extract_relations_all_types(parser: MarkdownParser) -> None:
@@ -197,11 +195,11 @@ def test_extract_relations_with_path(parser: MarkdownParser) -> None:
 
 
 def test_extract_relations_invalid_type(parser: MarkdownParser) -> None:
-    """Test extracting relation with invalid type."""
+    """Test that invalid relation types are silently skipped."""
     content = """- invalid_type [[target]]
 """
-    with pytest.raises(InvalidRelationError):
-        parser.extract_relations(content)
+    relations = parser.extract_relations(content)
+    assert len(relations) == 0
 
 
 def test_extract_wikilinks_simple(parser: MarkdownParser) -> None:
