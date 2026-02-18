@@ -69,6 +69,16 @@ After adding the config:
 3. Click the MCP tools icon (hammer) in the input area
 4. You should see 16 Obsidian-Memory tools listed
 
+## Session Tracking
+
+Unlike Claude Code (which has automatic session tracking via hooks), Claude Desktop requires **manual session tracking** using the MCP session tools:
+
+- `session_observe` — log events as you work
+- `session_summary` — generate AI summary when done
+- `session_context` — retrieve past session context
+
+For automatic tracking, use the [Claude Code skill](../obsidian-memory-code/SKILL.md) which includes 10 hooks that capture prompts, file edits, searches, and more with zero token cost.
+
 ## Usage in Conversations
 
 Once connected, Claude Desktop can use all 16 tools automatically. Example prompts:

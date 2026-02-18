@@ -47,6 +47,16 @@ Unlike Claude Code and Claude Desktop, the web interface connects directly to th
 - The MCP endpoint URL
 - An API key (if auth is enabled)
 
+## Session Tracking
+
+Unlike Claude Code (which has automatic session tracking via hooks), Claude.ai web requires **manual session tracking** using the MCP session tools:
+
+- `session_observe` — log events during a conversation
+- `session_summary` — generate AI summary when done
+- `session_context` — retrieve past session context
+
+For automatic tracking, use the [Claude Code skill](../obsidian-memory-code/SKILL.md) which includes 10 hooks that capture prompts, file edits, searches, and more with zero token cost.
+
 ## Usage in Conversations
 
 Once connected, you can use natural language to interact with your knowledge base:

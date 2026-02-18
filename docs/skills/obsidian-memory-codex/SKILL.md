@@ -172,6 +172,29 @@ The Obsidian-Memory system provides 16 operations. The scripts above cover the m
 | `get_profile` | `recall.sh` (partial) | `GET /api/profile/{project}` |
 | `recall` | `recall.sh` | `POST /api/notes/search` + `GET /api/profile/{project}` |
 
+## Automatic Session Tracking
+
+Codex does not support hooks natively, so session tracking requires explicit `session_log.sh` calls. However, you can wrap Codex invocations in a shell script to automate session lifecycle:
+
+```bash
+#!/usr/bin/env bash
+# codex-with-memory.sh — wraps codex exec with session tracking
+source ./scripts/_lib.sh
+
+SESSION_ID="codex-$(date +%Y%m%d-%H%M%S)"
+mem_post "api/sessions" "{\"session_id\": \"$SESSION_ID\"}"
+
+# Run the actual codex command
+codex exec "$@"
+EXIT_CODE=$?
+
+# End session with summary
+mem_post "api/sessions/$SESSION_ID/end" '{"auto_summarize": true}'
+exit $EXIT_CODE
+```
+
+For fully automatic session tracking (prompts, file edits, searches captured with zero effort), see the [Claude Code skill](../obsidian-memory-code/SKILL.md) which includes 10 Claude Code hooks.
+
 ## Troubleshooting
 
 **"curl: command not found"**: Install curl via your package manager

@@ -97,6 +97,24 @@ See [references/agent-integration.md](references/agent-integration.md) for compl
 4. Agent finishes → session_summary to capture learnings
 ```
 
+### Automatic Session Tracking
+
+OpenClaw agents can automate session tracking using hook templates. Add to your agent's hook configuration:
+
+```bash
+# hooks/before_agent_start.sh
+source ./scripts/_lib.sh
+SESSION_ID="agent-$(date +%Y%m%d-%H%M%S)"
+mem_post "api/sessions" "{\"session_id\": \"$SESSION_ID\", \"project\": \"$PROJECT\"}"
+export OBSIDIAN_MEMORY_SESSION_ID="$SESSION_ID"
+
+# hooks/after_agent_complete.sh
+source ./scripts/_lib.sh
+mem_post "api/sessions/$OBSIDIAN_MEMORY_SESSION_ID/end" '{"auto_summarize": true}'
+```
+
+For the most comprehensive automatic tracking (prompts, file edits, searches, subagent spawns, tool failures — all captured with zero token cost), see the [Claude Code skill](../obsidian-memory-code/SKILL.md) which includes 10 Claude Code hooks.
+
 ## Shared Library (`scripts/_lib.sh`)
 
 All scripts source `_lib.sh` which provides:
