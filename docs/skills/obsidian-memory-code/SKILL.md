@@ -132,6 +132,59 @@ After configuring, verify the connection:
 
 You should see `obsidian-memory` listed with 16 tools connected.
 
+## Automatic Session Tracking (Hooks)
+
+Obsidian-Memory includes **10 Claude Code hooks** that automatically track your session without any MCP tool calls. This saves tokens and provides comprehensive session logging with zero effort.
+
+### What Gets Tracked Automatically
+
+| Event | Hook | Description |
+|-------|------|-------------|
+| Session start | `SessionStart` | Creates session, sets env vars via `CLAUDE_ENV_FILE` |
+| User prompts | `UserPromptSubmit` | Logs each prompt (truncated to 500 chars) |
+| Bash validation | `PreToolUse:Bash` | Blocks commands accessing `.env`, `.git/`, `node_modules`, etc. |
+| File edits | `PostToolUse:Write\|Edit` | Logs every file write/edit with path |
+| Searches | `PostToolUse:Grep\|Glob\|WebSearch\|WebFetch` | Logs search queries and patterns |
+| Tool failures | `PostToolUseFailure` | Logs tool errors (skips user interrupts) |
+| Subagent spawns | `SubagentStart` | Logs when subagents are dispatched |
+| Context compaction | `PreCompact` | Triggers AI session summary before context loss |
+| Claude stops | `Stop` | Ensures session summary exists |
+| Session end | `SessionEnd` | Ends session with auto-summarization |
+
+### How It Works
+
+1. On `SessionStart`, the hook creates a session via the backend API and writes `OBSIDIAN_MEMORY_SESSION_ID` to `$CLAUDE_ENV_FILE`
+2. All subsequent hooks read this env var to log observations
+3. Async hooks (6 of 10) fire in the background — zero blocking, zero token cost
+4. If the backend is down, all hooks silently exit 0 (fail-open)
+
+### Hook Files
+
+Located in `.claude/hooks/` (configured in `.claude/settings.json`):
+
+```
+.claude/hooks/
+├── _lib.sh                    # Shared library (API calls, JSON parsing)
+├── session-start.sh           # sync, 10s timeout
+├── user-prompt-submit.sh      # async, 5s timeout
+├── pre-tool-use-bash.sh       # sync, 5s timeout
+├── post-tool-use-edits.sh     # async, 5s timeout
+├── post-tool-use-search.sh    # async, 5s timeout
+├── post-tool-failure.sh       # async, 5s timeout
+├── subagent-start.sh          # async, 5s timeout
+├── pre-compact.sh             # sync, 30s timeout
+├── stop.sh                    # sync, 10s timeout
+└── session-end.sh             # async, 30s timeout
+```
+
+### What You Still Need MCP Tools For
+
+The hooks handle all session tracking. You still use MCP tools for:
+- **Reading/writing notes**: `mem_read`, `mem_write`, `mem_search`, `mem_delete`
+- **Knowledge graph**: `graph_traverse`, `graph_similar`, `build_context`
+- **Recall/profiles**: `recall`, `get_profile`
+- **Project management**: `project_list`, `project_switch`
+
 ## CLAUDE.md Integration
 
 Add to your project's `CLAUDE.md` for automatic context:
@@ -140,19 +193,19 @@ Add to your project's `CLAUDE.md` for automatic context:
 ## Obsidian-Memory Integration
 
 This project uses Obsidian-Memory for persistent knowledge management.
+Session tracking is fully automatic via hooks — no manual session_observe calls needed.
 
 ### Usage Patterns
 - **Before starting work**: Use `recall` to check for relevant past context
 - **Search first**: Use `mem_search` before answering questions about past decisions
 - **Log decisions**: Use `mem_write` to record architectural decisions and patterns
-- **Session tracking**: Use `session_observe` to log significant events
 - **Build context**: Use `build_context` with memory:// URIs to gather related notes
 
 ### Memory-Aware Workflow
 1. `recall` or `mem_search` for existing knowledge
 2. Work on the task
 3. `mem_write` important decisions/patterns/solutions
-4. `session_observe` significant events
+4. Session tracking happens automatically via hooks
 ```
 
 ## MCP Tools Reference
