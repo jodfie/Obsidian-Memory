@@ -1,5 +1,6 @@
 """Full-text search index using SQLite FTS5."""
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -44,6 +45,7 @@ class SearchIndex:
         """Initialize with database path."""
         self.db_path = db_path
         self.db: aiosqlite.Connection | None = None
+        self._write_lock = asyncio.Lock()
 
     async def initialize(self) -> None:
         """Create tables and indexes if they don't exist."""
@@ -56,6 +58,7 @@ class SearchIndex:
         # Enable WAL mode for concurrent access
         await self.db.execute("PRAGMA journal_mode=WAL")
         await self.db.execute("PRAGMA synchronous=NORMAL")
+        await self.db.execute("PRAGMA busy_timeout=5000")
         # Performance optimizations
         await self.db.execute("PRAGMA cache_size=-64000")  # 64MB cache
         await self.db.execute("PRAGMA temp_store=MEMORY")
@@ -545,6 +548,11 @@ class SearchIndex:
         if not self.db:
             raise RuntimeError("Database not initialized")
 
+        async with self._write_lock:
+            return await self._index_note_inner(note)
+
+    async def _index_note_inner(self, note: IndexedNote) -> int:
+        """Inner index_note implementation, called with _write_lock held."""
         indexed_at = datetime.utcnow().isoformat()
         created_at_str = (
             note.created_at.isoformat() if note.created_at else None
@@ -771,15 +779,16 @@ class SearchIndex:
         if not self.db:
             raise RuntimeError("Database not initialized")
 
-        cursor = await self.db.execute(
-            """
-            DELETE FROM notes
-            WHERE vault_name = ? AND relative_path = ?
-            """,
-            (vault_name, relative_path),
-        )
-        await self.db.commit()
-        return cursor.rowcount > 0
+        async with self._write_lock:
+            cursor = await self.db.execute(
+                """
+                DELETE FROM notes
+                WHERE vault_name = ? AND relative_path = ?
+                """,
+                (vault_name, relative_path),
+            )
+            await self.db.commit()
+            return cursor.rowcount > 0
 
     async def needs_reindex(
         self, vault_name: str, relative_path: str, file_hash: str
@@ -2317,72 +2326,73 @@ class SearchIndex:
         if not self.db:
             raise RuntimeError("Database not initialized")
 
-        added = 0
-        updated = 0
-        removed = 0
-        total_notes = len(notes)
+        async with self._write_lock:
+            added = 0
+            updated = 0
+            removed = 0
+            total_notes = len(notes)
 
-        # Get existing notes with their IDs and hashes
-        cursor = await self.db.execute(
-            """
-            SELECT id, relative_path, file_hash
-            FROM notes
-            WHERE vault_name = ?
-            """,
-            (vault_name,),
-        )
-        existing_notes = {
-            row['relative_path']: (row['id'], row['file_hash'])
-            async for row in cursor
-        }
-        new_paths = {note.relative_path for note in notes}
+            # Get existing notes with their IDs and hashes
+            cursor = await self.db.execute(
+                """
+                SELECT id, relative_path, file_hash
+                FROM notes
+                WHERE vault_name = ?
+                """,
+                (vault_name,),
+            )
+            existing_notes = {
+                row['relative_path']: (row['id'], row['file_hash'])
+                async for row in cursor
+            }
+            new_paths = {note.relative_path for note in notes}
 
-        # Remove notes not in new list (if full reindex)
-        if full_reindex:
-            to_remove = set(existing_notes.keys()) - new_paths
-            if to_remove:
-                # Batch delete removed notes
-                placeholders = ','.join('?' * len(to_remove))
-                await self.db.execute(
-                    f"""
-                    DELETE FROM notes
-                    WHERE vault_name = ? AND relative_path IN ({placeholders})
-                    """,
-                    (vault_name, *to_remove),
-                )
-                removed = len(to_remove)
+            # Remove notes not in new list (if full reindex)
+            if full_reindex:
+                to_remove = set(existing_notes.keys()) - new_paths
+                if to_remove:
+                    # Batch delete removed notes
+                    placeholders = ','.join('?' * len(to_remove))
+                    await self.db.execute(
+                        f"""
+                        DELETE FROM notes
+                        WHERE vault_name = ? AND relative_path IN ({placeholders})
+                        """,
+                        (vault_name, *to_remove),
+                    )
+                    removed = len(to_remove)
 
-        # Separate notes into insert vs update batches
-        notes_to_insert: list[IndexedNote] = []
-        notes_to_update: list[tuple[IndexedNote, int]] = []
+            # Separate notes into insert vs update batches
+            notes_to_insert: list[IndexedNote] = []
+            notes_to_update: list[tuple[IndexedNote, int]] = []
 
-        for note in notes:
-            if note.relative_path in existing_notes:
-                note_id, old_hash = existing_notes[note.relative_path]
-                # Only update if file hash changed
-                if old_hash != note.file_hash:
-                    notes_to_update.append((note, note_id))
-            else:
-                notes_to_insert.append(note)
+            for note in notes:
+                if note.relative_path in existing_notes:
+                    note_id, old_hash = existing_notes[note.relative_path]
+                    # Only update if file hash changed
+                    if old_hash != note.file_hash:
+                        notes_to_update.append((note, note_id))
+                else:
+                    notes_to_insert.append(note)
 
-        # Batch insert new notes
-        if notes_to_insert:
-            await self._batch_insert_notes(notes_to_insert, progress_callback, 0, total_notes)
-            added = len(notes_to_insert)
+            # Batch insert new notes
+            if notes_to_insert:
+                await self._batch_insert_notes(notes_to_insert, progress_callback, 0, total_notes)
+                added = len(notes_to_insert)
 
-        # Batch update existing notes
-        if notes_to_update:
-            await self._batch_update_notes(notes_to_update, progress_callback, len(notes_to_insert), total_notes)
-            updated = len(notes_to_update)
+            # Batch update existing notes
+            if notes_to_update:
+                await self._batch_update_notes(notes_to_update, progress_callback, len(notes_to_insert), total_notes)
+                updated = len(notes_to_update)
 
-        # Commit transaction
-        await self.db.commit()
+            # Commit transaction
+            await self.db.commit()
 
-        # Run incremental vacuum if we processed a lot of data
-        if added + updated + removed > 100:
-            await self._incremental_vacuum()
+            # Run incremental vacuum if we processed a lot of data
+            if added + updated + removed > 100:
+                await self._incremental_vacuum()
 
-        return (added, updated, removed)
+            return (added, updated, removed)
 
     async def _batch_insert_notes(
         self,
@@ -2777,20 +2787,21 @@ class SearchIndex:
             return
 
         try:
-            placeholders = ','.join('?' * len(note_ids))
-            logger.debug(f"Refreshing access for {len(note_ids)} notes")
-            await self.db.execute(f"""
-                UPDATE notes
-                SET last_accessed_at = datetime('now'),
-                    expires_at = CASE decay_class
-                        WHEN 'stable' THEN datetime('now', '+90 days')
-                        WHEN 'active' THEN datetime('now', '+14 days')
-                        ELSE expires_at
-                    END
-                WHERE id IN ({placeholders})
-                  AND decay_class IN ('stable', 'active')
-            """, note_ids)
-            await self.db.commit()
+            async with self._write_lock:
+                placeholders = ','.join('?' * len(note_ids))
+                logger.debug(f"Refreshing access for {len(note_ids)} notes")
+                await self.db.execute(f"""
+                    UPDATE notes
+                    SET last_accessed_at = datetime('now'),
+                        expires_at = CASE decay_class
+                            WHEN 'stable' THEN datetime('now', '+90 days')
+                            WHEN 'active' THEN datetime('now', '+14 days')
+                            ELSE expires_at
+                        END
+                    WHERE id IN ({placeholders})
+                      AND decay_class IN ('stable', 'active')
+                """, note_ids)
+                await self.db.commit()
         except Exception as e:
             logger.warning(f"Failed to refresh access times: {e}")
 
@@ -2807,6 +2818,11 @@ class SearchIndex:
         if not self.db:
             raise RuntimeError("Database not initialized")
 
+        async with self._write_lock:
+            return await self._decay_confidence_inner()
+
+    async def _decay_confidence_inner(self) -> dict[str, int]:
+        """Inner decay_confidence, called with _write_lock held."""
         stats = {'decayed': 0, 'protected': 0, 'expired': 0}
         logger.info("Starting confidence decay run")
 
@@ -3221,12 +3237,13 @@ class SearchIndex:
         Returns:
             Number of entities deleted
         """
-        cursor = await self.db.execute(
-            "DELETE FROM entities WHERE note_id = ?",
-            (note_id,),
-        )
-        await self.db.commit()
-        return cursor.rowcount
+        async with self._write_lock:
+            cursor = await self.db.execute(
+                "DELETE FROM entities WHERE note_id = ?",
+                (note_id,),
+            )
+            await self.db.commit()
+            return cursor.rowcount
 
     async def search_by_entity(
         self,
@@ -3528,18 +3545,19 @@ class SearchIndex:
         Returns:
             True if promoted, False if not found
         """
-        promoted_at = datetime.now(timezone.utc).isoformat()
+        async with self._write_lock:
+            promoted_at = datetime.now(timezone.utc).isoformat()
 
-        cursor = await self.db.execute(
-            """
-            UPDATE inferred_relations
-            SET is_promoted = 1, promoted_at = ?, confidence = 1.0
-            WHERE edge_id = ? AND is_promoted = 0
-            """,
-            (promoted_at, edge_id),
-        )
-        await self.db.commit()
-        return cursor.rowcount > 0
+            cursor = await self.db.execute(
+                """
+                UPDATE inferred_relations
+                SET is_promoted = 1, promoted_at = ?, confidence = 1.0
+                WHERE edge_id = ? AND is_promoted = 0
+                """,
+                (promoted_at, edge_id),
+            )
+            await self.db.commit()
+            return cursor.rowcount > 0
 
     async def delete_inferred_relation(self, edge_id: str) -> bool:
         """
@@ -3551,12 +3569,13 @@ class SearchIndex:
         Returns:
             True if deleted, False if not found
         """
-        cursor = await self.db.execute(
-            "DELETE FROM inferred_relations WHERE edge_id = ?",
-            (edge_id,),
-        )
-        await self.db.commit()
-        return cursor.rowcount > 0
+        async with self._write_lock:
+            cursor = await self.db.execute(
+                "DELETE FROM inferred_relations WHERE edge_id = ?",
+                (edge_id,),
+            )
+            await self.db.commit()
+            return cursor.rowcount > 0
 
     async def delete_inferred_relations_for_note(self, note_id: int) -> int:
         """
@@ -3568,15 +3587,16 @@ class SearchIndex:
         Returns:
             Number of relations deleted
         """
-        cursor = await self.db.execute(
-            """
-            DELETE FROM inferred_relations
-            WHERE source_note_id = ? OR target_note_id = ?
-            """,
-            (note_id, note_id),
-        )
-        await self.db.commit()
-        return cursor.rowcount
+        async with self._write_lock:
+            cursor = await self.db.execute(
+                """
+                DELETE FROM inferred_relations
+                WHERE source_note_id = ? OR target_note_id = ?
+                """,
+                (note_id, note_id),
+            )
+            await self.db.commit()
+            return cursor.rowcount
 
     # -------------------------------------------------------------------------
     # Pattern Detection Storage and Retrieval
@@ -3593,13 +3613,14 @@ class SearchIndex:
 
     async def create_pattern_run(self, content_hash: str) -> int:
         """Create a pattern run and return its id."""
-        detected_at = datetime.now(timezone.utc).isoformat()
-        cursor = await self.db.execute(
-            "INSERT INTO pattern_runs (content_hash, detected_at) VALUES (?, ?)",
-            (content_hash, detected_at),
-        )
-        await self.db.commit()
-        return cursor.lastrowid
+        async with self._write_lock:
+            detected_at = datetime.now(timezone.utc).isoformat()
+            cursor = await self.db.execute(
+                "INSERT INTO pattern_runs (content_hash, detected_at) VALUES (?, ?)",
+                (content_hash, detected_at),
+            )
+            await self.db.commit()
+            return cursor.lastrowid
 
     async def store_pattern(
         self,
@@ -3612,24 +3633,25 @@ class SearchIndex:
         note_ids: list[int],
     ) -> int:
         """Store a detected pattern and its note associations."""
-        detected_at = datetime.now(timezone.utc).isoformat()
-        cursor = await self.db.execute(
-            """
-            INSERT INTO detected_patterns
-            (run_id, pattern_name, description, category, confidence, frequency, detected_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (run_id, pattern_name, description or "", category, confidence, frequency, detected_at),
-        )
-        await self.db.commit()
-        pattern_id = cursor.lastrowid
-        for note_id in note_ids:
-            await self.db.execute(
-                "INSERT OR IGNORE INTO pattern_notes (pattern_id, note_id) VALUES (?, ?)",
-                (pattern_id, note_id),
+        async with self._write_lock:
+            detected_at = datetime.now(timezone.utc).isoformat()
+            cursor = await self.db.execute(
+                """
+                INSERT INTO detected_patterns
+                (run_id, pattern_name, description, category, confidence, frequency, detected_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (run_id, pattern_name, description or "", category, confidence, frequency, detected_at),
             )
-        await self.db.commit()
-        return pattern_id
+            await self.db.commit()
+            pattern_id = cursor.lastrowid
+            for note_id in note_ids:
+                await self.db.execute(
+                    "INSERT OR IGNORE INTO pattern_notes (pattern_id, note_id) VALUES (?, ?)",
+                    (pattern_id, note_id),
+                )
+            await self.db.commit()
+            return pattern_id
 
     async def get_patterns(
         self,
@@ -3805,26 +3827,28 @@ class SearchIndex:
         self, suggestion_id: int, status: str
     ) -> bool:
         """Update dedup suggestion status (accepted, rejected, merged)."""
-        updated_at = datetime.now(timezone.utc).isoformat()
-        cursor = await self.db.execute(
-            "UPDATE dedup_suggestions SET status = ?, updated_at = ? WHERE id = ? AND status = 'pending'",
-            (status, updated_at, suggestion_id),
-        )
-        await self.db.commit()
-        return cursor.rowcount > 0
+        async with self._write_lock:
+            updated_at = datetime.now(timezone.utc).isoformat()
+            cursor = await self.db.execute(
+                "UPDATE dedup_suggestions SET status = ?, updated_at = ? WHERE id = ? AND status = 'pending'",
+                (status, updated_at, suggestion_id),
+            )
+            await self.db.commit()
+            return cursor.rowcount > 0
 
     async def mark_dedup_suggestion_merged_for_pair(
         self, note_id_1: int, note_id_2: int
     ) -> int:
         """Mark pending dedup suggestion for this note pair as merged. Returns count updated."""
-        n1, n2 = min(note_id_1, note_id_2), max(note_id_1, note_id_2)
-        updated_at = datetime.now(timezone.utc).isoformat()
-        cursor = await self.db.execute(
-            "UPDATE dedup_suggestions SET status = 'merged', updated_at = ? WHERE note_id_1 = ? AND note_id_2 = ? AND status = 'pending'",
-            (updated_at, n1, n2),
-        )
-        await self.db.commit()
-        return cursor.rowcount
+        async with self._write_lock:
+            n1, n2 = min(note_id_1, note_id_2), max(note_id_1, note_id_2)
+            updated_at = datetime.now(timezone.utc).isoformat()
+            cursor = await self.db.execute(
+                "UPDATE dedup_suggestions SET status = 'merged', updated_at = ? WHERE note_id_1 = ? AND note_id_2 = ? AND status = 'pending'",
+                (updated_at, n1, n2),
+            )
+            await self.db.commit()
+            return cursor.rowcount
 
     async def get_candidate_pairs_for_dedup(
         self,
