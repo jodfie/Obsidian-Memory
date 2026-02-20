@@ -68,6 +68,56 @@ All MCP servers must be configured in `~/.claude.json` (user-level) to prevent c
 
 Run `/mcp` in Claude Code to verify all four servers are connected.
 
+## Obsidian-Memory Integration
+
+This repo IS the Obsidian-Memory project. The OM API runs locally at `http://localhost:8765` and is the primary knowledge store.
+
+### Writing Notes — Priority Order
+
+**1. Primary: `om.sh` CLI helper (hooks-based, always works)**
+```bash
+# Write a note
+.claude/scripts/om.sh write --title "Title" --content "markdown" --project P --type decision --tags t1,t2
+
+# Read a note
+.claude/scripts/om.sh read --id 123
+.claude/scripts/om.sh read --permalink "slug"
+
+# Search notes
+.claude/scripts/om.sh search "query" --project P --limit 10
+
+# Other: update, delete, supersede, projects, health
+.claude/scripts/om.sh help
+```
+
+**2. Fallback: MCP tools (session may die in long conversations)**
+```
+mem_write, mem_read, mem_search, mem_delete, mem_supersede
+```
+MCP tools (`Brain_MCP` / `obsidian-memory`) use a remote session that can silently die. If MCP fails, fall back to `om.sh` immediately — do not retry MCP.
+
+### When to Write to OM
+
+- Design decisions, architecture choices, and their reasoning
+- Session context and brainstorming outcomes
+- Bug fixes and their root cause analysis
+- Anything another Claude session might need to reference
+
+**Always write to OM — not just to git files.** OM is searchable across sessions; git commits are not.
+
+### Hooks (automatic, no action needed)
+
+The hooks in `.claude/hooks/` automatically track session activity via the OM REST API:
+- `session-start.sh` — creates OM session on startup/resume
+- `user-prompt-submit.sh` — logs user prompts as observations
+- `post-tool-use-edits.sh` — logs file edits
+- `post-tool-use-search.sh` — logs searches
+- `pre-compact.sh` — triggers session summary before context compaction
+- `stop.sh` — triggers summary on stop
+- `session-end.sh` — ends session with auto-summarization
+
+These use direct `curl` to `localhost:8765`, bypassing MCP entirely.
+
 ## Secret Management with Infisical
 
 This starter template supports integration with Infisical CLI for automated secret management. Infisical CLI is a **host-system tool** that should be installed globally on the developer's machine, not per-repository.
