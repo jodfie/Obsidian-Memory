@@ -293,7 +293,7 @@ obsidian-memory/
 cp .env.dev.example .env.dev
 # Edit .env.dev
 make dev
-# Access at https://memory-dev.redleif.dev
+# Access at https://memory-dev.example.com
 ```
 
 **Production:**
@@ -301,7 +301,7 @@ make dev
 cp .env.prod.example .env.prod
 # Edit .env.prod with production values
 make prod
-# Access at https://memory.redleif.dev
+# Access at https://memory.example.com
 ```
 
 ### Detailed Deployment Guide

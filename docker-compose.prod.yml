@@ -1,6 +1,15 @@
 version: '3.8'
 
 # Production overrides for Obsidian-Memory
+#
+# Required env vars (set in .env or export):
+#   BASE_DOMAIN        - Your domain (e.g., example.com)
+#   VAULT_PATH         - Host path to vaults directory (e.g., /home/user/vaults)
+#
+# Optional env vars:
+#   TAILSCALE_IP       - Tailscale IP for VPN-only port bindings (omit to disable)
+#   AUTH_DOMAIN        - Auth provider domain (defaults to auth.${BASE_DOMAIN})
+#   CF_ACCESS_TEAM     - Cloudflare Access team domain
 
 services:
   memory:
@@ -25,15 +34,14 @@ services:
       - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
       # Cloudflare Access (fallback if Supabase auth disabled)
       - CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-false}
-      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
+      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-${CF_ACCESS_TEAM:-}}
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     volumes:
-      - /home/redleif/vaults:/vaults:rw
+      - ${VAULT_PATH:?VAULT_PATH must be set}:/vaults:rw
       - memory-data:/data
     ports:
       - "127.0.0.1:8765:8765"
-      - "100.99.29.82:8765:8765"  # tailnet (redleif-hostinger)
     deploy:
       resources:
         limits:
@@ -55,7 +63,7 @@ services:
         max-file: "3"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.memory-api.rule=Host(`memory.redleif.dev`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.memory-api.rule=Host(`memory.${BASE_DOMAIN:?BASE_DOMAIN must be set}`) && PathPrefix(`/api`)"
       - "traefik.http.routers.memory-api.entrypoints=web"
       - "traefik.http.services.memory-api.loadbalancer.server.port=8765"
       - "traefik.docker.network=proxy"
@@ -72,7 +80,7 @@ services:
       - MCP_TRANSPORT=sse
       - MCP_SSE_PORT=3000
       - MCP_PATH=/mcp
-      - MCP_SERVER_URL=https://memory.redleif.dev
+      - MCP_SERVER_URL=https://memory.${BASE_DOMAIN}
       - OBSIDIAN_MEMORY_API_URL=http://memory:8765
       - NODE_ENV=production
       # Supabase OAuth Authentication
@@ -80,7 +88,6 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
     ports:
       - "127.0.0.1:8738:3000"
-      - "100.99.29.82:8738:3000"  # tailnet (redleif-hostinger)
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
@@ -97,7 +104,7 @@ services:
           cpus: '0.1'
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.memory-mcp.rule=Host(`memory.redleif.dev`) && PathPrefix(`/mcp`)"
+      - "traefik.http.routers.memory-mcp.rule=Host(`memory.${BASE_DOMAIN}`) && PathPrefix(`/mcp`)"
       - "traefik.http.routers.memory-mcp.entrypoints=web"
       - "traefik.http.services.memory-mcp.loadbalancer.server.port=3000"
       - "traefik.docker.network=proxy"
@@ -118,7 +125,7 @@ services:
       - SB_SHELL_BACKEND=off
       - SB_SPACE_IGNORE=.obsidian,.smart-env,.stfolder,.Trash,.backups,.vscode,.gitignore,.stignore
     volumes:
-      - /home/redleif/vaults:/space:rw
+      - ${VAULT_PATH}:/space:rw
     ports:
       - "127.0.0.1:3100:3000"
     restart: unless-stopped
@@ -151,7 +158,7 @@ services:
       - OAUTH2_PROXY_PROVIDER=oidc
       - OAUTH2_PROXY_SKIP_OIDC_DISCOVERY=true
       - OAUTH2_PROXY_OIDC_ISSUER_URL=http://localhost:5556
-      - OAUTH2_PROXY_LOGIN_URL=https://auth.redleif.dev/auth
+      - OAUTH2_PROXY_LOGIN_URL=https://${AUTH_DOMAIN:-auth.${BASE_DOMAIN}}/auth
       - OAUTH2_PROXY_REDEEM_URL=http://127.0.0.1:5556/token
       - OAUTH2_PROXY_OIDC_JWKS_URL=http://127.0.0.1:5556/keys
       - OAUTH2_PROXY_PROFILE_URL=http://127.0.0.1:5556/userinfo
@@ -161,7 +168,7 @@ services:
       - OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET}
       - OAUTH2_PROXY_COOKIE_SECURE=true
       - OAUTH2_PROXY_COOKIE_NAME=_memory_auth
-      - OAUTH2_PROXY_REDIRECT_URL=https://memory.redleif.dev/oauth2/callback
+      - OAUTH2_PROXY_REDIRECT_URL=https://memory.${BASE_DOMAIN}/oauth2/callback
       - OAUTH2_PROXY_UPSTREAMS=http://127.0.0.1:3100
       - OAUTH2_PROXY_EMAIL_DOMAINS=*
       - OAUTH2_PROXY_SKIP_PROVIDER_BUTTON=true
@@ -184,7 +191,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # cloudflared tunnel is managed separately (see ~/docker/cloudflared-compose.yml)
+  # cloudflared tunnel is managed separately
 
 volumes:
   memory-data:

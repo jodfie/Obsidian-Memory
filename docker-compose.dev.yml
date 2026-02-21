@@ -1,4 +1,6 @@
 # Development overrides for Obsidian-Memory
+#
+# Required env vars: BASE_DOMAIN, VAULT_PATH (see .env.example)
 
 services:
   memory:
@@ -18,18 +20,18 @@ services:
       - WAIT_FOR_HEALTH=true
       - VAULT_PATH=/vaults
       - CLOUDFLARE_ACCESS_ENABLED=${CLOUDFLARE_ACCESS_ENABLED:-true}
-      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
+      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-${CF_ACCESS_TEAM:-}}
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     ports:
       - "8766:8765"
     volumes:
       - memory-data:/data
-      - /home/redleif/vaults:/vaults:rw
+      - ${VAULT_PATH:?VAULT_PATH must be set}:/vaults:rw
       - ./backend:/app/backend:cached  # Hot reload mount
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.memory-dev.rule=Host(`memory-dev.redleif.dev`)"
+      - "traefik.http.routers.memory-dev.rule=Host(`memory-dev.${BASE_DOMAIN:?BASE_DOMAIN must be set}`)"
       - "traefik.http.routers.memory-dev.entrypoints=web"
       - "traefik.http.services.memory-dev.loadbalancer.server.port=8765"
       - "traefik.docker.network=proxy"
@@ -53,9 +55,9 @@ services:
       - MCP_TRANSPORT=sse
       - MCP_SSE_PORT=3000
       - MCP_PATH=/mcp
-      - MCP_SERVER_URL=https://memory-dev.redleif.dev
+      - MCP_SERVER_URL=https://memory-dev.${BASE_DOMAIN}
       - OBSIDIAN_MEMORY_API_URL=http://memory-dev:8765
-      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-redleif.cloudflareaccess.com}
+      - CLOUDFLARE_ACCESS_TEAM_DOMAIN=${CLOUDFLARE_ACCESS_TEAM_DOMAIN:-${CF_ACCESS_TEAM:-}}
       - CLOUDFLARE_OAUTH_CLIENT_ID=${CLOUDFLARE_OAUTH_CLIENT_ID}
       - CLOUDFLARE_OAUTH_CLIENT_SECRET=${CLOUDFLARE_OAUTH_CLIENT_SECRET}
     networks:
@@ -74,7 +76,7 @@ services:
       - SB_SHELL_BACKEND=off
       - SB_SPACE_IGNORE=.obsidian,.smart-env,.stfolder,.Trash,.backups,.vscode,.gitignore,.stignore
     volumes:
-      - /home/redleif/vaults:/space:rw
+      - ${VAULT_PATH}:/space:rw
     ports:
       - "3001:3000"
     restart: unless-stopped

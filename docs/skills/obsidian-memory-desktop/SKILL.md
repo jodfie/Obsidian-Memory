@@ -25,7 +25,7 @@ Add the `obsidian-memory` server:
     "obsidian-memory": {
       "command": "bun",
       "args": ["run", "src/index.ts"],
-      "cwd": "/home/redleif/Obsidian-Memory/mcp-server",
+      "cwd": "/path/to/Obsidian-Memory/mcp-server",
       "env": {
         "MCP_TRANSPORT": "stdio",
         "OBSIDIAN_MEMORY_API_URL": "http://localhost:8000"
@@ -49,7 +49,7 @@ If the Obsidian-Memory backend is deployed remotely (e.g., Docker on a server), 
 {
   "mcpServers": {
     "obsidian-memory": {
-      "url": "https://memory.redleif.dev/mcp",
+      "url": "https://memory.example.com/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY_HERE"
       }

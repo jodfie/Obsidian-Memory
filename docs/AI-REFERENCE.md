@@ -23,19 +23,19 @@ Storage (Markdown + SQLite)
 
 | Client | URL | Auth |
 |--------|-----|------|
-| Claude.ai | `https://memory.redleif.dev/mcp` | OAuth 2.0 |
-| Cursor | `https://memory.redleif.dev/mcp` | OAuth (optional) |
+| Claude.ai | `https://memory.example.com/mcp` | OAuth 2.0 |
+| Cursor | `https://memory.example.com/mcp` | OAuth (optional) |
 | Claude Code | stdio (local process) | None |
-| Web UI | `https://memory.redleif.dev` | Cloudflare Access |
+| Web UI | `https://memory.example.com` | Cloudflare Access |
 
 ## OAuth Credentials (Claude.ai)
 
 ```
-Server URL: https://memory.redleif.dev/mcp
-Client ID: 996ac4873739812cad6edd18fbd572b150b5e0bea38fa30299b8e3f393fb6a22
+Server URL: https://memory.example.com/mcp
+Client ID: your-oauth-client-id
 Client Secret: pkce_no_secret_required
-Authorization URL: https://redleif.cloudflareaccess.com/cdn-cgi/access/authorize
-Token URL: https://redleif.cloudflareaccess.com/cdn-cgi/access/token
+Authorization URL: https://your-team.cloudflareaccess.com/cdn-cgi/access/authorize
+Token URL: https://your-team.cloudflareaccess.com/cdn-cgi/access/token
 ```
 
 ## MCP Tools (13 Total)
@@ -260,7 +260,7 @@ Returns human-readable formatted text.
 ## Authentication Quick Debug
 
 ### Claude.ai Connection Issues
-1. Check server health: `curl https://memory.redleif.dev/mcp/health`
+1. Check server health: `curl https://memory.example.com/mcp/health`
 2. Verify OAuth credentials match exactly
 3. Disconnect and reconnect to refresh token
 4. Check email is in Cloudflare Access policy
@@ -268,7 +268,7 @@ Returns human-readable formatted text.
 ### Cursor Connection Issues
 1. Use native auth flow: Settings → MCP → Login
 2. Or add static OAuth to `.cursor/mcp.json`
-3. Test server: `curl https://memory.redleif.dev/health`
+3. Test server: `curl https://memory.example.com/health`
 
 ### Claude Code Connection Issues
 1. Verify MCP config in `~/.claude.json` or `.mcp.json`
@@ -332,7 +332,7 @@ docker logs memory
 docker logs memory-mcp
 
 # Test MCP endpoint
-curl https://memory.redleif.dev/mcp/health
+curl https://memory.example.com/mcp/health
 
 # Check vault permissions
 docker exec memory ls -la /vaults

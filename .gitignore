@@ -102,14 +102,14 @@ CLAUDE_AI_CONNECTOR.md
 COORDINATION.md
 /docs/wip/
 
+# Brain directory (personal data — API tokens, SSH configs, session memories)
+/brain/
+
 # Embedded git repos / external projects
-/brain/Skill_Seekers/
-/brain/TheManCave/
-/brain/social-media-osint/
 /oauth-gateway/
 
-# Brain skills (managed separately)
-/brain/skills/
+# Personal deployment plans (contain infra details)
+/docs/plans/
 
 # WIP tests not yet ready for commit
 backend/tests/api/test_recall_api.py

@@ -61,7 +61,7 @@ If you need more control:
 
 When adding your MCP server to Claude.ai:
 
-1. **MCP Server URL**: `https://memory.redleif.dev/mcp`
+1. **MCP Server URL**: `https://memory.example.com/mcp`
 
 2. **OAuth Configuration**:
    - **Authorization URL**: `https://uspohhdhzwigalsrugqc.supabase.co/auth/v1/authorize`
@@ -79,7 +79,7 @@ When adding your MCP server to Claude.ai:
 TOKEN="your-access-token"
 
 # Test MCP endpoint
-curl -X POST https://memory.redleif.dev/mcp \
+curl -X POST https://memory.example.com/mcp \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"initialize","id":1}'
@@ -165,7 +165,7 @@ Note: `SUPABASE_JWT_SECRET` is optional - we use JWKS (public key) validation in
 ### Claude.ai can't connect:
 
 - Verify redirect URLs are configured in Supabase
-- Check that MCP endpoint is accessible: `https://memory.redleif.dev/mcp`
+- Check that MCP endpoint is accessible: `https://memory.example.com/mcp`
 - Test with curl first to isolate OAuth vs MCP issues
 
 ## Next Steps

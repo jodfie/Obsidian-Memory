@@ -21,7 +21,7 @@ Integration skill for connecting **Claude.ai** (web interface) to the Obsidian-M
 1. Click **"Add Integration"** or **"Add MCP Server"**
 2. Enter the following:
    - **Name**: `Obsidian-Memory`
-   - **URL**: `https://memory.redleif.dev/mcp`
+   - **URL**: `https://memory.example.com/mcp`
 3. Click **Save** / **Add**
 
 ### Step 3: Authentication
@@ -43,7 +43,7 @@ Claude should invoke the tool and return results from your knowledge base.
 
 Unlike Claude Code and Claude Desktop, the web interface connects directly to the remote MCP endpoint over HTTPS. You only need:
 
-- A running Obsidian-Memory deployment (e.g., `memory.redleif.dev`)
+- A running Obsidian-Memory deployment (e.g., `memory.example.com`)
 - The MCP endpoint URL
 - An API key (if auth is enabled)
 
@@ -156,7 +156,7 @@ Most tools accept `response_format`: `"json"` (default, structured) or `"markdow
 - Refresh the page and start a new conversation
 
 **Tools return errors:**
-- Verify the backend is running: visit `https://memory.redleif.dev/api/health`
+- Verify the backend is running: visit `https://memory.example.com/api/health`
 - Check if the Docker containers are healthy: `docker ps | grep memory`
 - API key may have expired — regenerate and update in settings
 

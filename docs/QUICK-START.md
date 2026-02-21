@@ -120,11 +120,11 @@ For Claude.ai integration with the hosted instance:
 1. Go to Claude.ai Settings → Integrations → Add MCP Server
 2. Configure:
    - **Name**: Obsidian-Memory
-   - **Server URL**: `https://memory.redleif.dev/mcp`
+   - **Server URL**: `https://memory.example.com/mcp`
    - **Authentication**: OAuth 2.0
-   - **Client ID**: `996ac4873739812cad6edd18fbd572b150b5e0bea38fa30299b8e3f393fb6a22`
-   - **Authorization URL**: `https://redleif.cloudflareaccess.com/cdn-cgi/access/authorize`
-   - **Token URL**: `https://redleif.cloudflareaccess.com/cdn-cgi/access/token`
+   - **Client ID**: `your-oauth-client-id`
+   - **Authorization URL**: `https://your-team.cloudflareaccess.com/cdn-cgi/access/authorize`
+   - **Token URL**: `https://your-team.cloudflareaccess.com/cdn-cgi/access/token`
 
 See [Claude.ai Integration](CLAUDE-AI-INTEGRATION.md) for detailed setup.
 

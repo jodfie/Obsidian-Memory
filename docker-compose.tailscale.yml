@@ -1,0 +1,17 @@
+# Tailscale overlay — exposes API and MCP on your Tailscale interface
+#
+# Usage:
+#   export TAILSCALE_IP=$(tailscale ip -4)
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.tailscale.yml up -d
+#
+# This allows remote Claude Code sessions on your tailnet to reach the OM API
+# without exposing it to the public internet. No auth needed — Tailscale handles it.
+
+services:
+  memory:
+    ports:
+      - "${TAILSCALE_IP:?Set TAILSCALE_IP or run: export TAILSCALE_IP=$(tailscale ip -4)}:8765:8765"
+
+  mcp-server:
+    ports:
+      - "${TAILSCALE_IP}:8738:3000"

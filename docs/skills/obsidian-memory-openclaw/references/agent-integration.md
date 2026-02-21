@@ -38,7 +38,7 @@ Add environment-specific configuration to your agent's `TOOLS.md`:
 ```markdown
 ## Obsidian-Memory Configuration
 
-API_URL: https://memory.redleif.dev/api
+API_URL: https://memory.example.com/api
 API_KEY: (stored in secrets)
 
 ### Available Scripts

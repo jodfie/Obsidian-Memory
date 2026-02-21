@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-API_URL="${OBSIDIAN_MEMORY_API_URL:-https://memory.redleif.dev/api}"
+API_URL="${OBSIDIAN_MEMORY_API_URL:-http://localhost:8765/api}"
 API_KEY="${OBSIDIAN_MEMORY_API_KEY:-}"
 
 # --- HTTP helpers ---

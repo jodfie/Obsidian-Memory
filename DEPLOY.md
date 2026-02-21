@@ -7,7 +7,7 @@ Complete guide for deploying Obsidian-Memory in development and production envir
 - Docker 20.10+
 - Docker Compose 2.0+
 - Access to Traefik proxy network (named `proxy`)
-- Domain configured: `memory-dev.redleif.dev` (dev) and `memory.redleif.dev` (prod)
+- Domain configured: `memory-dev.example.com` (dev) and `memory.example.com` (prod)
 
 ## Quick Start
 
@@ -27,9 +27,9 @@ Complete guide for deploying Obsidian-Memory in development and production envir
    ```
 
 3. **Access the service**
-   - URL: https://memory-dev.redleif.dev
-   - Health check: https://memory-dev.redleif.dev/health
-   - API docs: https://memory-dev.redleif.dev/docs
+   - URL: https://memory-dev.example.com
+   - Health check: https://memory-dev.example.com/health
+   - API docs: https://memory-dev.example.com/docs
 
 4. **View logs**
    ```bash
@@ -53,9 +53,9 @@ Complete guide for deploying Obsidian-Memory in development and production envir
    ```
 
 3. **Access the service**
-   - URL: https://memory.redleif.dev
-   - Health check: https://memory.redleif.dev/health
-   - API docs: https://memory.redleif.dev/docs
+   - URL: https://memory.example.com
+   - Health check: https://memory.example.com/health
+   - API docs: https://memory.example.com/docs
 
 4. **View logs**
    ```bash
@@ -108,7 +108,7 @@ VAULT_PATH=/vaults/prod-vault
 2. **Auto-deploy to dev**
    - Merges to `dev` trigger CI/CD
    - Automatic deployment to development environment
-   - Accessible at https://memory-dev.redleif.dev
+   - Accessible at https://memory-dev.example.com
 
 ### Production Flow
 
@@ -122,7 +122,7 @@ VAULT_PATH=/vaults/prod-vault
 2. **Manual approval required**
    - GitHub Actions workflow requires manual approval
    - Deploys to production environment
-   - Accessible at https://memory.redleif.dev
+   - Accessible at https://memory.example.com
 
 ## Makefile Commands
 
@@ -195,13 +195,13 @@ The deployment uses Traefik for reverse proxy and SSL termination. The configura
 
 ### Development Labels
 - Router: `memory-dev`
-- Domain: `memory-dev.redleif.dev`
+- Domain: `memory-dev.example.com`
 - Entrypoint: `websecure`
 - TLS: Cloudflare resolver
 
 ### Production Labels
 - Router: `memory`
-- Domain: `memory.redleif.dev`
+- Domain: `memory.example.com`
 - Entrypoint: `websecure`
 - TLS: Cloudflare resolver
 - Headers middleware for HTTPS
@@ -240,12 +240,12 @@ Example response:
 
 ### Health Endpoint
 ```bash
-curl https://memory.redleif.dev/health
+curl https://memory.example.com/health
 ```
 
 ### Metrics Endpoint
 ```bash
-curl https://memory.redleif.dev/metrics
+curl https://memory.example.com/metrics
 ```
 
 ### Logs

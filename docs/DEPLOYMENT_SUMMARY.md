@@ -28,14 +28,14 @@
 - **Middleware**: `backend/app/middleware/cloudflare_access.py`
 - **Configuration**: 
   - `CLOUDFLARE_ACCESS_ENABLED=true`
-  - `CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com`
+  - `CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com`
 - **Behavior**: 
   - `/mcp/*` endpoints bypass Cloudflare Access (MCP handles auth)
   - Other endpoints require Cloudflare Access JWT
 
 ### 4. Traefik Routing
-- **Dev URL**: `https://memory-dev.redleif.dev/mcp`
-- **Prod URL**: `https://memory.redleif.dev/mcp`
+- **Dev URL**: `https://memory-dev.example.com/mcp`
+- **Prod URL**: `https://memory.example.com/mcp`
 - **Labels**: Configured in `docker-compose.dev.yml` and `docker-compose.prod.yml`
 - **Middleware**: 
   - Strip `/mcp` prefix
@@ -56,7 +56,7 @@
 
 ### 1. Configure Cloudflare Access
 1. Go to Cloudflare Zero Trust Dashboard
-2. Create application for `memory-dev.redleif.dev`
+2. Create application for `memory-dev.example.com`
 3. Configure access policies
 4. Get OAuth 2.0 credentials
 
@@ -64,7 +64,7 @@
 Add to `.env.dev`:
 ```bash
 CLOUDFLARE_ACCESS_ENABLED=true
-CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
+CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 MCP_SERVER_URL=http://mcp-server:3000
 ```
 
@@ -80,7 +80,7 @@ make prod
 ### 4. Test MCP Endpoint
 ```bash
 # Health check
-curl https://memory-dev.redleif.dev/mcp/health
+curl https://memory-dev.example.com/mcp/health
 
 # Should return MCP server health status
 ```

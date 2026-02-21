@@ -6,14 +6,19 @@
 # so every Claude Code session reports back to the OM API over Tailscale.
 #
 # Usage:
-#   ssh user@host 'bash -s' < scripts/setup-remote-om.sh
-#   # or copy and run directly on the remote machine
+#   OM_HOST=my-server ./scripts/setup-remote-om.sh              # run locally
+#   ssh user@host 'OM_HOST=my-server bash -s' < scripts/setup-remote-om.sh  # via SSH
+#   scp scripts/setup-remote-om.sh user@host:/tmp/ && ssh user@host 'OM_HOST=my-server bash /tmp/setup-remote-om.sh'
+#
+# Environment variables:
+#   OM_HOST      - Tailscale MagicDNS hostname of the OM server (REQUIRED)
+#   OM_API_PORT  - OM API port (default: 8765)
 
 set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────────
-OM_HOST="redleif-hostinger"  # Tailscale MagicDNS name
-OM_API_PORT="8765"
+OM_HOST="${OM_HOST:?OM_HOST must be set to your OM server's Tailscale hostname (e.g., my-server)}"
+OM_API_PORT="${OM_API_PORT:-8765}"
 OM_API_URL="http://${OM_HOST}:${OM_API_PORT}"
 
 CLAUDE_DIR="$HOME/.claude"
@@ -139,7 +144,7 @@ cat > "$HOOKS_DIR/_lib.sh" << 'HOOKEOF'
 set -euo pipefail
 
 # ── Config ──────────────────────────────────────────────────────────
-API_URL="${OBSIDIAN_MEMORY_API_URL:-http://redleif-hostinger:8765}"
+API_URL="${OBSIDIAN_MEMORY_API_URL:-http://localhost:8765}"
 SESSION_FILE="/tmp/obsidian-memory-session.json"
 
 # Load session ID: env var first, then session file fallback
@@ -393,7 +398,7 @@ cat > "$SCRIPTS_DIR/om.sh" << 'OMEOF'
 
 set -euo pipefail
 
-API_URL="${OBSIDIAN_MEMORY_API_URL:-http://redleif-hostinger:8765}"
+API_URL="${OBSIDIAN_MEMORY_API_URL:-http://localhost:8765}"
 SESSION_FILE="/tmp/obsidian-memory-session.json"
 
 if [ -f "$SESSION_FILE" ]; then

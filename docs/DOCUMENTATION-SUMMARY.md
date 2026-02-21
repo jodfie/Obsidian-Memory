@@ -46,10 +46,10 @@ Comprehensive documentation suite created for Obsidian-Memory, optimized for bot
    - Step-by-step setup instructions
    - OAuth 2.0 configuration details
    - Actual credentials for public instance:
-     * Server URL: `https://memory.redleif.dev/mcp`
-     * Client ID: `996ac4873739812cad6edd18fbd572b150b5e0bea38fa30299b8e3f393fb6a22`
-     * Auth URL: `https://redleif.cloudflareaccess.com/cdn-cgi/access/authorize`
-     * Token URL: `https://redleif.cloudflareaccess.com/cdn-cgi/access/token`
+     * Server URL: `https://memory.example.com/mcp`
+     * Client ID: `your-oauth-client-id`
+     * Auth URL: `https://your-team.cloudflareaccess.com/cdn-cgi/access/authorize`
+     * Token URL: `https://your-team.cloudflareaccess.com/cdn-cgi/access/token`
    - Tool usage examples in Claude.ai
    - OAuth flow explanation
    - Security details

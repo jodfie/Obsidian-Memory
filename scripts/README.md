@@ -53,7 +53,7 @@ Always start with a dry run to see what will be migrated:
 
 ```bash
 python scripts/migrate_to_supabase.py \
-    --vault-path /home/redleif/Obsidian-Memory/brain \
+    --vault-path /path/to/your/vault \
     --dry-run
 ```
 
@@ -61,7 +61,7 @@ python scripts/migrate_to_supabase.py \
 
 ```bash
 python scripts/migrate_to_supabase.py \
-    --vault-path /home/redleif/Obsidian-Memory/brain
+    --vault-path /path/to/your/vault
 ```
 
 #### With SQLite Sessions
@@ -70,7 +70,7 @@ If you have existing session data in SQLite:
 
 ```bash
 python scripts/migrate_to_supabase.py \
-    --vault-path /home/redleif/Obsidian-Memory/brain \
+    --vault-path /path/to/your/vault \
     --sqlite-db /path/to/sessions.db
 ```
 
@@ -108,7 +108,7 @@ python scripts/migrate_to_supabase.py \
 The script logs progress as it runs:
 
 ```
-2026-02-05 16:30:00 - INFO - Scanning vault: /home/redleif/Obsidian-Memory/brain
+2026-02-05 16:30:00 - INFO - Scanning vault: /path/to/your/vault
 2026-02-05 16:30:00 - INFO - Found 813 markdown files
 2026-02-05 16:30:00 - INFO - Parsing markdown files...
 2026-02-05 16:30:01 - INFO - Parsed 100/813 files...

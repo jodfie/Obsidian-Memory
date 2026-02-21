@@ -16,13 +16,13 @@ BrainWiki is a read-only, Wikipedia-inspired web interface for exploring notes s
 
 ### Current State
 - **Backend:** Obsidian-Memory API running at `localhost:8765` (FastAPI/uvicorn)
-- **Existing UI:** SilverBullet at `memory.redleif.dev` — functional for editing but weak for navigation/discovery
-- **Data:** 510+ notes across multiple vaults (Brain, ADHD, etc.) and projects (secondbrain, TechKB, CoparentingSystem, etc.)
+- **Existing UI:** SilverBullet at `memory.${BASE_DOMAIN}` — functional for editing but weak for navigation/discovery
+- **Data:** 510+ notes across multiple vaults and projects
 - **Graph:** 500+ nodes, 1200+ edges
 
 ### Deployment Target
-- **VPS:** redleif-dev (194.140.199.114)
-- **Auth:** Behind Authelia at a subdomain (e.g., `wiki.redleif.dev`)
+- **VPS:** Your server with Tailscale or direct access
+- **Auth:** Behind Authelia at a subdomain (e.g., `wiki.${BASE_DOMAIN}`)
 - **Container:** Docker with reverse proxy support
 
 ---
@@ -328,7 +328,7 @@ services:
 
 ### Reverse Proxy (Caddy/Nginx)
 ```
-wiki.redleif.dev {
+wiki.example.com {
     reverse_proxy localhost:3100
 }
 ```
@@ -379,7 +379,7 @@ Ship these first:
 
 1. **Wikilink resolution** — Does the API support lookup by title/permalink, or only by ID? May need a title→ID mapping endpoint or use search.
 2. **Auth** — Authelia handles auth at the proxy level. Does the app need to pass any headers to the API?
-3. **Subdomain** — Confirm `wiki.redleif.dev` or alternative.
+3. **Subdomain** — Confirm `wiki.${BASE_DOMAIN}` or alternative.
 4. **API CORS** — If the app SSRs everything, CORS isn't needed. If client-side fetches are needed, API may need CORS headers for the wiki subdomain.
 
 ---

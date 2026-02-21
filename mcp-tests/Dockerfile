@@ -3,7 +3,7 @@
 
 FROM node:22-slim
 
-LABEL maintainer="Jody <jody@redleif.dev>"
+LABEL maintainer="Obsidian-Memory contributors"
 LABEL description="MCP Server E2E Testing Harness with pre-auth support"
 
 # Install system dependencies

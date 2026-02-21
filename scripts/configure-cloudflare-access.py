@@ -48,7 +48,7 @@ def configure_application(
         service: CloudflareService instance
         name: Application name
         domain: Application domain
-        email_domain: Email domain for access policy (e.g., @redleif.dev)
+        email_domain: Email domain for access policy (e.g., @example.com)
 
     Returns:
         Configuration result dictionary
@@ -151,13 +151,13 @@ def main() -> None:
     # Get team domain
     team_domain = get_env_or_prompt(
         "CLOUDFLARE_ACCESS_TEAM_DOMAIN",
-        "Enter Cloudflare Access team domain (e.g., redleif.cloudflareaccess.com)",
+        "Enter Cloudflare Access team domain (e.g., your-team.cloudflareaccess.com)",
     )
 
     # Get email domain for policies
     email_domain = get_env_or_prompt(
         "CLOUDFLARE_ACCESS_EMAIL_DOMAIN",
-        "Enter email domain for access policy (e.g., @redleif.dev, or leave empty to skip)",
+        "Enter email domain for access policy (e.g., @example.com, or leave empty to skip)",
         required=False,
     )
     if email_domain and not email_domain.startswith("@"):
@@ -171,7 +171,7 @@ def main() -> None:
     # Dev environment
     dev_domain = get_env_or_prompt(
         "CLOUDFLARE_ACCESS_DEV_DOMAIN",
-        "Enter dev domain (e.g., memory-dev.redleif.dev)",
+        "Enter dev domain (e.g., memory-dev.example.com)",
     )
     dev_result = configure_application(
         service=service,
@@ -183,7 +183,7 @@ def main() -> None:
     # Prod environment
     prod_domain = get_env_or_prompt(
         "CLOUDFLARE_ACCESS_PROD_DOMAIN",
-        "Enter prod domain (e.g., memory.redleif.dev, or leave empty to skip)",
+        "Enter prod domain (e.g., memory.example.com, or leave empty to skip)",
         required=False,
     )
     prod_result = None

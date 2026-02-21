@@ -19,7 +19,7 @@ Create `.mcp.json` in your project root:
     "obsidian-memory": {
       "command": "bun",
       "args": ["run", "src/index.ts"],
-      "cwd": "/home/redleif/Obsidian-Memory/mcp-server",
+      "cwd": "/path/to/Obsidian-Memory/mcp-server",
       "env": {
         "MCP_TRANSPORT": "stdio",
         "OBSIDIAN_MEMORY_API_URL": "http://localhost:8000"
@@ -39,7 +39,7 @@ Add to the `mcpServers` object in `~/.claude.json`:
     "obsidian-memory": {
       "command": "bun",
       "args": ["run", "src/index.ts"],
-      "cwd": "/home/redleif/Obsidian-Memory/mcp-server",
+      "cwd": "/path/to/Obsidian-Memory/mcp-server",
       "env": {
         "MCP_TRANSPORT": "stdio",
         "OBSIDIAN_MEMORY_API_URL": "http://localhost:8000"
@@ -51,7 +51,7 @@ Add to the `mcpServers` object in `~/.claude.json`:
 
 ### Option 3: Remote via Docker (No Local Install)
 
-If the MCP server is running in Docker (e.g., `memory.redleif.dev`), point to the API URL:
+If the MCP server is running in Docker (e.g., `memory.example.com`), point to the API URL:
 
 ```json
 {
@@ -59,10 +59,10 @@ If the MCP server is running in Docker (e.g., `memory.redleif.dev`), point to th
     "obsidian-memory": {
       "command": "bun",
       "args": ["run", "src/index.ts"],
-      "cwd": "/home/redleif/Obsidian-Memory/mcp-server",
+      "cwd": "/path/to/Obsidian-Memory/mcp-server",
       "env": {
         "MCP_TRANSPORT": "stdio",
-        "OBSIDIAN_MEMORY_API_URL": "https://memory.redleif.dev/api"
+        "OBSIDIAN_MEMORY_API_URL": "https://memory.example.com/api"
       }
     }
   }

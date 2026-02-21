@@ -1,12 +1,12 @@
-# Cloudflare Access Setup for memory-dev.redleif.dev
+# Cloudflare Access Setup for memory-dev.example.com
 
-This guide explains how to configure Cloudflare Access to protect `memory-dev.redleif.dev` behind OAuth 2.0 authentication.
+This guide explains how to configure Cloudflare Access to protect `memory-dev.example.com` behind OAuth 2.0 authentication.
 
 ## Overview
 
 Cloudflare Access provides OAuth 2.0 authentication at the Cloudflare edge, before requests reach your application. The flow is:
 
-1. User requests `https://memory-dev.redleif.dev`
+1. User requests `https://memory-dev.example.com`
 2. Cloudflare Access intercepts (if not authenticated)
 3. User authenticates via OAuth 2.0 (Google, GitHub, etc.)
 4. Cloudflare injects `CF-Access-JWT` header
@@ -15,7 +15,7 @@ Cloudflare Access provides OAuth 2.0 authentication at the Cloudflare edge, befo
 
 ## Prerequisites
 
-- Domain `memory-dev.redleif.dev` must be:
+- Domain `memory-dev.example.com` must be:
   - Added to Cloudflare DNS
   - Proxied through Cloudflare (orange cloud enabled)
   - Accessible via Cloudflare Tunnel or direct connection
@@ -39,7 +39,7 @@ Cloudflare Access provides OAuth 2.0 authentication at the Cloudflare edge, befo
 
 4. **Application Domain**
    ```
-   Application domain: memory-dev.redleif.dev
+   Application domain: memory-dev.example.com
    ```
 
 5. **Add Policy**
@@ -47,7 +47,7 @@ Cloudflare Access provides OAuth 2.0 authentication at the Cloudflare edge, befo
    - **Policy name**: `Allow authenticated users`
    - **Action**: Allow
    - **Include**:
-     - Email domain: `@redleif.dev` (or your domain)
+     - Email domain: `@example.com` (or your domain)
      - Or specific emails
    - **Save policy**
 
@@ -83,7 +83,7 @@ The docker-compose labels already include header forwarding middleware.
 ```bash
 # Set secrets in Infisical
 infisical-cli secrets set CLOUDFLARE_ACCESS_ENABLED=true
-infisical-cli secrets set CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
+infisical-cli secrets set CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 
 # Export to .env.dev
 infisical-cli export --format=dotenv --env=dev > .env.dev
@@ -94,7 +94,7 @@ infisical-cli export --format=dotenv --env=dev > .env.dev
 Edit `.env.dev`:
 ```bash
 CLOUDFLARE_ACCESS_ENABLED=true
-CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
+CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 ```
 
 ## Step 5: Deploy and Test
@@ -104,10 +104,10 @@ CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
 make dev
 
 # Test access
-curl -I https://memory-dev.redleif.dev/health
+curl -I https://memory-dev.example.com/health
 # Should return 200 (health check is public)
 
-curl -I https://memory-dev.redleif.dev/
+curl -I https://memory-dev.example.com/
 # Should redirect to Cloudflare Access login if not authenticated
 ```
 

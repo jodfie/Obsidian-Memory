@@ -84,7 +84,7 @@ if [[ "$USE_INFISICAL" == "true" ]]; then
     echo ""
 
     # Get values from user or use defaults
-    read -p "Enter Cloudflare Access team domain (e.g., redleif.cloudflareaccess.com): " TEAM_DOMAIN
+    read -p "Enter Cloudflare Access team domain (e.g., your-team.cloudflareaccess.com): " TEAM_DOMAIN
     if [[ -z "$TEAM_DOMAIN" ]]; then
         echo "❌ Error: Team domain is required"
         exit 1

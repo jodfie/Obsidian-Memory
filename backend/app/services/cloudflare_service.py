@@ -75,7 +75,7 @@ class CloudflareService:
         """Get an Access application by domain.
 
         Args:
-            domain: Application domain (e.g., memory-dev.redleif.dev)
+            domain: Application domain (e.g., memory-dev.example.com)
 
         Returns:
             Application dictionary or None if not found

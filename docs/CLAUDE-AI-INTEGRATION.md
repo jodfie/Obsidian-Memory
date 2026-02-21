@@ -17,15 +17,15 @@ Claude.ai can connect to your Obsidian-Memory instance via the MCP (Model Contex
 
 ## Connection Details
 
-For the public instance at `memory.redleif.dev`:
+For the public instance at `memory.example.com`:
 
 | Setting | Value |
 |---------|-------|
-| **Server URL** | `https://memory.redleif.dev/mcp` |
-| **OAuth Client ID** | `996ac4873739812cad6edd18fbd572b150b5e0bea38fa30299b8e3f393fb6a22` |
+| **Server URL** | `https://memory.example.com/mcp` |
+| **OAuth Client ID** | `your-oauth-client-id` |
 | **OAuth Client Secret** | `pkce_no_secret_required` (PKCE mode) |
-| **Authorization URL** | `https://redleif.cloudflareaccess.com/cdn-cgi/access/authorize` |
-| **Token URL** | `https://redleif.cloudflareaccess.com/cdn-cgi/access/token` |
+| **Authorization URL** | `https://your-team.cloudflareaccess.com/cdn-cgi/access/authorize` |
+| **Token URL** | `https://your-team.cloudflareaccess.com/cdn-cgi/access/token` |
 
 ## Step-by-Step Setup
 
@@ -45,7 +45,7 @@ Click **Add MCP Server** and fill in the details:
 ```
 Name: Obsidian-Memory
 Description: Persistent memory system with knowledge graph
-Server URL: https://memory.redleif.dev/mcp
+Server URL: https://memory.example.com/mcp
 Transport: SSE (Server-Sent Events)
 ```
 
@@ -53,10 +53,10 @@ Transport: SSE (Server-Sent Events)
 ```
 Authentication Type: OAuth 2.0
 OAuth Provider: Custom
-Client ID: 996ac4873739812cad6edd18fbd572b150b5e0bea38fa30299b8e3f393fb6a22
+Client ID: your-oauth-client-id
 Client Secret: pkce_no_secret_required
-Authorization URL: https://redleif.cloudflareaccess.com/cdn-cgi/access/authorize
-Token URL: https://redleif.cloudflareaccess.com/cdn-cgi/access/token
+Authorization URL: https://your-team.cloudflareaccess.com/cdn-cgi/access/authorize
+Token URL: https://your-team.cloudflareaccess.com/cdn-cgi/access/token
 Scope: (leave empty - uses default scopes)
 ```
 
@@ -205,7 +205,7 @@ Claude will use `graph_traverse`:
 **Solutions**:
 ```bash
 # Test server accessibility
-curl https://memory.redleif.dev/mcp/health
+curl https://memory.example.com/mcp/health
 
 # Expected response:
 # {"status":"ok"}
@@ -233,10 +233,10 @@ curl https://memory.redleif.dev/mcp/health
 **Solutions**:
 ```bash
 # Check MCP server health
-curl https://memory.redleif.dev/mcp/health
+curl https://memory.example.com/mcp/health
 
 # Check backend health
-curl https://memory.redleif.dev/health
+curl https://memory.example.com/health
 
 # View MCP server logs (if you have access)
 docker logs memory-mcp

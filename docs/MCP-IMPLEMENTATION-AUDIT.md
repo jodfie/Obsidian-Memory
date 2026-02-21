@@ -302,7 +302,7 @@ function buildSecurityHeaders(setCookie: string, nonce?: string) {
 
 5. **Deploy and update DNS**
    - Deploy Worker: `wrangler deploy`
-   - Update mcp.redleif.dev to point to Worker
+   - Update memory.example.com to point to Worker
 
 ---
 
@@ -321,8 +321,8 @@ The root cause is likely the incomplete SSE transport. When Claude.ai sends tool
 
 ```bash
 # Test OAuth endpoints
-curl -I https://mcp.redleif.dev/.well-known/oauth-authorization-server
-curl -I https://mcp.redleif.dev/authorize?response_type=code&client_id=...&redirect_uri=...
+curl -I https://memory.example.com/.well-known/oauth-authorization-server
+curl -I https://memory.example.com/authorize?response_type=code&client_id=...&redirect_uri=...
 ```
 
 ### Priority 3: Check server logs during Claude.ai connection
@@ -342,7 +342,7 @@ docker logs -f memory
 ```env
 # Current (working)
 CLOUDFLARE_ACCESS_ENABLED=true
-CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
+CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 
 # Needed for OAuth
 CLOUDFLARE_OAUTH_CLIENT_ID=<from BWS>

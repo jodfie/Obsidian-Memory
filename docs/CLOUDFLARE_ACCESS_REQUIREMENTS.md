@@ -1,4 +1,4 @@
-# Cloudflare Access Requirements for memory-dev.redleif.dev
+# Cloudflare Access Requirements for memory-dev.example.com
 
 ## Critical: Cloudflare Access Must Be Configured in Cloudflare Zero Trust
 
@@ -8,7 +8,7 @@
 
 ### 1. Cloudflare Zero Trust Configuration (REQUIRED)
 
-The domain `memory-dev.redleif.dev` MUST be configured in Cloudflare Zero Trust Access:
+The domain `memory-dev.example.com` MUST be configured in Cloudflare Zero Trust Access:
 
 1. **Go to Cloudflare Zero Trust Dashboard**
    - URL: https://one.dash.cloudflare.com
@@ -16,7 +16,7 @@ The domain `memory-dev.redleif.dev` MUST be configured in Cloudflare Zero Trust 
 
 2. **Create Application**
    - Application name: `Obsidian-Memory Dev`
-   - Application domain: `memory-dev.redleif.dev`
+   - Application domain: `memory-dev.example.com`
    - Select **Self-hosted**
 
 3. **Configure Access Policy**
@@ -31,7 +31,7 @@ The domain `memory-dev.redleif.dev` MUST be configured in Cloudflare Zero Trust 
 
 ### 2. DNS Configuration
 
-Ensure `memory-dev.redleif.dev`:
+Ensure `memory-dev.example.com`:
 - ✅ Is added to Cloudflare DNS
 - ✅ Has proxy enabled (orange cloud ☁️)
 - ✅ Points to your server/Traefik
@@ -40,7 +40,7 @@ Ensure `memory-dev.redleif.dev`:
 
 If using Cloudflare Tunnel:
 - ✅ Tunnel is running
-- ✅ Route configured: `memory-dev.redleif.dev` → `http://traefik:80`
+- ✅ Route configured: `memory-dev.example.com` → `http://traefik:80`
 - ✅ Access application is linked to the tunnel route
 
 ### 4. Application Configuration
@@ -53,7 +53,7 @@ The application is already configured to:
 **Environment variables needed:**
 ```bash
 CLOUDFLARE_ACCESS_ENABLED=true
-CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
+CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 ```
 
 ### 5. Traefik Configuration
@@ -87,13 +87,13 @@ Application Logic
 
 ### Before Cloudflare Access is Configured:
 ```bash
-curl https://memory-dev.redleif.dev/
+curl https://memory-dev.example.com/
 # Returns: 200 OK (no protection)
 ```
 
 ### After Cloudflare Access is Configured:
 ```bash
-curl https://memory-dev.redleif.dev/
+curl https://memory-dev.example.com/
 # Returns: 302 Redirect to Cloudflare Access login
 # Or: 401 if CF-Access-JWT header missing
 ```
@@ -101,7 +101,7 @@ curl https://memory-dev.redleif.dev/
 ### With Valid Authentication:
 ```bash
 # After logging in via browser, Cloudflare injects JWT
-curl -H "CF-Access-JWT: <token>" https://memory-dev.redleif.dev/
+curl -H "CF-Access-JWT: <token>" https://memory-dev.example.com/
 # Returns: 200 OK with application response
 ```
 
@@ -134,7 +134,7 @@ infisical-cli export --format=dotenv --env=dev > .env.dev
 
 ## Verification Checklist
 
-- [ ] Domain `memory-dev.redleif.dev` added to Cloudflare DNS
+- [ ] Domain `memory-dev.example.com` added to Cloudflare DNS
 - [ ] DNS proxy enabled (orange cloud)
 - [ ] Cloudflare Access application created in Zero Trust
 - [ ] Access policy configured with allowed users
@@ -151,7 +151,7 @@ infisical-cli export --format=dotenv --env=dev > .env.dev
 
 **Problem**: Domain not configured in Cloudflare Access.
 
-**Solution**: Create application in Cloudflare Zero Trust for `memory-dev.redleif.dev`.
+**Solution**: Create application in Cloudflare Zero Trust for `memory-dev.example.com`.
 
 ### "CF-Access-JWT header missing"
 

@@ -14,7 +14,7 @@ Complete integration skill for using **Obsidian-Memory** in **OpenClaw/Clawdbot*
 - Environment variables set:
 
 ```bash
-export OBSIDIAN_MEMORY_API_URL="https://memory.redleif.dev/api"
+export OBSIDIAN_MEMORY_API_URL="https://memory.example.com/api"
 export OBSIDIAN_MEMORY_API_KEY="your-api-key"  # if auth enabled
 ```
 

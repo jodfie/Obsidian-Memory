@@ -109,7 +109,7 @@ docker exec memory env | grep -E "HOST|PORT"
 curl http://localhost:3000/health
 
 # For remote access
-curl https://memory.redleif.dev/mcp/health
+curl https://memory.example.com/mcp/health
 
 # Check container status
 docker ps | grep mcp
@@ -181,7 +181,7 @@ docker exec memory env | grep API_TOKEN
 **Diagnostic**:
 ```bash
 # Check Cloudflare Access configuration
-curl -I https://memory.redleif.dev/health
+curl -I https://memory.example.com/health
 
 # View Cloudflare Access logs
 # (Cloudflare Zero Trust dashboard → Logs)
@@ -194,7 +194,7 @@ curl -I https://memory.redleif.dev/health
 4. Test authentication flow:
    ```bash
    # Browser should redirect to Cloudflare login
-   open https://memory.redleif.dev/api/notes
+   open https://memory.example.com/api/notes
    ```
 
 ### OAuth Token Expired
@@ -261,7 +261,7 @@ docker-compose up -d memory-mcp
 **Diagnostic**:
 ```bash
 # Test tool discovery
-curl https://memory.redleif.dev/mcp -X POST \
+curl https://memory.example.com/mcp -X POST \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```
@@ -287,7 +287,7 @@ curl https://memory.redleif.dev/mcp -X POST \
 KEEPALIVE_TIMEOUT=300
 
 # Check for network interruptions
-ping memory.redleif.dev
+ping memory.example.com
 ```
 
 ## Backend API Issues

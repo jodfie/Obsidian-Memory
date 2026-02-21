@@ -3,7 +3,7 @@
 # Run this ONCE locally to obtain OAuth tokens, then use them in CI/CD
 # 
 # Usage: ./obtain-tokens.sh <MCP_SERVER_URL>
-# Example: ./obtain-tokens.sh https://mcp.redleif.dev/sse
+# Example: ./obtain-tokens.sh https://memory.example.com/sse
 
 set -e
 
@@ -11,7 +11,7 @@ MCP_URL="${1:-}"
 
 if [ -z "$MCP_URL" ]; then
     echo "Usage: $0 <MCP_SERVER_URL>"
-    echo "Example: $0 https://mcp.redleif.dev/sse"
+    echo "Example: $0 https://memory.example.com/sse"
     exit 1
 fi
 

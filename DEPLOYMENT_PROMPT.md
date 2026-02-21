@@ -85,7 +85,7 @@ Development overrides:
 - Build target: `dev`
 - Port mapping: `8766:8765` (different port for dev)
 - Hot reload volume mount: `./backend:/app/backend:cached`
-- Traefik labels for `memory-dev.redleif.dev`
+- Traefik labels for `memory-dev.example.com`
 - Debug logging enabled
 
 ### 3.4 Create docker-compose.prod.yml
@@ -94,7 +94,7 @@ Production overrides:
 - Container name: `memory`
 - Build target: `prod`
 - Resource limits: 512M memory, 0.5 CPU
-- Traefik labels for `memory.redleif.dev`
+- Traefik labels for `memory.example.com`
 - Log rotation configured
 - Health check with longer start period
 
@@ -211,8 +211,8 @@ Verify all items are complete:
 
 - [ ] Dockerfile with multi-stage build (dev/prod targets)
 - [ ] docker-compose.yml (base config)
-- [ ] docker-compose.dev.yml (dev overrides with Traefik labels for memory-dev.redleif.dev)
-- [ ] docker-compose.prod.yml (prod overrides with Traefik labels for memory.redleif.dev)
+- [ ] docker-compose.dev.yml (dev overrides with Traefik labels for memory-dev.example.com)
+- [ ] docker-compose.prod.yml (prod overrides with Traefik labels for memory.example.com)
 - [ ] .env.example template
 - [ ] .env.dev.example and .env.prod.example templates
 - [ ] .gitignore updated
@@ -223,8 +223,8 @@ Verify all items are complete:
 - [ ] .github/workflows/docker-publish.yml (GHCR)
 - [ ] DEPLOY.md documentation
 - [ ] Git branches created (dev, main)
-- [ ] Dev environment tested and accessible at https://memory-dev.redleif.dev
-- [ ] Prod environment tested and accessible at https://memory.redleif.dev
+- [ ] Dev environment tested and accessible at https://memory-dev.example.com
+- [ ] Prod environment tested and accessible at https://memory.example.com
 
 ---
 
@@ -249,7 +249,7 @@ make health-dev
 # Or: curl http://localhost:8766/health
 
 # 5. Check Traefik routing
-# Access https://memory-dev.redleif.dev/health
+# Access https://memory-dev.example.com/health
 ```
 
 ### Production Testing
@@ -267,7 +267,7 @@ make health
 # Or: curl http://localhost:8765/health
 
 # 4. Check Traefik routing
-# Access https://memory.redleif.dev/health
+# Access https://memory.example.com/health
 ```
 
 ---
@@ -279,8 +279,8 @@ The deployment assumes:
 - `proxy` network exists (external)
 - Cloudflare DNS resolver configured
 - Domains configured:
-  - `memory-dev.redleif.dev` → points to Traefik
-  - `memory.redleif.dev` → points to Traefik
+  - `memory-dev.example.com` → points to Traefik
+  - `memory.example.com` → points to Traefik
 
 If Traefik is not available, modify the compose files to:
 - Remove Traefik labels
@@ -296,8 +296,8 @@ When complete, output:
 <promise>DEPLOYMENT_COMPLETE</promise>
 
 Status:
-- Dev: https://memory-dev.redleif.dev (ready/tested)
-- Prod: https://memory.redleif.dev (ready/tested)
+- Dev: https://memory-dev.example.com (ready/tested)
+- Prod: https://memory.example.com (ready/tested)
 ```
 
 If testing cannot be completed (e.g., Docker/Traefik not available), note:
@@ -305,8 +305,8 @@ If testing cannot be completed (e.g., Docker/Traefik not available), note:
 <promise>DEPLOYMENT_COMPLETE</promise>
 
 Status:
-- Dev: https://memory-dev.redleif.dev (infrastructure ready, testing requires Docker/Traefik)
-- Prod: https://memory.redleif.dev (infrastructure ready, testing requires Docker/Traefik)
+- Dev: https://memory-dev.example.com (infrastructure ready, testing requires Docker/Traefik)
+- Prod: https://memory.example.com (infrastructure ready, testing requires Docker/Traefik)
 ```
 
 ---

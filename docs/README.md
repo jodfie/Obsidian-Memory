@@ -90,7 +90,7 @@ Uses stdio transport. Hooks auto-capture session data.
 ### 2. Claude.ai (Remote)
 Uses SSE transport with OAuth 2.0 authentication via Cloudflare Access.
 
-- **Server URL**: `https://memory.redleif.dev/mcp`
+- **Server URL**: `https://memory.example.com/mcp`
 - **OAuth Provider**: Cloudflare Access OIDC
 - See [Claude.ai Integration](CLAUDE-AI-INTEGRATION.md) for setup
 
@@ -101,7 +101,7 @@ Uses Streamable HTTP transport.
 {
   "mcpServers": {
     "obsidian-memory": {
-      "url": "https://memory.redleif.dev/mcp"
+      "url": "https://memory.example.com/mcp"
     }
   }
 }

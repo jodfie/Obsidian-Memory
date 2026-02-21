@@ -162,7 +162,7 @@ After configuring credentials:
 2. Set Cloudflare Access secrets:
    ```bash
    infisical-cli secrets set CLOUDFLARE_ACCESS_ENABLED=true
-   infisical-cli secrets set CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
+   infisical-cli secrets set CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
    ```
 3. Export to `.env.dev`:
    ```bash

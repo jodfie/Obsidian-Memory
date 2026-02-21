@@ -5,8 +5,8 @@ This guide explains how to integrate the Obsidian-Memory MCP server with Cursor 
 ## Overview
 
 The Obsidian-Memory MCP server is accessible via:
-- **Development**: `https://memory-dev.redleif.dev/mcp`
-- **Production**: `https://memory.redleif.dev/mcp`
+- **Development**: `https://memory-dev.example.com/mcp`
+- **Production**: `https://memory.example.com/mcp`
 
 The server uses Server-Sent Events (SSE) transport and is protected by Cloudflare Access OAuth 2.0.
 
@@ -20,12 +20,12 @@ The server uses Server-Sent Events (SSE) transport and is protected by Cloudflar
 4. Select **Self-hosted**
 5. Configure:
    - **Application name**: `Obsidian-Memory Dev` (or `Obsidian-Memory Prod`)
-   - **Application domain**: `memory-dev.redleif.dev` (or `memory.redleif.dev`)
+   - **Application domain**: `memory-dev.example.com` (or `memory.example.com`)
    - **Session duration**: Choose appropriate duration
 6. Add **Policy**:
    - **Policy name**: `Allow authenticated users`
    - **Action**: Allow
-   - **Include**: Email domain (e.g., `@redleif.dev`) or specific emails
+   - **Include**: Email domain (e.g., `@example.com`) or specific emails
 7. Save the application
 
 ### 2. Configure Traefik to Forward Cloudflare Access Headers
@@ -41,7 +41,7 @@ Set in `.env.dev` or `.env.prod`:
 
 ```bash
 CLOUDFLARE_ACCESS_ENABLED=true
-CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
+CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 ```
 
 ## Claude.ai Integration
@@ -53,13 +53,13 @@ CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
 3. Click **Add Server**
 4. Configure:
    - **Name**: `Obsidian-Memory`
-   - **Server URL**: `https://memory.redleif.dev/mcp`
+   - **Server URL**: `https://memory.example.com/mcp`
    - **Authentication**:
      - Type: `OAuth 2.0`
-     - Client ID: `996ac4873739812cad6edd18fbd572b150b5e0bea38fa30299b8e3f393fb6a22`
+     - Client ID: `your-oauth-client-id`
      - Client Secret: `pkce_no_secret_required`
-     - Authorization URL: `https://redleif.cloudflareaccess.com/cdn-cgi/access/authorize`
-     - Token URL: `https://redleif.cloudflareaccess.com/cdn-cgi/access/token`
+     - Authorization URL: `https://your-team.cloudflareaccess.com/cdn-cgi/access/authorize`
+     - Token URL: `https://your-team.cloudflareaccess.com/cdn-cgi/access/token`
 5. Click **Save** and authorize when prompted
 
 **Note**: The server URL is `/mcp` (not `/mcp/sse`). The SSE endpoints are handled automatically by the MCP protocol.
@@ -79,7 +79,7 @@ Once configured, you can use MCP tools in Claude.ai:
 This repo includes a Cursor MCP config. Open the project in Cursor and the Obsidian-Memory server is available:
 
 - **Config file**: `.cursor/mcp.json`
-- **URL**: `https://memory.redleif.dev/mcp` (Streamable HTTP; Cursor auto-detects transport)
+- **URL**: `https://memory.example.com/mcp` (Streamable HTTP; Cursor auto-detects transport)
 
 If your instance is behind Cloudflare Access, use **Settings → MCP → obsidian-memory → Login** (or `agent mcp login obsidian-memory` in the CLI). For static OAuth, add an `auth` block to `mcp.json` (see below).
 
@@ -91,7 +91,7 @@ If your instance is behind Cloudflare Access, use **Settings → MCP → obsidia
 {
   "mcpServers": {
     "obsidian-memory": {
-      "url": "https://memory.redleif.dev/mcp",
+      "url": "https://memory.example.com/mcp",
       "headers": {}
     }
   }
@@ -104,7 +104,7 @@ If your instance is behind Cloudflare Access, use **Settings → MCP → obsidia
 {
   "mcpServers": {
     "obsidian-memory": {
-      "url": "https://memory.redleif.dev/mcp",
+      "url": "https://memory.example.com/mcp",
       "auth": {
         "CLIENT_ID": "your-oauth-client-id",
         "CLIENT_SECRET": "your-oauth-client-secret"
@@ -150,18 +150,18 @@ Config locations: project `.cursor/mcp.json` (project-specific) or global `~/.cu
 ## MCP Endpoints
 
 ### SSE Endpoint
-- **URL**: `https://memory-dev.redleif.dev/mcp/sse`
+- **URL**: `https://memory-dev.example.com/mcp/sse`
 - **Method**: `GET`
 - **Purpose**: Server-Sent Events stream for receiving messages from MCP server
 
 ### Message Endpoint
-- **URL**: `https://memory-dev.redleif.dev/mcp/message`
+- **URL**: `https://memory-dev.example.com/mcp/message`
 - **Method**: `POST`
 - **Purpose**: Send JSON-RPC requests to MCP server
 - **Content-Type**: `application/json`
 
 ### Health Check
-- **URL**: `https://memory-dev.redleif.dev/mcp/health`
+- **URL**: `https://memory-dev.example.com/mcp/health`
 - **Method**: `GET`
 - **Purpose**: Check MCP server health
 
@@ -206,7 +206,7 @@ If you get authentication errors:
 
 If MCP server doesn't connect:
 
-1. Check MCP server health: `curl https://memory-dev.redleif.dev/mcp/health`
+1. Check MCP server health: `curl https://memory-dev.example.com/mcp/health`
 2. Verify MCP server container is running: `docker ps | grep mcp`
 3. Check MCP server logs: `docker logs memory-mcp-dev`
 4. Verify network connectivity between containers
@@ -230,13 +230,13 @@ If you see CORS errors:
 ## Development vs Production
 
 ### Development
-- URL: `https://memory-dev.redleif.dev/mcp`
+- URL: `https://memory-dev.example.com/mcp`
 - MCP Server Container: `memory-mcp-dev`
 - Backend Container: `memory-dev`
 - Hot reload enabled for backend
 
 ### Production
-- URL: `https://memory.redleif.dev/mcp`
+- URL: `https://memory.example.com/mcp`
 - MCP Server Container: `memory-mcp`
 - Backend Container: `memory`
 - Resource limits applied

@@ -32,14 +32,14 @@
    - Click **Add an application**
    - Select **Self-hosted**
    - Application name: `Obsidian-Memory Dev` (or `Obsidian-Memory Prod`)
-   - Application domain: `memory-dev.redleif.dev` (dev) or `memory.redleif.dev` (prod)
+   - Application domain: `memory-dev.example.com` (dev) or `memory.example.com` (prod)
 
 3. **Configure Access Policy**
    - Click **Add a policy**
    - Policy name: `Allow authenticated users`
    - Action: **Allow**
    - Include:
-     - Email domain: `@redleif.dev` (or your domain)
+     - Email domain: `@example.com` (or your domain)
      - Or specific email addresses
    - Save policy
 
@@ -51,15 +51,15 @@
 
 Ensure your domain is properly configured:
 
-- [ ] Domain `memory-dev.redleif.dev` (dev) added to Cloudflare DNS
-- [ ] Domain `memory.redleif.dev` (prod) added to Cloudflare DNS
+- [ ] Domain `memory-dev.example.com` (dev) added to Cloudflare DNS
+- [ ] Domain `memory.example.com` (prod) added to Cloudflare DNS
 - [ ] DNS proxy enabled (orange cloud ☁️) - **CRITICAL**
 - [ ] DNS points to your server/Traefik or Cloudflare Tunnel
 
 **To check:**
 ```bash
 # DNS should show Cloudflare IPs when proxied
-dig memory-dev.redleif.dev
+dig memory-dev.example.com
 # Should show Cloudflare IPs (not your server IP)
 ```
 
@@ -68,8 +68,8 @@ dig memory-dev.redleif.dev
 If you're using Cloudflare Tunnel instead of direct connection:
 
 - [ ] Cloudflare Tunnel is running (cloudflared daemon)
-- [ ] Route configured: `memory-dev.redleif.dev` → `http://traefik:80`
-- [ ] Route configured: `memory.redleif.dev` → `http://traefik:80`
+- [ ] Route configured: `memory-dev.example.com` → `http://traefik:80`
+- [ ] Route configured: `memory.example.com` → `http://traefik:80`
 - [ ] Access application is linked to the tunnel route
 
 **Tunnel configuration example:**
@@ -79,9 +79,9 @@ tunnel: <tunnel-id>
 credentials-file: /path/to/credentials.json
 
 ingress:
-  - hostname: memory-dev.redleif.dev
+  - hostname: memory-dev.example.com
     service: http://traefik:80
-  - hostname: memory.redleif.dev
+  - hostname: memory.example.com
     service: http://traefik:80
   - service: http_status:404
 ```
@@ -109,11 +109,11 @@ If you prefer to set secrets manually:
 ```bash
 # Set Cloudflare Access secrets for dev environment
 infisical-cli secrets set CLOUDFLARE_ACCESS_ENABLED=true --env=dev
-infisical-cli secrets set CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com --env=dev
+infisical-cli secrets set CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com --env=dev
 
 # Set Cloudflare Access secrets for prod environment
 infisical-cli secrets set CLOUDFLARE_ACCESS_ENABLED=true --env=prod
-infisical-cli secrets set CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com --env=prod
+infisical-cli secrets set CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com --env=prod
 
 # Export to .env files (optional, for local development)
 infisical-cli export --format=dotenv --env=dev > .env.dev
@@ -127,16 +127,16 @@ If not using Infisical, set these in your `.env.dev` and `.env.prod` files:
 **Development (.env.dev):**
 ```bash
 CLOUDFLARE_ACCESS_ENABLED=true
-CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
+CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 ```
 
 **Production (.env.prod):**
 ```bash
 CLOUDFLARE_ACCESS_ENABLED=true
-CLOUDFLARE_ACCESS_TEAM_DOMAIN=redleif.cloudflareaccess.com
+CLOUDFLARE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
 ```
 
-**Important:** Replace `redleif.cloudflareaccess.com` with your actual Cloudflare Access team domain. You can find this in:
+**Important:** Replace `your-team.cloudflareaccess.com` with your actual Cloudflare Access team domain. You can find this in:
 - Cloudflare Zero Trust Dashboard → Access → Applications → Your Application
 - It's typically: `<your-team-name>.cloudflareaccess.com`
 
@@ -166,20 +166,20 @@ If you haven't configured an identity provider:
 
 2. **Test unauthenticated access:**
    ```bash
-   curl -I https://memory-dev.redleif.dev/
+   curl -I https://memory-dev.example.com/
    # Should return: 302 Redirect to Cloudflare Access login
    # Or: 401 if CF-Access-JWT header missing
    ```
 
 3. **Test authenticated access:**
-   - Open browser: https://memory-dev.redleif.dev/
+   - Open browser: https://memory-dev.example.com/
    - Should redirect to Cloudflare Access login
    - Authenticate with your identity provider
    - Should redirect back to application
 
 4. **Test health endpoint (public):**
    ```bash
-   curl https://memory-dev.redleif.dev/health
+   curl https://memory-dev.example.com/health
    # Should return: 200 OK (health check is public)
    ```
 

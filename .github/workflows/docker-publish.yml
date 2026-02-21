@@ -179,7 +179,7 @@ jobs:
     steps:
       - name: Trigger deployment webhook
         run: |
-          curl -X POST https://memory.redleif.dev/api/deploy/webhook \
+          curl -X POST https://memory.example.com/api/deploy/webhook \
             -H "Authorization: Bearer ${{ secrets.DEPLOY_WEBHOOK_SECRET }}" \
             -H "Content-Type: application/json" \
             -d '{"event":"push","ref":"${{ github.ref }}","sha":"${{ github.sha }}"}'

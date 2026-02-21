@@ -61,7 +61,7 @@ When adding MCP server in Claude.ai, use these exact values:
 
 **MCP Server URL:**
 ```
-https://memory.redleif.dev/mcp
+https://memory.example.com/mcp
 ```
 
 **OAuth Configuration:**

@@ -1,12 +1,12 @@
 {
   "servers": {
     "basicmemory": {
-      "url": "https://mcp.redleif.dev/mcp",
+      "url": "https://memory.example.com/mcp",
       "transport": "streamable-http",
       "description": "BasicMemory MCP Server"
     },
     "basicmemory-sse": {
-      "url": "https://mcp.redleif.dev/sse", 
+      "url": "https://memory.example.com/sse", 
       "transport": "sse",
       "description": "BasicMemory MCP Server (SSE)"
     }

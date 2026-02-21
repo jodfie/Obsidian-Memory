@@ -4,13 +4,14 @@
 import asyncio
 import json
 import hashlib
+import os
 from pathlib import Path
 from datetime import datetime
 
 import aiosqlite
 import frontmatter
 
-VAULTS_DIR = Path("/home/redleif/vaults")
+VAULTS_DIR = Path(os.environ.get("VAULT_PATH", "/vaults"))
 DB_PATH = Path.home() / ".obsidian-memory" / "search.db"
 
 async def create_schema(db):
