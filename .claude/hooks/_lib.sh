@@ -7,6 +7,7 @@ set -euo pipefail
 # ── Config ──────────────────────────────────────────────────────────
 API_URL="${OBSIDIAN_MEMORY_API_URL:-http://localhost:8765}"
 SESSION_FILE="/tmp/obsidian-memory-session.json"
+_HOOK_WARNINGS=()
 
 # Load session ID: env var first, then session file fallback
 SESSION_ID="${OBSIDIAN_MEMORY_SESSION_ID:-}"
@@ -19,44 +20,142 @@ fi
 INPUT=""
 read_input() {
   INPUT=$(cat 2>/dev/null || echo '{}')
-  # Validate it's JSON; if not, reset to empty object
   if ! echo "$INPUT" | jq empty 2>/dev/null; then
     INPUT='{}'
   fi
 }
 
-# Extract a field from INPUT. Returns empty string on missing/null.
 field() {
   echo "$INPUT" | jq -r ".$1 // empty" 2>/dev/null || echo ""
 }
 
+# ── Warning infrastructure ──────────────────────────────────────────
+# Collect warnings during hook execution. These get surfaced to Claude
+# via additionalContext so failures are visible, not silent.
+hook_warn() {
+  local msg="$1"
+  _HOOK_WARNINGS+=("$msg")
+  echo "[obsidian-memory] WARNING: $msg" >&2
+}
+
+# Output collected warnings as hook JSON. Call at end of sync hooks.
+# Returns non-empty JSON if there are warnings, empty string if clean.
+emit_warnings() {
+  if [ ${#_HOOK_WARNINGS[@]} -eq 0 ]; then
+    return
+  fi
+  local joined=""
+  for w in "${_HOOK_WARNINGS[@]}"; do
+    [ -n "$joined" ] && joined="$joined; "
+    joined="$joined$w"
+  done
+  jq -n --arg ctx "[OM] $joined" '{
+    hookSpecificOutput: {
+      hookEventName: "ObsidianMemory",
+      additionalContext: $ctx
+    }
+  }'
+}
+
 # ── Session guard ───────────────────────────────────────────────────
+# Use require_session for hooks that need a session but should not
+# block if one doesn't exist. Warns instead of silently exiting.
 require_session() {
   if [ -z "$SESSION_ID" ]; then
+    hook_warn "No OM session active. Session tracking is disabled for this hook."
+    emit_warnings
     exit 0
   fi
 }
 
 # ── API helpers ─────────────────────────────────────────────────────
+# Returns response body. Sets _API_HTTP_CODE to HTTP status.
+_API_HTTP_CODE=""
+
 api_get() {
-  curl -sf --connect-timeout 2 --max-time 5 \
+  local response
+  _API_HTTP_CODE=""
+  response=$(curl -s --connect-timeout 2 --max-time 5 \
+    -w "\n%{http_code}" \
     -H "Content-Type: application/json" \
-    "${API_URL}/$1" 2>/dev/null || echo ""
+    "${API_URL}/$1" 2>/dev/null) || { echo ""; return 1; }
+  _API_HTTP_CODE=$(echo "$response" | tail -1)
+  echo "$response" | sed '$d'
 }
 
 api_post() {
   local endpoint="$1"
   local data="$2"
-  curl -sf --connect-timeout 2 --max-time 5 \
+  local response
+  _API_HTTP_CODE=""
+  response=$(curl -s --connect-timeout 2 --max-time 5 \
+    -w "\n%{http_code}" \
     -X POST \
     -H "Content-Type: application/json" \
     -d "$data" \
-    "${API_URL}/${endpoint}" 2>/dev/null || echo ""
+    "${API_URL}/${endpoint}" 2>/dev/null) || { echo ""; return 1; }
+  _API_HTTP_CODE=$(echo "$response" | tail -1)
+  echo "$response" | sed '$d'
 }
 
 is_backend_up() {
   curl -sf --connect-timeout 2 --max-time 3 \
     "${API_URL}/health" >/dev/null 2>&1
+}
+
+# ── Session validation ──────────────────────────────────────────────
+# Checks if the current SESSION_ID is still valid on the backend.
+# Returns 0 if valid, 1 if not (404, unreachable, etc).
+validate_session() {
+  if [ -z "$SESSION_ID" ]; then
+    return 1
+  fi
+  local body
+  body=$(api_get "api/sessions/${SESSION_ID}")
+  if [ "$_API_HTTP_CODE" = "200" ] && [ -n "$body" ]; then
+    return 0
+  fi
+  return 1
+}
+
+# Re-creates a session on the backend if the current one is stale.
+# Updates SESSION_ID, session file, and env file.
+recreate_session() {
+  local project="${1:-}"
+  local claude_session_id="${2:-$SESSION_ID}"
+
+  local response
+  response=$(api_post "api/sessions" "{
+    \"session_id\": \"${claude_session_id}\",
+    \"project\": \"${project}\"
+  }")
+
+  local new_id
+  new_id=$(echo "$response" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+  if [ -z "$new_id" ]; then
+    hook_warn "Failed to create OM session (API returned: ${_API_HTTP_CODE})"
+    return 1
+  fi
+
+  SESSION_ID="$new_id"
+
+  # Update session file
+  jq -n \
+    --arg sid "$new_id" \
+    --arg csid "$claude_session_id" \
+    --arg url "$API_URL" \
+    --arg proj "$project" \
+    '{session_id: $sid, claude_session_id: $csid, api_url: $url, project: $proj}' \
+    > "$SESSION_FILE"
+
+  # Update env file if available
+  if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+    echo "export OBSIDIAN_MEMORY_SESSION_ID=\"${new_id}\"" >> "$CLAUDE_ENV_FILE"
+    echo "export OBSIDIAN_MEMORY_API_URL=\"${API_URL}\"" >> "$CLAUDE_ENV_FILE"
+    echo "export OBSIDIAN_MEMORY_PROJECT=\"${project}\"" >> "$CLAUDE_ENV_FILE"
+  fi
+
+  return 0
 }
 
 # ── Observe helper ──────────────────────────────────────────────────
@@ -66,14 +165,25 @@ observe_event() {
   local content="$2"
   local metadata="${3:-\{\}}"
 
-  # Escape content for JSON (handle quotes and newlines)
   local escaped_content
   escaped_content=$(echo "$content" | jq -Rs '.' 2>/dev/null || echo "\"$content\"")
 
-  api_post "api/sessions/observe" "{
+  local result
+  result=$(api_post "api/sessions/observe" "{
     \"session_id\": \"${SESSION_ID}\",
     \"event_type\": \"${event_type}\",
     \"content\": ${escaped_content},
     \"metadata\": ${metadata}
-  }" >/dev/null 2>&1 || true
+  }")
+
+  # Warn on failure but don't block the hook
+  if [ "$_API_HTTP_CODE" != "200" ] && [ "$_API_HTTP_CODE" != "201" ]; then
+    if [ "$_API_HTTP_CODE" = "404" ]; then
+      hook_warn "Session ${SESSION_ID} not found on backend (observation lost). Session may need re-creation."
+    elif [ -z "$_API_HTTP_CODE" ]; then
+      hook_warn "OM API unreachable at ${API_URL} (observation lost)"
+    else
+      hook_warn "Observation failed with HTTP ${_API_HTTP_CODE}"
+    fi
+  fi
 }

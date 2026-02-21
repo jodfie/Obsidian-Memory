@@ -7,6 +7,8 @@ read_input
 require_session
 
 if ! is_backend_up; then
+  hook_warn "OM API unreachable before compaction. Session context will be lost!"
+  emit_warnings
   exit 0
 fi
 

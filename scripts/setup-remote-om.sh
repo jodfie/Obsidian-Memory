@@ -142,83 +142,121 @@ mkdir -p "$HOOKS_DIR" "$SCRIPTS_DIR"
 # ── _lib.sh (shared library for all hooks) ──
 cat > "$HOOKS_DIR/_lib.sh" << 'HOOKEOF'
 #!/usr/bin/env bash
-# _lib.sh — Shared functions for Obsidian-Memory Claude Code hooks
-# Source this file at the top of each hook: source "$(dirname "$0")/_lib.sh"
+# _lib.sh -- Shared functions for Obsidian-Memory Claude Code hooks
+source "$(dirname "$0")/_lib.sh" 2>/dev/null && return 0 || true
 
 set -euo pipefail
 
-# ── Config ──────────────────────────────────────────────────────────
 API_URL="${OBSIDIAN_MEMORY_API_URL:-http://localhost:8765}"
 SESSION_FILE="/tmp/obsidian-memory-session.json"
+_HOOK_WARNINGS=()
 
-# Load session ID: env var first, then session file fallback
 SESSION_ID="${OBSIDIAN_MEMORY_SESSION_ID:-}"
 if [ -z "$SESSION_ID" ] && [ -f "$SESSION_FILE" ]; then
   SESSION_ID=$(jq -r '.session_id // empty' "$SESSION_FILE" 2>/dev/null || echo "")
   API_URL=$(jq -r '.api_url // empty' "$SESSION_FILE" 2>/dev/null || echo "$API_URL")
 fi
 
-# ── Input parsing ───────────────────────────────────────────────────
 INPUT=""
 read_input() {
   INPUT=$(cat 2>/dev/null || echo '{}')
-  # Validate it's JSON; if not, reset to empty object
-  if ! echo "$INPUT" | jq empty 2>/dev/null; then
-    INPUT='{}'
-  fi
+  if ! echo "$INPUT" | jq empty 2>/dev/null; then INPUT='{}'; fi
 }
 
-# Extract a field from INPUT. Returns empty string on missing/null.
-field() {
-  echo "$INPUT" | jq -r ".$1 // empty" 2>/dev/null || echo ""
+field() { echo "$INPUT" | jq -r ".$1 // empty" 2>/dev/null || echo ""; }
+
+hook_warn() {
+  local msg="$1"
+  _HOOK_WARNINGS+=("$msg")
+  echo "[obsidian-memory] WARNING: $msg" >&2
 }
 
-# ── Session guard ───────────────────────────────────────────────────
+emit_warnings() {
+  if [ ${#_HOOK_WARNINGS[@]} -eq 0 ]; then return; fi
+  local joined=""
+  for w in "${_HOOK_WARNINGS[@]}"; do
+    [ -n "$joined" ] && joined="$joined; "
+    joined="$joined$w"
+  done
+  jq -n --arg ctx "[OM] $joined" '{
+    hookSpecificOutput: { hookEventName: "ObsidianMemory", additionalContext: $ctx }
+  }'
+}
+
 require_session() {
   if [ -z "$SESSION_ID" ]; then
+    hook_warn "No OM session active. Session tracking disabled."
+    emit_warnings
     exit 0
   fi
 }
 
-# ── API helpers ─────────────────────────────────────────────────────
+_API_HTTP_CODE=""
 api_get() {
-  curl -sf --connect-timeout 2 --max-time 5 \
-    -H "Content-Type: application/json" \
-    "${API_URL}/$1" 2>/dev/null || echo ""
+  local response
+  _API_HTTP_CODE=""
+  response=$(curl -s --connect-timeout 2 --max-time 5 -w "\n%{http_code}" \
+    -H "Content-Type: application/json" "${API_URL}/$1" 2>/dev/null) || { echo ""; return 1; }
+  _API_HTTP_CODE=$(echo "$response" | tail -1)
+  echo "$response" | sed '$d'
 }
 
 api_post() {
-  local endpoint="$1"
-  local data="$2"
-  curl -sf --connect-timeout 2 --max-time 5 \
-    -X POST \
-    -H "Content-Type: application/json" \
-    -d "$data" \
-    "${API_URL}/${endpoint}" 2>/dev/null || echo ""
+  local endpoint="$1" data="$2" response
+  _API_HTTP_CODE=""
+  response=$(curl -s --connect-timeout 2 --max-time 5 -w "\n%{http_code}" \
+    -X POST -H "Content-Type: application/json" -d "$data" \
+    "${API_URL}/${endpoint}" 2>/dev/null) || { echo ""; return 1; }
+  _API_HTTP_CODE=$(echo "$response" | tail -1)
+  echo "$response" | sed '$d'
 }
 
 is_backend_up() {
-  curl -sf --connect-timeout 2 --max-time 3 \
-    "${API_URL}/health" >/dev/null 2>&1
+  curl -sf --connect-timeout 2 --max-time 3 "${API_URL}/health" >/dev/null 2>&1
 }
 
-# ── Observe helper ──────────────────────────────────────────────────
-# Usage: observe_event "event_type" "content" '{"key": "value"}'
-observe_event() {
-  local event_type="$1"
-  local content="$2"
-  local metadata="${3:-\{\}}"
+validate_session() {
+  [ -z "$SESSION_ID" ] && return 1
+  api_get "api/sessions/${SESSION_ID}" >/dev/null
+  [ "$_API_HTTP_CODE" = "200" ]
+}
 
-  # Escape content for JSON (handle quotes and newlines)
+recreate_session() {
+  local project="${1:-}" claude_session_id="${2:-$SESSION_ID}"
+  local response new_id
+  response=$(api_post "api/sessions" "{\"session_id\": \"${claude_session_id}\", \"project\": \"${project}\"}")
+  new_id=$(echo "$response" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+  if [ -z "$new_id" ]; then
+    hook_warn "Failed to create OM session (HTTP ${_API_HTTP_CODE})"
+    return 1
+  fi
+  SESSION_ID="$new_id"
+  jq -n --arg sid "$new_id" --arg csid "$claude_session_id" --arg url "$API_URL" --arg proj "$project" \
+    '{session_id: $sid, claude_session_id: $csid, api_url: $url, project: $proj}' > "$SESSION_FILE"
+  if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+    echo "export OBSIDIAN_MEMORY_SESSION_ID=\"${new_id}\"" >> "$CLAUDE_ENV_FILE"
+    echo "export OBSIDIAN_MEMORY_API_URL=\"${API_URL}\"" >> "$CLAUDE_ENV_FILE"
+    echo "export OBSIDIAN_MEMORY_PROJECT=\"${project}\"" >> "$CLAUDE_ENV_FILE"
+  fi
+}
+
+observe_event() {
+  local event_type="$1" content="$2" metadata="${3:-\{\}}"
   local escaped_content
   escaped_content=$(echo "$content" | jq -Rs '.' 2>/dev/null || echo "\"$content\"")
-
   api_post "api/sessions/observe" "{
     \"session_id\": \"${SESSION_ID}\",
     \"event_type\": \"${event_type}\",
     \"content\": ${escaped_content},
     \"metadata\": ${metadata}
-  }" >/dev/null 2>&1 || true
+  }" >/dev/null 2>&1
+  if [ "$_API_HTTP_CODE" != "200" ] && [ "$_API_HTTP_CODE" != "201" ]; then
+    if [ "$_API_HTTP_CODE" = "404" ]; then
+      hook_warn "Session ${SESSION_ID} not found (observation lost)"
+    elif [ -z "$_API_HTTP_CODE" ]; then
+      hook_warn "OM API unreachable (observation lost)"
+    fi
+  fi
 }
 HOOKEOF
 chmod +x "$HOOKS_DIR/_lib.sh"
@@ -226,23 +264,35 @@ chmod +x "$HOOKS_DIR/_lib.sh"
 # ── session-start.sh ──
 cat > "$HOOKS_DIR/session-start.sh" << 'HOOKEOF'
 #!/usr/bin/env bash
-# session-start.sh — SessionStart hook (sync, matcher: startup|resume)
+# session-start.sh -- validates existing sessions, re-creates if stale
 source "$(dirname "$0")/_lib.sh"
 read_input
 
 CLAUDE_SESSION_ID=$(field "session_id")
+
+if ! is_backend_up; then
+  hook_warn "OM API unreachable at ${API_URL}. Session tracking disabled."
+  emit_warnings
+  exit 0
+fi
+
 if [ -f "$SESSION_FILE" ]; then
-  EXISTING_ID=$(jq -r '.claude_session_id // empty' "$SESSION_FILE" 2>/dev/null || echo "")
-  if [ "$EXISTING_ID" = "$CLAUDE_SESSION_ID" ]; then
+  EXISTING_CSID=$(jq -r '.claude_session_id // empty' "$SESSION_FILE" 2>/dev/null || echo "")
+  if [ "$EXISTING_CSID" = "$CLAUDE_SESSION_ID" ]; then
     BACKEND_SESSION_ID=$(jq -r '.session_id // empty' "$SESSION_FILE" 2>/dev/null || echo "")
-    PROJECT=$(jq -r '.project // empty' "$SESSION_FILE" 2>/dev/null || echo "")
-    jq -n --arg ctx "Obsidian-Memory session active: ${BACKEND_SESSION_ID} (project: ${PROJECT})" '{
-      hookSpecificOutput: {
-        hookEventName: "SessionStart",
-        additionalContext: $ctx
-      }
-    }'
-    exit 0
+    SESSION_ID="$BACKEND_SESSION_ID"
+    if validate_session; then
+      PROJECT=$(jq -r '.project // empty' "$SESSION_FILE" 2>/dev/null || echo "")
+      jq -n --arg ctx "Obsidian-Memory session active: ${BACKEND_SESSION_ID} (project: ${PROJECT})" '{
+        hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: $ctx }
+      }'
+      exit 0
+    else
+      hook_warn "Session ${BACKEND_SESSION_ID} stale (backend restart?). Re-creating."
+      rm -f "$SESSION_FILE"
+    fi
+  else
+    rm -f "$SESSION_FILE"
   fi
 fi
 
@@ -251,45 +301,15 @@ MODEL=$(field "model")
 CWD=$(field "cwd")
 PROJECT=$(basename "$CWD" 2>/dev/null || echo "")
 
-if ! is_backend_up; then
-  exit 0
+if recreate_session "$PROJECT" "$CLAUDE_SESSION_ID"; then
+  observe_event "observation" "Session started: model=${MODEL}, source=${SOURCE}, project=${PROJECT}" \
+    "{\"model\": \"${MODEL}\", \"source\": \"${SOURCE}\", \"project\": \"${PROJECT}\"}"
+  jq -n --arg ctx "Obsidian-Memory session created: ${SESSION_ID} (project: ${PROJECT})" '{
+    hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: $ctx }
+  }'
+else
+  emit_warnings
 fi
-
-RESPONSE=$(api_post "api/sessions" "{
-  \"session_id\": \"${CLAUDE_SESSION_ID}\",
-  \"project\": \"${PROJECT}\"
-}")
-
-BACKEND_SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id // empty' 2>/dev/null || echo "")
-if [ -z "$BACKEND_SESSION_ID" ]; then
-  BACKEND_SESSION_ID="$CLAUDE_SESSION_ID"
-fi
-
-jq -n \
-  --arg sid "$BACKEND_SESSION_ID" \
-  --arg csid "$CLAUDE_SESSION_ID" \
-  --arg url "$API_URL" \
-  --arg proj "$PROJECT" \
-  '{session_id: $sid, claude_session_id: $csid, api_url: $url, project: $proj}' \
-  > "$SESSION_FILE"
-
-if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-  echo "export OBSIDIAN_MEMORY_SESSION_ID=\"${BACKEND_SESSION_ID}\"" >> "$CLAUDE_ENV_FILE"
-  echo "export OBSIDIAN_MEMORY_API_URL=\"${API_URL}\"" >> "$CLAUDE_ENV_FILE"
-  echo "export OBSIDIAN_MEMORY_PROJECT=\"${PROJECT}\"" >> "$CLAUDE_ENV_FILE"
-fi
-
-SESSION_ID="$BACKEND_SESSION_ID"
-observe_event "observation" "Session started: model=${MODEL}, source=${SOURCE}, project=${PROJECT}" \
-  "{\"model\": \"${MODEL}\", \"source\": \"${SOURCE}\", \"project\": \"${PROJECT}\"}"
-
-jq -n --arg ctx "Obsidian-Memory session active: ${BACKEND_SESSION_ID} (project: ${PROJECT})" '{
-  hookSpecificOutput: {
-    hookEventName: "SessionStart",
-    additionalContext: $ctx
-  }
-}'
-
 exit 0
 HOOKEOF
 chmod +x "$HOOKS_DIR/session-start.sh"
@@ -301,7 +321,10 @@ source "$(dirname "$0")/_lib.sh"
 read_input
 require_session
 
-api_post "api/sessions/${SESSION_ID}/end" '{}' >/dev/null 2>&1 || true
+api_post "api/sessions/${SESSION_ID}/end" '{}' >/dev/null 2>&1
+if [ "$_API_HTTP_CODE" != "200" ] && [ -n "$_API_HTTP_CODE" ]; then
+  echo "[obsidian-memory] WARNING: Session end failed (HTTP ${_API_HTTP_CODE})" >&2
+fi
 rm -f "$SESSION_FILE"
 exit 0
 HOOKEOF
@@ -363,6 +386,12 @@ source "$(dirname "$0")/_lib.sh"
 read_input
 require_session
 
+if ! is_backend_up; then
+  hook_warn "OM API unreachable before compaction. Session context will be lost!"
+  emit_warnings
+  exit 0
+fi
+
 api_post "api/sessions/${SESSION_ID}/summary" '{"trigger": "pre_compact"}' >/dev/null 2>&1 || true
 exit 0
 HOOKEOF
@@ -374,6 +403,12 @@ cat > "$HOOKS_DIR/stop.sh" << 'HOOKEOF'
 source "$(dirname "$0")/_lib.sh"
 read_input
 require_session
+
+if ! is_backend_up; then
+  hook_warn "OM API unreachable at stop. Session summary skipped."
+  emit_warnings
+  exit 0
+fi
 
 REASON=$(field "reason")
 observe_event "observation" "Session stopped: ${REASON}" \

@@ -13,12 +13,16 @@ if [ "$STOP_HOOK_ACTIVE" = "true" ]; then
 fi
 
 if ! is_backend_up; then
+  hook_warn "OM API unreachable at stop. Session summary skipped."
+  emit_warnings
   exit 0
 fi
 
 # Check current session state
 SESSION_INFO=$(api_get "api/sessions/${SESSION_ID}")
-if [ -z "$SESSION_INFO" ]; then
+if [ -z "$SESSION_INFO" ] || [ "$_API_HTTP_CODE" = "404" ]; then
+  hook_warn "Session ${SESSION_ID} not found on backend at stop. Summary skipped."
+  emit_warnings
   exit 0
 fi
 
