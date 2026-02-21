@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [{
+      "type": "command",
+      "bash": "~/.claude/scripts/copilot-om-hook.sh sessionStart",
+      "timeoutSec": 5
+    }],
+    "sessionEnd": [{
+      "type": "command",
+      "bash": "~/.claude/scripts/copilot-om-hook.sh sessionEnd",
+      "timeoutSec": 5
+    }],
+    "userPromptSubmitted": [{
+      "type": "command",
+      "bash": "~/.claude/scripts/copilot-om-hook.sh userPromptSubmitted",
+      "timeoutSec": 5
+    }],
+    "postToolUse": [{
+      "type": "command",
+      "bash": "~/.claude/scripts/copilot-om-hook.sh postToolUse",
+      "timeoutSec": 5
+    }],
+    "errorOccurred": [{
+      "type": "command",
+      "bash": "~/.claude/scripts/copilot-om-hook.sh errorOccurred",
+      "timeoutSec": 5
+    }]
+  }
+}

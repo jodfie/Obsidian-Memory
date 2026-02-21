@@ -38,7 +38,19 @@ HOOK_FILES=(
 # Allow filtering to specific files
 SCRIPT_FILES=(
   om.sh
+  om-hook-common.sh
   codex-om-notify.sh
+  copilot-om-hook.sh
+  copilot-hooks.json
+)
+
+CLINE_HOOK_FILES=(
+  cline-hooks/task-start.sh
+  cline-hooks/task-complete.sh
+  cline-hooks/task-cancel.sh
+  cline-hooks/user-prompt-submit.sh
+  cline-hooks/post-tool-use.sh
+  cline-hooks/pre-compact.sh
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -85,7 +97,7 @@ for target in "${TARGETS[@]}"; do
   fi
 
   # Ensure directories exist
-  ssh -o ConnectTimeout=5 "$target" "mkdir -p $remote_hooks $remote_scripts" 2>/dev/null
+  ssh -o ConnectTimeout=5 "$target" "mkdir -p $remote_hooks $remote_scripts $remote_scripts/cline-hooks" 2>/dev/null
 
   # Push hooks
   hook_ok=true
@@ -101,6 +113,12 @@ for target in "${TARGETS[@]}"; do
 
   # Push scripts
   for f in "${SCRIPT_FILES[@]}"; do
+    if [ -f "$SCRIPTS_SRC/$f" ]; then
+      cat "$SCRIPTS_SRC/$f" | ssh -o ConnectTimeout=5 "$target" "cat > $remote_scripts/$f && chmod +x $remote_scripts/$f" 2>/dev/null
+    fi
+  done
+
+  for f in "${CLINE_HOOK_FILES[@]}"; do
     if [ -f "$SCRIPTS_SRC/$f" ]; then
       cat "$SCRIPTS_SRC/$f" | ssh -o ConnectTimeout=5 "$target" "cat > $remote_scripts/$f && chmod +x $remote_scripts/$f" 2>/dev/null
     fi
