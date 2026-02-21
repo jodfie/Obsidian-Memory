@@ -33,6 +33,7 @@ services:
       - memory-data:/data
     ports:
       - "127.0.0.1:8765:8765"
+      - "100.99.29.82:8765:8765"  # tailnet (redleif-hostinger)
     deploy:
       resources:
         limits:
@@ -78,7 +79,8 @@ services:
       - SUPABASE_AUTH_ENABLED=${SUPABASE_AUTH_ENABLED:-true}
       - SUPABASE_URL=${SUPABASE_URL}
     ports:
-      - "8738:3000"
+      - "127.0.0.1:8738:3000"
+      - "100.99.29.82:8738:3000"  # tailnet (redleif-hostinger)
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
