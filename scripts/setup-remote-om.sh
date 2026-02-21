@@ -17,7 +17,7 @@
 set -euo pipefail
 
 # ── Configuration ────────────────────────────────────────────────────
-OM_HOST="${OM_HOST:?OM_HOST must be set to your OM server's Tailscale hostname (e.g., my-server)}"
+OM_HOST="${OM_HOST:?OM_HOST must be set to your OM server Tailscale hostname (e.g. my-server)}"
 OM_API_PORT="${OM_API_PORT:-8765}"
 OM_API_URL="http://${OM_HOST}:${OM_API_PORT}"
 
