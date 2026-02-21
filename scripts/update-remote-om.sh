@@ -38,6 +38,7 @@ HOOK_FILES=(
 # Allow filtering to specific files
 SCRIPT_FILES=(
   om.sh
+  codex-om-notify.sh
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────

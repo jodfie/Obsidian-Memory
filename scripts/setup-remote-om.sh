@@ -680,6 +680,88 @@ else
   ok "Created $SETTINGS_FILE with hook configuration"
 fi
 
+# ── Configure Codex notify (if Codex is installed) ────────────────────
+if command_exists codex; then
+  step "Configuring Codex OM integration"
+
+  CODEX_DIR="$HOME/.codex"
+  CODEX_CONFIG="$CODEX_DIR/config.toml"
+  mkdir -p "$CODEX_DIR"
+
+  # Deploy the notify script
+  cat > "$SCRIPTS_DIR/codex-om-notify.sh" << 'CODEXEOF'
+#!/usr/bin/env bash
+# codex-om-notify.sh — Codex notify script for Obsidian-Memory integration
+set -euo pipefail
+
+API_URL="${OBSIDIAN_MEMORY_API_URL:-http://localhost:8765}"
+SESSION_FILE="/tmp/obsidian-memory-codex-session.json"
+
+EVENT="${1:-{}}"
+EVENT_TYPE=$(echo "$EVENT" | jq -r '.type // empty' 2>/dev/null || echo "")
+THREAD_ID=$(echo "$EVENT" | jq -r '.["thread-id"] // empty' 2>/dev/null || echo "")
+TURN_ID=$(echo "$EVENT" | jq -r '.["turn-id"] // empty' 2>/dev/null || echo "")
+CWD=$(echo "$EVENT" | jq -r '.cwd // empty' 2>/dev/null || echo "")
+LAST_MSG=$(echo "$EVENT" | jq -r '.["last-assistant-message"] // empty' 2>/dev/null || echo "")
+INPUT_MSGS=$(echo "$EVENT" | jq -c '.["input-messages"] // []' 2>/dev/null || echo "[]")
+
+[ "$EVENT_TYPE" != "agent-turn-complete" ] && exit 0
+[ -z "$THREAD_ID" ] && exit 0
+
+SESSION_ID=""
+if [ -f "$SESSION_FILE" ]; then
+  SAVED_THREAD=$(jq -r '.thread_id // empty' "$SESSION_FILE" 2>/dev/null || echo "")
+  if [ "$SAVED_THREAD" = "$THREAD_ID" ]; then
+    SESSION_ID=$(jq -r '.session_id // empty' "$SESSION_FILE" 2>/dev/null || echo "")
+    API_URL=$(jq -r '.api_url // empty' "$SESSION_FILE" 2>/dev/null || echo "$API_URL")
+  else
+    rm -f "$SESSION_FILE"
+  fi
+fi
+
+if [ -z "$SESSION_ID" ]; then
+  PROJECT=$(basename "$CWD" 2>/dev/null || echo "")
+  RESPONSE=$(curl -sf --connect-timeout 2 --max-time 5 \
+    -X POST -H "Content-Type: application/json" \
+    -d "{\"session_id\": \"codex-${THREAD_ID}\", \"project\": \"${PROJECT}\"}" \
+    "${API_URL}/api/sessions" 2>/dev/null || echo "")
+  SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+  [ -z "$SESSION_ID" ] && exit 0
+  jq -n --arg sid "$SESSION_ID" --arg tid "$THREAD_ID" --arg url "$API_URL" --arg proj "$PROJECT" \
+    '{session_id: $sid, thread_id: $tid, api_url: $url, project: $proj}' > "$SESSION_FILE"
+  curl -sf --connect-timeout 2 --max-time 5 \
+    -X POST -H "Content-Type: application/json" \
+    -d "{\"session_id\": \"${SESSION_ID}\", \"event_type\": \"observation\", \"content\": \"Codex session started (thread: ${THREAD_ID})\", \"metadata\": {\"source\": \"codex\"}}" \
+    "${API_URL}/api/sessions/observe" >/dev/null 2>&1 || true
+fi
+
+USER_PROMPT=$(echo "$INPUT_MSGS" | jq -r 'map(select(.role == "user")) | last | .content // empty' 2>/dev/null || echo "")
+PROMPT_SHORT="${USER_PROMPT:0:300}" RESPONSE_SHORT="${LAST_MSG:0:500}"
+CONTENT="[Codex turn ${TURN_ID}] Prompt: ${PROMPT_SHORT}\nResponse: ${RESPONSE_SHORT}"
+ESCAPED=$(echo "$CONTENT" | jq -Rs '.' 2>/dev/null || echo "\"$CONTENT\"")
+
+curl -sf --connect-timeout 2 --max-time 5 \
+  -X POST -H "Content-Type: application/json" \
+  -d "{\"session_id\": \"${SESSION_ID}\", \"event_type\": \"codex_turn\", \"content\": ${ESCAPED}, \"metadata\": {\"source\": \"codex\", \"turn_id\": \"${TURN_ID}\"}}" \
+  "${API_URL}/api/sessions/observe" >/dev/null 2>&1 || true
+exit 0
+CODEXEOF
+  chmod +x "$SCRIPTS_DIR/codex-om-notify.sh"
+
+  # Add notify to config.toml if not already there
+  if [ -f "$CODEX_CONFIG" ] && grep -q "notify" "$CODEX_CONFIG" 2>/dev/null; then
+    info "Codex config.toml already has a notify setting — not overwriting"
+    info "To use OM: notify = [\"bash\", \"$SCRIPTS_DIR/codex-om-notify.sh\"]"
+  else
+    echo "" >> "$CODEX_CONFIG"
+    echo "# Obsidian-Memory integration" >> "$CODEX_CONFIG"
+    echo "notify = [\"bash\", \"$SCRIPTS_DIR/codex-om-notify.sh\"]" >> "$CODEX_CONFIG"
+    ok "Added OM notify to $CODEX_CONFIG"
+  fi
+else
+  info "Codex not found — skipping Codex OM integration"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────
 step "Setup complete!"
 echo ""
@@ -693,4 +775,5 @@ echo "  Next steps:"
 echo "    1. Open a new shell (or: source $SHELL_RC)"
 echo "    2. Test: $SCRIPTS_DIR/om.sh health"
 echo "    3. Start Claude Code — hooks will auto-connect to OM"
+echo "    4. Start Codex — notify will auto-report turns to OM"
 echo ""
