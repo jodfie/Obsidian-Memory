@@ -5,10 +5,12 @@
 # It installs Claude Code, Codex, and Happy if missing, then deploys OM hooks
 # so every Claude Code session reports back to the OM API over Tailscale.
 #
-# Usage:
-#   OM_HOST=my-server ./scripts/setup-remote-om.sh              # run locally
-#   ssh user@host 'OM_HOST=my-server bash -s' < scripts/setup-remote-om.sh  # via SSH
-#   scp scripts/setup-remote-om.sh user@host:/tmp/ && ssh user@host 'OM_HOST=my-server bash /tmp/setup-remote-om.sh'
+# Quick install (from any machine with curl):
+#   OM_HOST=my-server bash -c "$(curl -fsSL https://raw.githubusercontent.com/jodfie/Obsidian-Memory/main/scripts/setup-remote-om.sh)"
+#
+# Other usage:
+#   OM_HOST=my-server ./scripts/setup-remote-om.sh              # run locally from repo
+#   ssh user@host 'OM_HOST=my-server bash -s' < scripts/setup-remote-om.sh  # pipe via SSH
 #
 # Environment variables:
 #   OM_HOST      - Tailscale MagicDNS hostname of the OM server (REQUIRED)
