@@ -178,8 +178,9 @@ jobs:
     
     steps:
       - name: Trigger deployment webhook
+        if: ${{ secrets.DEPLOY_WEBHOOK_URL != '' }}
         run: |
-          curl -X POST https://memory.example.com/api/deploy/webhook \
+          curl -X POST ${{ secrets.DEPLOY_WEBHOOK_URL }} \
             -H "Authorization: Bearer ${{ secrets.DEPLOY_WEBHOOK_SECRET }}" \
             -H "Content-Type: application/json" \
             -d '{"event":"push","ref":"${{ github.ref }}","sha":"${{ github.sha }}"}'
