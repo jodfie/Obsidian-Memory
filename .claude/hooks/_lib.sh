@@ -4,9 +4,13 @@
 
 set -euo pipefail
 
+# ── Version ─────────────────────────────────────────────────────────
+OM_HOOKS_VERSION="2"
+
 # ── Config ──────────────────────────────────────────────────────────
 API_URL="${OBSIDIAN_MEMORY_API_URL:-http://localhost:8765}"
 SESSION_FILE="/tmp/obsidian-memory-session.json"
+_VERSION_CHECK_FILE="/tmp/obsidian-memory-version-checked"
 _HOOK_WARNINGS=()
 
 # Load session ID: env var first, then session file fallback
@@ -55,6 +59,32 @@ emit_warnings() {
       additionalContext: $ctx
     }
   }'
+}
+
+# ── Version check (once per session, non-blocking) ──────────────────
+check_hook_version() {
+  # Only check once per session (file acts as debounce)
+  if [ -f "$_VERSION_CHECK_FILE" ]; then
+    local last_check
+    last_check=$(cat "$_VERSION_CHECK_FILE" 2>/dev/null || echo "0")
+    local now
+    now=$(date +%s)
+    # Check at most once per hour
+    if [ $((now - last_check)) -lt 3600 ]; then
+      return
+    fi
+  fi
+  date +%s > "$_VERSION_CHECK_FILE" 2>/dev/null || true
+
+  # Fetch latest version from GitHub (non-blocking, 2s timeout)
+  local remote_version
+  remote_version=$(curl -sf --connect-timeout 2 --max-time 2 \
+    "https://raw.githubusercontent.com/jodfie/Obsidian-Memory/main/.claude/hooks/_lib.sh" 2>/dev/null \
+    | grep -m1 '^OM_HOOKS_VERSION=' | cut -d'"' -f2) || return 0
+
+  if [ -n "$remote_version" ] && [ "$remote_version" != "$OM_HOOKS_VERSION" ]; then
+    hook_warn "OM hooks outdated (local: v${OM_HOOKS_VERSION}, remote: v${remote_version}). Update: OM_HOST=\$OM_HOST bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/jodfie/Obsidian-Memory/main/scripts/setup-remote-om.sh)\""
+  fi
 }
 
 # ── Session guard ───────────────────────────────────────────────────

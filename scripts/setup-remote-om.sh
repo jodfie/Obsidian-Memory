@@ -149,8 +149,11 @@ source "$(dirname "$0")/_lib.sh" 2>/dev/null && return 0 || true
 
 set -euo pipefail
 
+OM_HOOKS_VERSION="2"
+
 API_URL="${OBSIDIAN_MEMORY_API_URL:-http://localhost:8765}"
 SESSION_FILE="/tmp/obsidian-memory-session.json"
+_VERSION_CHECK_FILE="/tmp/obsidian-memory-version-checked"
 _HOOK_WARNINGS=()
 
 SESSION_ID="${OBSIDIAN_MEMORY_SESSION_ID:-}"
@@ -260,6 +263,23 @@ observe_event() {
     fi
   fi
 }
+
+check_hook_version() {
+  if [ -f "$_VERSION_CHECK_FILE" ]; then
+    local last_check now
+    last_check=$(cat "$_VERSION_CHECK_FILE" 2>/dev/null || echo "0")
+    now=$(date +%s)
+    if [ $((now - last_check)) -lt 3600 ]; then return; fi
+  fi
+  date +%s > "$_VERSION_CHECK_FILE" 2>/dev/null || true
+  local remote_version
+  remote_version=$(curl -sf --connect-timeout 2 --max-time 2 \
+    "https://raw.githubusercontent.com/jodfie/Obsidian-Memory/main/.claude/hooks/_lib.sh" 2>/dev/null \
+    | grep -m1 '^OM_HOOKS_VERSION=' | cut -d'"' -f2) || return 0
+  if [ -n "$remote_version" ] && [ "$remote_version" != "$OM_HOOKS_VERSION" ]; then
+    hook_warn "OM hooks outdated (local: v${OM_HOOKS_VERSION}, remote: v${remote_version}). Update: OM_HOST=\$OM_HOST bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/jodfie/Obsidian-Memory/main/scripts/setup-remote-om.sh)\""
+  fi
+}
 HOOKEOF
 chmod +x "$HOOKS_DIR/_lib.sh"
 
@@ -277,6 +297,8 @@ if ! is_backend_up; then
   emit_warnings
   exit 0
 fi
+
+check_hook_version
 
 if [ -f "$SESSION_FILE" ]; then
   EXISTING_CSID=$(jq -r '.claude_session_id // empty' "$SESSION_FILE" 2>/dev/null || echo "")

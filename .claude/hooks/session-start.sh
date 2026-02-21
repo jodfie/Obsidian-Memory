@@ -15,6 +15,9 @@ if ! is_backend_up; then
   exit 0
 fi
 
+# ── Check for hook updates (non-blocking) ──
+check_hook_version
+
 # ── If session file exists, validate it ──
 if [ -f "$SESSION_FILE" ]; then
   EXISTING_CSID=$(jq -r '.claude_session_id // empty' "$SESSION_FILE" 2>/dev/null || echo "")
