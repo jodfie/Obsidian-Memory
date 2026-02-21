@@ -178,9 +178,12 @@ jobs:
     
     steps:
       - name: Trigger deployment webhook
-        if: ${{ secrets.DEPLOY_WEBHOOK_URL != '' }}
+        env:
+          DEPLOY_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          DEPLOY_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+        if: env.DEPLOY_URL != ''
         run: |
-          curl -X POST ${{ secrets.DEPLOY_WEBHOOK_URL }} \
-            -H "Authorization: Bearer ${{ secrets.DEPLOY_WEBHOOK_SECRET }}" \
+          curl -X POST "$DEPLOY_URL" \
+            -H "Authorization: Bearer $DEPLOY_SECRET" \
             -H "Content-Type: application/json" \
             -d '{"event":"push","ref":"${{ github.ref }}","sha":"${{ github.sha }}"}'
