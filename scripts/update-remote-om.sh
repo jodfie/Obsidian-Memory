@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# update-remote-hooks.sh -- Push latest OM hooks + om.sh to remote servers
+# update-remote-om.sh -- Push latest OM hooks + om.sh to remote servers
 #
 # Quick usage:
-#   ./scripts/update-remote-hooks.sh                    # update all servers in SERVERS list
-#   ./scripts/update-remote-hooks.sh user@host          # update a single server
-#   ./scripts/update-remote-hooks.sh user1@h1 user2@h2  # update specific servers
+#   ./scripts/update-remote-om.sh                    # update all servers in SERVERS list
+#   ./scripts/update-remote-om.sh user@host          # update a single server
+#   ./scripts/update-remote-om.sh user1@h1 user2@h2  # update specific servers
 #
 # Servers list: Edit the SERVERS array below, or pass targets as arguments.
 # This only pushes hooks and om.sh — it does NOT install Claude Code or other tools.
