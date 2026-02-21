@@ -82,14 +82,18 @@ step "Checking Claude Code"
 if command_exists claude; then
   ok "Claude Code $(claude --version 2>/dev/null || echo 'installed')"
 else
-  info "Installing Claude Code..."
-  curl -fsSL https://claude.ai/install.sh | bash
+  info "Installing Claude Code via npm..."
+  npm install -g @anthropic-ai/claude-code 2>/dev/null || {
+    warn "npm global install failed, trying with sudo..."
+    sudo npm install -g @anthropic-ai/claude-code 2>/dev/null || true
+  }
   # Ensure it's in PATH for the rest of this script
   export PATH="$HOME/.local/bin:$PATH"
   if command_exists claude; then
     ok "Claude Code installed: $(claude --version 2>/dev/null)"
   else
     err "Claude Code installation failed"
+    info "Try manually: npm install -g @anthropic-ai/claude-code"
     exit 1
   fi
 fi
