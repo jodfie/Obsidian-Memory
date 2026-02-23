@@ -13,9 +13,12 @@ set -euo pipefail
 
 # ── Default server list ─────────────────────────────────────────────
 # Format: "user@hostname" (must be reachable via SSH)
-# Edit this list to match your machines.
+# These are Tailscale MagicDNS hostnames for production servers
 SERVERS=(
-  # "user@hostname"
+  "cps@cps-vps.tail76716.ts.net"
+  "adminlocal@ga-scanner-cloud.tail76716.ts.net"
+  "jodfie@redleif-contabo.tail76716.ts.net"
+  "trunk@trunk-chatham.tail76716.ts.net"
 )
 
 # ── Resolve script paths ────────────────────────────────────────────
