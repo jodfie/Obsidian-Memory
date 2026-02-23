@@ -38,6 +38,7 @@ HOOK_FILES=(
 # Allow filtering to specific files
 SCRIPT_FILES=(
   om.sh
+  om-health-check.sh
   om-hook-common.sh
   codex-om-notify.sh
   copilot-om-hook.sh
