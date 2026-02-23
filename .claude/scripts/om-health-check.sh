@@ -16,8 +16,12 @@ NC='\033[0m' # No Color
 FIX_MODE=false
 VERBOSE=false
 API_URL="${OBSIDIAN_MEMORY_API_URL:-http://localhost:8765}"
-REMOTE_URL="${OBSIDIAN_MEMORY_REMOTE_URL:-http://memory.redleif.dev}"
+REMOTE_URL="${OBSIDIAN_MEMORY_REMOTE_URL:-}"
 SESSION_FILE="/tmp/obsidian-memory-session.json"
+
+# Auto-detect script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Parse arguments
 for arg in "$@"; do
@@ -62,6 +66,13 @@ test_local_api() {
 }
 
 test_remote_api() {
+  # Skip if no remote URL configured
+  if [ -z "$REMOTE_URL" ]; then
+    log_test "Testing remote API (skipped - no REMOTE_URL configured)"
+    log_info "Set OBSIDIAN_MEMORY_REMOTE_URL to enable remote sync testing"
+    return 0
+  fi
+
   log_test "Testing remote API at ${REMOTE_URL}"
 
   # Test public API endpoint (health requires OAuth)
@@ -115,7 +126,7 @@ test_session() {
 test_mcp_config() {
   log_test "Testing MCP server configuration"
 
-  local mcp_file="/home/redleif/Obsidian-Memory/.mcp.json"
+  local mcp_file="$REPO_ROOT/.mcp.json"
   if [ ! -f "$mcp_file" ]; then
     log_fail "MCP configuration not found at $mcp_file"
     return 1
@@ -146,7 +157,7 @@ test_mcp_config() {
 test_mcp_server() {
   log_test "Testing MCP server startup"
 
-  local mcp_dir="/home/redleif/Obsidian-Memory/mcp-server"
+  local mcp_dir="$REPO_ROOT/mcp-server"
   if [ ! -d "$mcp_dir" ]; then
     log_fail "MCP server directory not found at $mcp_dir"
     return 1
@@ -166,7 +177,7 @@ test_mcp_server() {
 test_hooks() {
   log_test "Testing hook installation"
 
-  local hooks_dir="/home/redleif/Obsidian-Memory/.claude/hooks"
+  local hooks_dir="$REPO_ROOT/.claude/hooks"
   if [ ! -d "$hooks_dir" ]; then
     log_fail "Hooks directory not found at $hooks_dir"
     return 1
@@ -201,7 +212,7 @@ test_hooks() {
 test_om_cli() {
   log_test "Testing om.sh CLI helper"
 
-  local om_script="/home/redleif/Obsidian-Memory/.claude/scripts/om.sh"
+  local om_script="$REPO_ROOT/.claude/scripts/om.sh"
   if [ ! -f "$om_script" ]; then
     log_fail "om.sh not found at $om_script"
     return 1
@@ -217,6 +228,12 @@ test_om_cli() {
 }
 
 test_sync() {
+  # Skip if no remote URL configured
+  if [ -z "$REMOTE_URL" ]; then
+    log_test "Testing local/remote sync status (skipped - no REMOTE_URL)"
+    return 0
+  fi
+
   log_test "Testing local/remote sync status"
 
   local local_notes=$(curl -sf "${API_URL}/health" 2>/dev/null | jq -r '.notes.total // 0' 2>/dev/null || echo "0")
