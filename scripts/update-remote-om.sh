@@ -93,21 +93,21 @@ for target in "${TARGETS[@]}"; do
 
   echo "--- $host ($user) ---"
 
-  # Test connectivity
-  if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$target" "true" 2>/dev/null; then
+  # Test connectivity (accept new host keys automatically)
+  if ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$target" "true" 2>/dev/null; then
     err "Cannot connect to $target (SSH failed)"
     FAILED=$((FAILED + 1))
     continue
   fi
 
   # Ensure directories exist
-  ssh -o ConnectTimeout=5 "$target" "mkdir -p $remote_hooks $remote_scripts $remote_scripts/cline-hooks" 2>/dev/null
+  ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$target" "mkdir -p $remote_hooks $remote_scripts $remote_scripts/cline-hooks" 2>/dev/null
 
   # Push hooks
   hook_ok=true
   for f in "${HOOK_FILES[@]}"; do
     if [ -f "$HOOKS_SRC/$f" ]; then
-      cat "$HOOKS_SRC/$f" | ssh -o ConnectTimeout=5 "$target" "cat > $remote_hooks/$f && chmod +x $remote_hooks/$f" 2>/dev/null
+      cat "$HOOKS_SRC/$f" | ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$target" "cat > $remote_hooks/$f && chmod +x $remote_hooks/$f" 2>/dev/null
       if [ $? -ne 0 ]; then
         err "Failed to push $f"
         hook_ok=false
@@ -118,13 +118,13 @@ for target in "${TARGETS[@]}"; do
   # Push scripts
   for f in "${SCRIPT_FILES[@]}"; do
     if [ -f "$SCRIPTS_SRC/$f" ]; then
-      cat "$SCRIPTS_SRC/$f" | ssh -o ConnectTimeout=5 "$target" "cat > $remote_scripts/$f && chmod +x $remote_scripts/$f" 2>/dev/null
+      cat "$SCRIPTS_SRC/$f" | ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$target" "cat > $remote_scripts/$f && chmod +x $remote_scripts/$f" 2>/dev/null
     fi
   done
 
   for f in "${CLINE_HOOK_FILES[@]}"; do
     if [ -f "$SCRIPTS_SRC/$f" ]; then
-      cat "$SCRIPTS_SRC/$f" | ssh -o ConnectTimeout=5 "$target" "cat > $remote_scripts/$f && chmod +x $remote_scripts/$f" 2>/dev/null
+      cat "$SCRIPTS_SRC/$f" | ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "$target" "cat > $remote_scripts/$f && chmod +x $remote_scripts/$f" 2>/dev/null
     fi
   done
 
