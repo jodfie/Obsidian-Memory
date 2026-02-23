@@ -64,9 +64,34 @@ All MCP servers must be configured in `~/.claude.json` (user-level) to prevent c
 **task-master-ai**: AI-powered task management and workflow orchestration
 **pal**: Multi-model AI integration for chat, debugging, code review, planning
 
+### MCP Configuration Requirements
+
+**IMPORTANT**: The Obsidian-Memory MCP server requires Node.js/npx (NOT Bun). Configure in `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "obsidian-memory": {
+      "command": "npx",
+      "args": ["tsx", "src/index.ts"],
+      "cwd": "/path/to/Obsidian-Memory/mcp-server",
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "OBSIDIAN_MEMORY_API_URL": "http://localhost:8765"
+      }
+    }
+  }
+}
+```
+
+**Common Issue**: If MCP tools (`mem_*`) are unavailable, check that you're using `npx tsx` NOT `bun`. Run `.claude/scripts/om-health-check.sh` to diagnose.
+
 ### Verification
 
-Run `/mcp` in Claude Code to verify all four servers are connected.
+Run `/mcp` in Claude Code to verify all four servers are connected. If issues occur, run:
+```bash
+.claude/scripts/om-health-check.sh --verbose
+```
 
 ## Obsidian-Memory Integration
 
