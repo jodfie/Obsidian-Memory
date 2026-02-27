@@ -108,6 +108,10 @@ async def list_notes(
                 tags=result.tags,
                 created_at=result.created_at,
                 updated_at=result.updated_at,
+                decay_class=getattr(result, 'decay_class', None),
+                confidence=getattr(result, 'confidence', None),
+                score=getattr(result, 'score', None),
+                score_breakdown=getattr(result, 'score_breakdown', None),
             )
         )
 
@@ -586,6 +590,7 @@ async def search_notes(
         except Exception:
             content = ""
 
+        # Pass decay and scoring fields from search result
         notes.append(
             NoteResponse(
                 id=result.note_id,

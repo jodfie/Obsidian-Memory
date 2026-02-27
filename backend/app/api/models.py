@@ -46,6 +46,10 @@ class NoteResponse(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Tags")
     created_at: datetime | None = Field(default=None, description="Created at")
     updated_at: datetime | None = Field(default=None, description="Updated at")
+    decay_class: str | None = Field(default=None, description="Decay classification")
+    confidence: float | None = Field(default=None, description="Decay confidence (0.0-1.0)")
+    score: float | None = Field(default=None, description="Composite search score")
+    score_breakdown: dict[str, float] | None = Field(default=None, description="Score component breakdown")
 
 
 class NoteListResponse(BaseModel):

@@ -281,6 +281,8 @@ check_hook_version() {
   fi
 }
 HOOKEOF
+# Bake the OM API URL into the default so hooks work without .bashrc being sourced
+sed -i "s|http://localhost:8765|${OM_API_URL}|" "$HOOKS_DIR/_lib.sh"
 chmod +x "$HOOKS_DIR/_lib.sh"
 
 # ── session-start.sh ──
@@ -618,6 +620,7 @@ case "$CMD" in
     ;;
 esac
 OMEOF
+sed -i "s|http://localhost:8765|${OM_API_URL}|" "$SCRIPTS_DIR/om.sh"
 chmod +x "$SCRIPTS_DIR/om.sh"
 ok "om.sh deployed to $SCRIPTS_DIR/om.sh"
 
@@ -746,6 +749,7 @@ curl -sf --connect-timeout 2 --max-time 5 \
   "${API_URL}/api/sessions/observe" >/dev/null 2>&1 || true
 exit 0
 CODEXEOF
+  sed -i "s|http://localhost:8765|${OM_API_URL}|" "$SCRIPTS_DIR/codex-om-notify.sh"
   chmod +x "$SCRIPTS_DIR/codex-om-notify.sh"
 
   # Add notify to config.toml if not already there
