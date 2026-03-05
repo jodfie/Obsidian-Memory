@@ -118,3 +118,4 @@ backend/tests/services/test_recall_search.py
 
 # Task Master PRD docs (reference only, not shipped)
 .taskmaster/docs/memory-decay-scoring-prd.md
+envprod
