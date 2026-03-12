@@ -70,7 +70,7 @@ async def _get_existing_observations(search_index: SearchIndex, note_id: int) ->
     return [
         Observation(
             category=ObservationCategory(row["category"]),
-            content=row["content"],
+            content=(row["content"] or ""),
             tags=[],
             line_number=0,
         )
@@ -158,7 +158,7 @@ async def extract_decisions_single(
 
     decisions = await _extract_for_note(
         note_id=note_id,
-        content=row["content"],
+        content=(row["content"] or ""),
         title=row["title"],
         method=request.method,
         parser=parser,
@@ -225,7 +225,7 @@ async def extract_decisions_bulk(
 
         decisions = await _extract_for_note(
             note_id=nid,
-            content=row["content"],
+            content=(row["content"] or ""),
             title=row["title"],
             method=request.method,
             parser=parser,

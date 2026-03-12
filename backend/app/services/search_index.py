@@ -3269,7 +3269,7 @@ class SearchIndex:
                 """
                 SELECT DISTINCT
                     n.id as note_id,
-                    n.path,
+                    n.relative_path as path,
                     n.title,
                     e.entity_type,
                     e.name,
@@ -3288,7 +3288,7 @@ class SearchIndex:
                 """
                 SELECT DISTINCT
                     n.id as note_id,
-                    n.path,
+                    n.relative_path as path,
                     n.title,
                     e.entity_type,
                     e.name,
